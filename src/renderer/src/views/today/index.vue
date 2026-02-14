@@ -1,0 +1,548 @@
+<template>
+  <div class="today-page">
+    <!-- 左侧日记列表 -->
+    <div class="left-panel" :style="{ width: leftWidth + 'px' }">
+      <DiaryList
+        ref="diaryListRef"
+        :selected-id="existingEntryId"
+        @select="handleSelectEntry"
+        @create="handleCreate"
+      />
+    </div>
+
+    <!-- 可拖拽分割线 -->
+    <div class="resize-handle" @mousedown="startResize" />
+
+    <!-- 右侧编辑区 -->
+    <div class="right-panel">
+      <div class="editor-area">
+        <!-- 标题 + 日期 -->
+        <div class="title-row">
+          <input
+            v-model="diaryTitle"
+            class="title-input"
+            placeholder="无标题"
+            @input="scheduleSave"
+          />
+          <span class="date-label">{{ currentDate }}</span>
+        </div>
+
+        <!-- 心情选择 -->
+        <div class="mood-row">
+          <button
+            v-for="mood in moods"
+            :key="mood.value"
+            class="mood-btn"
+            :class="{ active: selectedMood === mood.value }"
+            @click="switchMood(mood.value)"
+          >
+            {{ mood.emoji }} {{ mood.label }}
+          </button>
+        </div>
+
+        <div class="editor-body">
+          <DiaryEditor
+            ref="diaryEditorRef"
+            v-model="diaryContent"
+            @update:model-value="scheduleSave"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import type { DiaryEntry, Mood } from '../../../../types/model'
+import DiaryList from '../../components/DiaryList.vue'
+import DiaryEditor from '../../components/DiaryEditor.vue'
+
+interface MoodOption {
+  value: Mood
+  label: string
+  emoji: string
+}
+
+const moods: MoodOption[] = [
+  { value: 'happy', label: '开心', emoji: '😊' },
+  { value: 'calm', label: '平静', emoji: '😌' },
+  { value: 'sad', label: '难过', emoji: '😢' },
+  { value: 'excited', label: '兴奋', emoji: '🤩' },
+  { value: 'tired', label: '疲惫', emoji: '😴' }
+]
+
+const diaryListRef = ref<InstanceType<typeof DiaryList> | null>(null)
+const diaryEditorRef = ref<InstanceType<typeof DiaryEditor> | null>(null)
+
+const route = useRoute()
+const selectedMood = ref<Mood>('calm')
+const diaryTitle = ref('')
+const diaryContent = ref('')
+const existingEntryId = ref<string | null>(null)
+const selectedDate = ref<Date>(new Date())
+
+// ========== 可拖拽分割线 ==========
+const leftWidth = ref(280)
+const MIN_LEFT = 200
+const MAX_LEFT = 480
+
+// 用于清理的事件处理函数引用
+let resizeMoveHandler: ((ev: MouseEvent) => void) | null = null
+let resizeUpHandler: (() => void) | null = null
+
+function cleanupResizeListeners(): void {
+  if (resizeMoveHandler) {
+    document.removeEventListener('mousemove', resizeMoveHandler)
+    resizeMoveHandler = null
+  }
+  if (resizeUpHandler) {
+    document.removeEventListener('mouseup', resizeUpHandler)
+    resizeUpHandler = null
+  }
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+}
+
+function startResize(e: MouseEvent): void {
+  e.preventDefault()
+  const startX = e.clientX
+  const startWidth = leftWidth.value
+
+  // 先清理可能存在的旧监听器
+  cleanupResizeListeners()
+
+  resizeMoveHandler = (ev: MouseEvent): void => {
+    const delta = ev.clientX - startX
+    leftWidth.value = Math.min(MAX_LEFT, Math.max(MIN_LEFT, startWidth + delta))
+  }
+
+  resizeUpHandler = (): void => {
+    cleanupResizeListeners()
+  }
+
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('mousemove', resizeMoveHandler)
+  document.addEventListener('mouseup', resizeUpHandler)
+}
+
+// ========== 自动保存 ==========
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+const AUTO_SAVE_DELAY = 1500
+const isDirty = ref(false)
+const isReady = ref(false)
+
+function syncListEntry(): void {
+  if (existingEntryId.value) {
+    diaryListRef.value?.updateEntry(existingEntryId.value, {
+      title: diaryTitle.value,
+      content: diaryContent.value,
+      mood: selectedMood.value
+    })
+  }
+}
+
+function scheduleSave(): void {
+  if (!isReady.value) return
+  isDirty.value = true
+  syncListEntry()
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    doSave()
+  }, AUTO_SAVE_DELAY)
+}
+
+function switchMood(mood: Mood): void {
+  selectedMood.value = mood
+  scheduleSave()
+}
+
+async function doSave(): Promise<void> {
+  if (!isDirty.value) return
+  if (!diaryTitle.value.trim() && (!diaryContent.value || diaryContent.value === '<p></p>')) return
+
+  try {
+    const d = new Date(selectedDate.value)
+    d.setHours(12, 0, 0, 0)
+
+    const saved = await window.api.saveDiaryEntry({
+      id: existingEntryId.value ?? undefined,
+      title: diaryTitle.value,
+      content: diaryContent.value,
+      mood: selectedMood.value,
+      createdAt: existingEntryId.value ? undefined : d.getTime()
+    })
+    existingEntryId.value = saved.id
+    isDirty.value = false
+    diaryListRef.value?.refresh()
+  } catch (error) {
+    console.error('自动保存失败:', error)
+  }
+}
+
+async function flushSave(): Promise<void> {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  if (isDirty.value) {
+    await doSave()
+  }
+}
+
+// ========== 日记操作 ==========
+const currentDate = computed((): string => {
+  const d = selectedDate.value
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+  return `${year}年${month}月${day}日 ${weekdays[d.getDay()]}`
+})
+
+async function handleSelectEntry(entry: DiaryEntry): Promise<void> {
+  await flushSave()
+
+  // 检测是否是 lightweight 模式的数据（纯文本，不包含 HTML 标签）
+  // 如果 content 不包含 HTML 标签，说明是 plain_content，需要重新加载完整内容
+  const hasHtmlTags = /<[^>]+>/.test(entry.content)
+
+  if (!hasHtmlTags && entry.content) {
+    // lightweight 模式，需要加载完整内容
+    try {
+      const fullEntry = await window.api.getDiaryEntry(entry.id)
+      if (fullEntry) {
+        entry = fullEntry
+      }
+    } catch (error) {
+      console.error('加载完整日记内容失败:', error)
+    }
+  }
+
+  existingEntryId.value = entry.id
+  diaryTitle.value = entry.title
+  diaryContent.value = entry.content
+  selectedMood.value = entry.mood
+  selectedDate.value = new Date(entry.createdAt)
+  isDirty.value = false
+}
+
+async function handleCreate(dateStr?: string): Promise<void> {
+  await flushSave()
+  if (dateStr) {
+    await loadOrCreateForDate(dateStr)
+  } else {
+    existingEntryId.value = null
+    diaryTitle.value = ''
+    diaryContent.value = ''
+    selectedMood.value = 'calm'
+    const dateParam = route.query.date as string | undefined
+    selectedDate.value = dateParam ? new Date(dateParam + 'T12:00:00') : new Date()
+    isDirty.value = false
+  }
+}
+
+// ========== 搜索跳转 + 关键词定位 ==========
+
+/**
+ * Scroll the editor to the first occurrence of any keyword in the content.
+ * Uses DOM TreeWalker to find text nodes, then scrolls the match into view
+ * with a temporary highlight effect.
+ */
+function scrollToKeyword(keyword: string): void {
+  const keywords = keyword.trim().split(/\s+/).filter(Boolean)
+  if (keywords.length === 0) return
+
+  // Wait for editor DOM to update
+  nextTick(() => {
+    setTimeout(() => {
+      const editorEl = diaryEditorRef.value?.$el as HTMLElement | undefined
+      if (!editorEl) return
+
+      const tiptapEl = editorEl.querySelector('.tiptap') as HTMLElement | null
+      if (!tiptapEl) return
+
+      // Walk all text nodes to find the first keyword match
+      const walker = document.createTreeWalker(tiptapEl, NodeFilter.SHOW_TEXT)
+      let foundNode: Text | null = null
+
+      outer: while (walker.nextNode()) {
+        const textNode = walker.currentNode as Text
+        const text = textNode.textContent?.toLowerCase() || ''
+        for (const kw of keywords) {
+          const idx = text.indexOf(kw.toLowerCase())
+          if (idx !== -1) {
+            foundNode = textNode
+            break outer
+          }
+        }
+      }
+
+      if (!foundNode) return
+
+      // 直接滚动到父元素，避免修改 DOM 结构干扰 Tiptap
+      const parentEl = foundNode.parentElement
+      if (parentEl) {
+        parentEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+        // 使用 CSS 类添加临时高亮效果，而不是修改 DOM 结构
+        const originalBg = parentEl.style.background
+        const originalTransition = parentEl.style.transition
+        parentEl.style.transition = 'background 0.3s ease'
+        parentEl.style.background = 'rgba(102, 126, 234, 0.15)'
+
+        setTimeout(() => {
+          parentEl.style.background = originalBg
+          setTimeout(() => {
+            parentEl.style.transition = originalTransition
+          }, 300)
+        }, 1500)
+      }
+    }, 200) // Small delay to let Tiptap render content
+  })
+}
+// 从搜索结果跳转
+async function loadEntryById(id: string, keyword?: string): Promise<void> {
+  try {
+    const entry = await window.api.getDiaryEntry(id)
+    if (entry) {
+      await handleSelectEntry(entry)
+      if (keyword) {
+        scrollToKeyword(keyword)
+      }
+    }
+  } catch (error) {
+    console.error('加载日记失败:', error)
+  }
+}
+
+// 从日历跳转：加载指定日期的日记，若无则初始化为该日期的新日记
+async function loadOrCreateForDate(dateStr: string): Promise<void> {
+  await flushSave()
+
+  selectedDate.value = new Date(dateStr + 'T12:00:00')
+  try {
+    const entry = await window.api.getDiaryByDate(dateStr)
+    if (entry) {
+      existingEntryId.value = entry.id
+      diaryTitle.value = entry.title
+      diaryContent.value = entry.content
+      selectedMood.value = entry.mood
+      selectedDate.value = new Date(entry.createdAt)
+    } else {
+      existingEntryId.value = null
+      diaryTitle.value = ''
+      diaryContent.value = ''
+      selectedMood.value = 'calm'
+    }
+    isDirty.value = false
+  } catch (error) {
+    console.error('加载日记失败:', error)
+  }
+}
+
+async function handleRouteQuery(query: Record<string, unknown>): Promise<void> {
+  const id = query.id as string | undefined
+  const keyword = query.keyword as string | undefined
+  const date = query.date as string | undefined
+
+  if (id) {
+    await loadEntryById(id, keyword)
+  } else if (date) {
+    await loadOrCreateForDate(date)
+  }
+}
+
+onMounted(() => {
+  handleRouteQuery(route.query as Record<string, unknown>)
+  nextTick(() => {
+    isReady.value = true
+  })
+})
+
+watch(
+  () => route.query,
+  (query) => {
+    if (route.path === '/today') {
+      handleRouteQuery(query as Record<string, unknown>)
+    }
+  }
+)
+
+onBeforeUnmount(() => {
+  if (saveTimer) clearTimeout(saveTimer)
+  // 清理可能残留的 resize 事件监听器
+  cleanupResizeListeners()
+  // 离开页面时异步保存
+  void flushSave().catch((error) => {
+    console.error('离开页面保存失败:', error)
+  })
+})
+</script>
+
+<style scoped>
+.today-page {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.left-panel {
+  flex-shrink: 0;
+  height: 100%;
+  min-width: 200px;
+  max-width: 480px;
+}
+
+.resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 1px;
+  width: 2px;
+  background: var(--n-border-color, rgba(0, 0, 0, 0.09));
+  transition: background 0.15s;
+}
+
+.resize-handle:hover::after,
+.resize-handle:active::after {
+  background: #667eea;
+  width: 3px;
+  left: 0;
+}
+
+.right-panel {
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.editor-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 28px 48px 0;
+}
+
+.title-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--n-text-color, #37352f);
+  background: transparent;
+  font-family: inherit;
+  line-height: 1.2;
+}
+
+.title-input::placeholder {
+  color: var(--n-text-color-3, rgba(55, 53, 47, 0.3));
+}
+
+html.dark .title-input::placeholder {
+  color: #C1BEBE61;
+}
+
+.date-label {
+  font-size: 13px;
+  color: var(--n-text-color-3, #999);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.mood-row {
+  display: flex;
+  gap: 6px;
+  padding: 12px 48px 8px;
+  flex-wrap: wrap;
+}
+
+.mood-btn {
+  padding: 3px 12px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: var(--n-color-modal, rgba(0, 0, 0, 0.03));
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--n-text-color-2, #666);
+  transition: all 0.15s ease;
+}
+
+.mood-btn:hover {
+  background: rgba(102, 126, 234, 0.08);
+}
+
+.mood-btn.active {
+  background: rgba(102, 126, 234, 0.1);
+  border-color: rgba(102, 126, 234, 0.4);
+  color: #667eea;
+  font-weight: 600;
+}
+
+.editor-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.editor-body :deep(.diary-editor-wrapper) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.editor-body :deep(.editor-scroll) {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+@media (max-width: 768px) {
+  .today-page {
+    flex-direction: column;
+  }
+
+  .left-panel {
+    width: 100% !important;
+    min-width: unset;
+    max-width: unset;
+    height: 200px;
+  }
+
+  .resize-handle {
+    display: none;
+  }
+
+  .title-row,
+  .mood-row {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}
+</style>
