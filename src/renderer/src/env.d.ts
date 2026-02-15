@@ -7,10 +7,17 @@ import type {
   DiaryListResult,
   SearchParams,
   HomePageStats,
-  AttachmentInfo
+  AttachmentInfo,
+  Archive
 } from '../../types/model'
 
 interface DiaryAPI {
+  // 档案
+  getArchives(params?: { type?: string; search?: string }): Promise<Archive[]>
+  getArchive(id: string): Promise<Archive | null>
+  saveArchive(archive: Partial<Archive>): Promise<Archive>
+  deleteArchive(id: string): Promise<void>
+
   // 日记
   getDiaryEntries(params: {
     limit?: number
@@ -51,9 +58,7 @@ interface DiaryAPI {
   getStats(): Promise<HomePageStats>
 
   // 图片保存（将 base64 转换为文件）
-  saveImage(
-    base64Data: string
-  ): Promise<{
+  saveImage(base64Data: string): Promise<{
     success: boolean
     id?: string
     path?: string

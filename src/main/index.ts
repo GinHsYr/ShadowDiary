@@ -22,12 +22,20 @@ import {
   getDiaryByDate,
   getDiaryDates,
   searchDiaries,
-  getStats
+  getStats,
+  getAllDiaryContents
 } from './database/diary'
+import { archives } from './database/archives'
 import { getAllTags } from './database/tags'
 import { addAttachment, deleteAttachment, getAttachments } from './database/attachments'
 import { getSetting, setSetting, getAllSettings } from './database/settings'
-import { saveImage, getImage, ensureImageDirs } from './utils/imageStorage'
+import {
+  saveImage,
+  getImage,
+  ensureImageDirs,
+  cleanupUnusedImages,
+  extractImageIds
+} from './utils/imageStorage'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -134,6 +142,18 @@ app.on('before-quit', () => {
 
 // ========== IPC Handlers ==========
 
+function collectAllUsedImageIds(): Set<string> {
+  const contents = getAllDiaryContents()
+  const usedIds = new Set<string>()
+  for (const content of contents) {
+    const ids = extractImageIds(content)
+    for (const id of ids) {
+      usedIds.add(id)
+    }
+  }
+  return usedIds
+}
+
 function registerIpcHandlers(): void {
   // 日记 CRUD
   ipcMain.handle('diary:list', (_event, params) => {
@@ -148,8 +168,13 @@ function registerIpcHandlers(): void {
     return saveDiaryEntry(entry)
   })
 
-  ipcMain.handle('diary:delete', (_event, id: string) => {
-    return deleteDiaryEntry(id)
+  ipcMain.handle('diary:delete', async (_event, id: string) => {
+    const result = deleteDiaryEntry(id)
+    if (result) {
+      const usedIds = collectAllUsedImageIds()
+      await cleanupUnusedImages(usedIds)
+    }
+    return result
   })
 
   ipcMain.handle('diary:getByDate', (_event, dateStr: string) => {
@@ -163,6 +188,23 @@ function registerIpcHandlers(): void {
   // 搜索
   ipcMain.handle('diary:search', (_event, params) => {
     return searchDiaries(params)
+  })
+
+  // 档案
+  ipcMain.handle('archives:list', (_event, params) => {
+    return archives.list(params)
+  })
+
+  ipcMain.handle('archives:get', (_event, id: string) => {
+    return archives.get(id)
+  })
+
+  ipcMain.handle('archives:save', (_event, archive) => {
+    return archives.save(archive)
+  })
+
+  ipcMain.handle('archives:delete', (_event, id: string) => {
+    return archives.delete(id)
   })
 
   // 标签
@@ -209,6 +251,18 @@ function registerIpcHandlers(): void {
       return { success: true, ...result }
     } catch (error) {
       console.error('保存图片失败:', error)
+      return { success: false, error: String(error) }
+    }
+  })
+
+  // 清理未使用的图片
+  ipcMain.handle('image:cleanup', async () => {
+    try {
+      const usedIds = collectAllUsedImageIds()
+      await cleanupUnusedImages(usedIds)
+      return { success: true }
+    } catch (error) {
+      console.error('清理图片失败:', error)
       return { success: false, error: String(error) }
     }
   })

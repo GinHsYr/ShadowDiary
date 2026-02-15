@@ -20,6 +20,13 @@ const api = {
   getDiaryByDate: (dateStr: string) => ipcRenderer.invoke('diary:getByDate', dateStr),
   getDiaryDates: (yearMonth: string) => ipcRenderer.invoke('diary:getDates', yearMonth),
 
+  // 档案
+  getArchives: (params?: { type?: string; search?: string }) =>
+    ipcRenderer.invoke('archives:list', params),
+  getArchive: (id: string) => ipcRenderer.invoke('archives:get', id),
+  saveArchive: (archive: any) => ipcRenderer.invoke('archives:save', archive),
+  deleteArchive: (id: string) => ipcRenderer.invoke('archives:delete', id),
+
   // 搜索
   searchDiaries: (params: {
     keyword?: string
@@ -50,6 +57,9 @@ const api = {
 
   // 图片保存（将 base64 转换为文件）
   saveImage: (base64Data: string) => ipcRenderer.invoke('image:save', base64Data),
+
+  // 清理未使用的图片
+  cleanupImages: () => ipcRenderer.invoke('image:cleanup'),
 
   // 图片选择（编辑器插入图片）
   selectImage: () => ipcRenderer.invoke('select-image'),

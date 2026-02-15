@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { join } from 'path'
-import { writeFile, mkdir, readFile, unlink } from 'fs/promises'
+import { writeFile, mkdir, readFile, unlink, readdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { randomUUID } from 'crypto'
 import sharp from 'sharp'
@@ -30,7 +30,9 @@ export async function ensureImageDirs(): Promise<void> {
 }
 
 // 保存图片并生成缩略图
-export async function saveImage(base64Data: string): Promise<{ id: string; path: string; thumbnailPath: string }> {
+export async function saveImage(
+  base64Data: string
+): Promise<{ id: string; path: string; thumbnailPath: string }> {
   await ensureImageDirs()
 
   // 解析 base64 数据
@@ -121,7 +123,20 @@ export function extractImageIds(html: string): string[] {
 }
 
 // 清理未使用的图片
-export async function cleanupUnusedImages(_usedIds: Set<string>): Promise<void> {
-  // 这个功能可以定期运行，清理不再被任何日记引用的图片
-  // 暂时留空，后续可以实现
+export async function cleanupUnusedImages(usedIds: Set<string>): Promise<void> {
+  await ensureImageDirs()
+
+  const imageDir = getImageDir()
+  const files = await readdir(imageDir)
+
+  for (const file of files) {
+    // 提取图片 ID (文件名格式: {uuid}.{ext})
+    const match = file.match(/^([a-f0-9-]+)\.\w+$/)
+    if (!match) continue
+
+    const id = match[1]
+    if (!usedIds.has(id)) {
+      await deleteImage(file)
+    }
+  }
 }

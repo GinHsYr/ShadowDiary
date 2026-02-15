@@ -120,6 +120,30 @@ const migrations: Migration[] = [
       DROP TRIGGER IF EXISTS diary_fts_delete;
       DROP TABLE IF EXISTS diary_fts;
     `)
+  },
+
+  // Version 4: Add archives table
+  (db) => {
+    db.exec(`
+      CREATE TABLE archives (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        alias       TEXT,
+        description TEXT,
+        type        TEXT NOT NULL DEFAULT 'other',
+        main_image  TEXT,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      );
+
+      CREATE INDEX idx_archives_type ON archives(type);
+      CREATE INDEX idx_archives_name ON archives(name);
+    `)
+  },
+
+  // Version 5: Add images column to archives (JSON array for multiple images)
+  (db) => {
+    db.exec(`ALTER TABLE archives ADD COLUMN images TEXT DEFAULT '[]'`)
   }
 ]
 

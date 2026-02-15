@@ -6,7 +6,8 @@ import {
   SettingsOutline,
   Add,
   CloudUploadOutline,
-  PencilOutline
+  PencilOutline,
+  FolderOpenOutline
 } from '@vicons/ionicons5'
 import { useUserStore } from '../stores/user'
 import { useRouter, useRoute } from 'vue-router'
@@ -47,6 +48,11 @@ const menuOptions = [
     icon: () => h(NIcon, null, () => h(PencilOutline))
   },
   {
+    label: '档案',
+    key: 'archives',
+    icon: () => h(NIcon, null, () => h(FolderOpenOutline))
+  },
+  {
     label: '设置',
     key: 'settings',
     icon: () => h(NIcon, null, () => h(SettingsOutline))
@@ -59,6 +65,7 @@ const activeKey = computed(() => {
   if (path.startsWith('/dashboard')) return 'dashboard'
   if (path.startsWith('/today')) return 'today'
   if (path.startsWith('/calendar')) return 'calendar'
+  if (path.startsWith('/archives')) return 'archives'
   if (path.startsWith('/settings')) return 'settings'
   return 'dashboard'
 })

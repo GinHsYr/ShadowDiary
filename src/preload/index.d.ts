@@ -4,12 +4,23 @@ import type {
   DiaryListResult,
   SearchParams,
   HomePageStats,
-  AttachmentInfo
+  AttachmentInfo,
+  Archive
 } from '../types/model'
 
 interface DiaryAPI {
+  // 档案
+  getArchives(params?: { type?: string; search?: string }): Promise<Archive[]>
+  getArchive(id: string): Promise<Archive | null>
+  saveArchive(archive: Partial<Archive>): Promise<Archive>
+  deleteArchive(id: string): Promise<void>
+
   // 日记
-  getDiaryEntries(params: { limit?: number; offset?: number; lightweight?: boolean }): Promise<DiaryListResult>
+  getDiaryEntries(params: {
+    limit?: number
+    offset?: number
+    lightweight?: boolean
+  }): Promise<DiaryListResult>
   getDiaryEntry(id: string): Promise<DiaryEntry | null>
   saveDiaryEntry(entry: {
     id?: string
@@ -44,7 +55,18 @@ interface DiaryAPI {
   getStats(): Promise<HomePageStats>
 
   // 图片保存（将 base64 转换为文件）
-  saveImage(base64Data: string): Promise<{ success: boolean; id?: string; path?: string; thumbnailPath?: string; error?: string }>
+  saveImage(
+    base64Data: string
+  ): Promise<{
+    success: boolean
+    id?: string
+    path?: string
+    thumbnailPath?: string
+    error?: string
+  }>
+
+  // 清理未使用的图片
+  cleanupImages(): Promise<{ success: boolean; error?: string }>
 
   // 图片选择
   selectImage(): Promise<{ canceled: boolean; dataUrl?: string }>

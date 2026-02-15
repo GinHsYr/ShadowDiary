@@ -325,3 +325,9 @@ export function getStats(): HomePageStats {
 
   return { totalEntries, currentStreak, moodMap }
 }
+
+export function getAllDiaryContents(): string[] {
+  const db = getDatabase()
+  const rows = db.prepare('SELECT content FROM diary_entries').all() as { content: string }[]
+  return rows.map((r) => r.content)
+}

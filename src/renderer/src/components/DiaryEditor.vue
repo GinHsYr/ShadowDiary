@@ -1,11 +1,29 @@
 <template>
-  <div class="diary-editor-wrapper">
+  <div class="diary-editor-wrapper" @contextmenu="handleContextMenu">
     <froala v-model:value="content" :tag="'textarea'" :config="editorConfig" />
+    <n-dropdown
+      placement="bottom-start"
+      trigger="manual"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      :options="contextMenuOptions"
+      :show="showContextMenu"
+      @select="handleContextMenuSelect"
+      @clickoutside="showContextMenu = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, h } from 'vue'
+import { NDropdown, NIcon } from 'naive-ui'
+import {
+  CopyOutline,
+  CutOutline,
+  ClipboardOutline,
+  TextOutline,
+  RemoveCircleOutline
+} from '@vicons/ionicons5'
 import { useThemeStore } from '@renderer/stores/themes'
 
 const themeStore = useThemeStore()
@@ -22,6 +40,123 @@ const emit = defineEmits<{
 const content = ref(props.modelValue || '')
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const editorInstance = ref<any>(null)
+
+// 右键菜单状态
+const showContextMenu = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+
+// 渲染图标
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const renderIcon = (icon: any) => {
+  return () => h(NIcon, null, { default: () => h(icon) })
+}
+
+// 右键菜单选项
+const contextMenuOptions = computed(() => [
+  {
+    label: '剪切',
+    key: 'cut',
+    icon: renderIcon(CutOutline)
+  },
+  {
+    label: '复制',
+    key: 'copy',
+    icon: renderIcon(CopyOutline)
+  },
+  {
+    label: '粘贴',
+    key: 'paste',
+    icon: renderIcon(ClipboardOutline)
+  },
+  { type: 'divider', key: 'd1' },
+  {
+    label: '加粗',
+    key: 'bold',
+    icon: renderIcon(TextOutline)
+  },
+  {
+    label: '斜体',
+    key: 'italic',
+    icon: renderIcon(TextOutline)
+  },
+  {
+    label: '下划线',
+    key: 'underline',
+    icon: renderIcon(TextOutline)
+  },
+  {
+    label: '删除线',
+    key: 'strikethrough',
+    icon: renderIcon(TextOutline)
+  },
+  { type: 'divider', key: 'd2' },
+  {
+    label: '清除格式',
+    key: 'clearFormatting',
+    icon: renderIcon(RemoveCircleOutline)
+  }
+])
+
+// 处理右键菜单
+const handleContextMenu = (e: MouseEvent): void => {
+  // 检查是否在编辑区域内
+  const target = e.target as HTMLElement
+  if (!target.closest('.fr-element')) {
+    return
+  }
+
+  e.preventDefault()
+  showContextMenu.value = false
+
+  // 延迟显示以确保位置正确
+  setTimeout(() => {
+    contextMenuX.value = e.clientX
+    contextMenuY.value = e.clientY
+    showContextMenu.value = true
+  }, 0)
+}
+
+// 处理菜单选择
+const handleContextMenuSelect = async (key: string): Promise<void> => {
+  showContextMenu.value = false
+
+  if (!editorInstance.value) return
+
+  const editor = editorInstance.value
+
+  switch (key) {
+    case 'cut':
+      document.execCommand('cut')
+      break
+    case 'copy':
+      document.execCommand('copy')
+      break
+    case 'paste':
+      try {
+        const text = await navigator.clipboard.readText()
+        editor.html.insert(text)
+      } catch {
+        document.execCommand('paste')
+      }
+      break
+    case 'bold':
+      editor.commands.bold()
+      break
+    case 'italic':
+      editor.commands.italic()
+      break
+    case 'underline':
+      editor.commands.underline()
+      break
+    case 'strikethrough':
+      editor.commands.strikeThrough()
+      break
+    case 'clearFormatting':
+      editor.commands.clearFormatting()
+      break
+  }
+}
 
 // 将文件转换为 base64
 const fileToBase64 = (file: File): Promise<string> => {
@@ -84,6 +219,11 @@ const editorConfig = {
   height: '100%',
   placeholderText: '输入内容...',
   charCounterCount: false,
+  // 右键菜单配置
+  shortcutsEnabled: ['bold', 'italic', 'underline'],
+  multiLine: true,
+  // 文本选中时的编辑选项
+  textEditButtons: ['bold', 'italic', 'underline', 'fontSize', 'textColor', 'clearFormatting'],
   toolbarButtons: [
     'bold',
     'italic',

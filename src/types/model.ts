@@ -48,3 +48,17 @@ export interface DiaryListResult {
   entries: DiaryEntry[]
   total: number
 }
+
+export type ArchiveType = 'person' | 'object' | 'other'
+
+export interface Archive {
+  id: string
+  name: string
+  aliases: string[]
+  description?: string
+  type: ArchiveType
+  mainImage?: string
+  images: string[]
+  createdAt: number
+  updatedAt: number
+}
