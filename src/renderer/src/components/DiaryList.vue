@@ -188,12 +188,12 @@ defineExpose({ refresh, updateEntry })
 }
 
 .diary-item:hover {
-  background: rgba(102, 126, 234, 0.06);
+  background: rgba(16, 185, 129, 0.06);
 }
 
 .diary-item.active {
-  background: rgba(102, 126, 234, 0.12);
-  box-shadow: inset 3px 0 0 #667eea;
+  background: rgba(16, 185, 129, 0.12);
+  box-shadow: inset 3px 0 0 #10b981;
 }
 
 .item-header {

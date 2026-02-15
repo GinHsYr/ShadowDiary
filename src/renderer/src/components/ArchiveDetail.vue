@@ -4,12 +4,7 @@
       <!-- 主图片上传区域 -->
       <div class="image-section">
         <div class="image-upload" @click="selectMainImage">
-          <n-avatar
-            v-if="form.mainImage"
-            :src="form.mainImage"
-            :size="120"
-            round
-          />
+          <n-avatar v-if="form.mainImage" :src="form.mainImage" :size="120" round />
           <div v-else class="image-placeholder">
             <n-icon :component="CameraOutline" :size="32" />
             <span>点击上传头像</span>
@@ -59,11 +54,7 @@
           <label class="form-label">其他图片</label>
           <div class="images-grid">
             <n-image-group>
-              <div
-                v-for="(img, idx) in form.images"
-                :key="idx"
-                class="image-item"
-              >
+              <div v-for="(img, idx) in form.images" :key="idx" class="image-item">
                 <n-image :src="img" object-fit="cover" />
                 <n-button
                   class="remove-btn"
@@ -88,17 +79,10 @@
 
     <!-- 底部操作栏 -->
     <div class="detail-footer">
-      <n-button v-if="isCreating" size="small" @click="$emit('cancelCreate')">
-        取消
-      </n-button>
-      <n-popconfirm
-        v-if="!isCreating && archiveId"
-        @positive-click="handleDelete"
-      >
+      <n-button v-if="isCreating" size="small" @click="$emit('cancelCreate')"> 取消 </n-button>
+      <n-popconfirm v-if="!isCreating && archiveId" @positive-click="handleDelete">
         <template #trigger>
-          <n-button type="error" size="small" ghost>
-            删除档案
-          </n-button>
+          <n-button type="error" size="small" ghost> 删除档案 </n-button>
         </template>
         确定要删除这个档案吗？
       </n-popconfirm>
@@ -433,8 +417,8 @@ defineExpose({ flushSave })
 }
 
 .image-add:hover {
-  border-color: #667eea;
-  color: #667eea;
+  border-color: #10b981;
+  color: #10b981;
 }
 
 .detail-footer {

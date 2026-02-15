@@ -291,7 +291,7 @@ function scrollToKeyword(keyword: string): void {
         const originalBg = parentEl.style.background
         const originalTransition = parentEl.style.transition
         parentEl.style.transition = 'background 0.3s ease'
-        parentEl.style.background = 'rgba(102, 126, 234, 0.15)'
+        parentEl.style.background = 'rgba(16, 185, 129, 0.15)'
 
         setTimeout(() => {
           parentEl.style.background = originalBg
@@ -418,7 +418,7 @@ onBeforeUnmount(() => {
 
 .resize-handle:hover::after,
 .resize-handle:active::after {
-  background: #667eea;
+  background: #10b981;
   width: 3px;
   left: 0;
 }
@@ -492,13 +492,13 @@ html.dark .title-input::placeholder {
 }
 
 .mood-btn:hover {
-  background: rgba(102, 126, 234, 0.08);
+  background: rgba(16, 185, 129, 0.08);
 }
 
 .mood-btn.active {
-  background: rgba(102, 126, 234, 0.1);
-  border-color: rgba(102, 126, 234, 0.4);
-  color: #667eea;
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #10b981;
   font-weight: 600;
 }
 

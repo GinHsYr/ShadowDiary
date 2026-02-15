@@ -219,8 +219,7 @@ const editorConfig = {
   height: '100%',
   placeholderText: '输入内容...',
   charCounterCount: false,
-  // 右键菜单配置
-  shortcutsEnabled: ['bold', 'italic', 'underline'],
+  shortcutsEnabled: ['bold', 'italic', 'underline', 'undo', 'redo'],
   multiLine: true,
   // 文本选中时的编辑选项
   textEditButtons: ['bold', 'italic', 'underline', 'fontSize', 'textColor', 'clearFormatting'],

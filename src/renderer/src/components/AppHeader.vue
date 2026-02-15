@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import {
+  NAvatar,
   NButton,
   NIcon,
   NInput,
@@ -29,7 +30,7 @@ import {
 } from '@vicons/ionicons5'
 import { ThemeMode, useThemeStore } from '../stores/themes'
 import { useRouter } from 'vue-router'
-import type { DiaryEntry, Mood } from '../../../types/model'
+import type { Archive, DiaryEntry, Mood } from '../../../types/model'
 
 const theme = useThemeStore()
 const router = useRouter()
@@ -38,6 +39,7 @@ const router = useRouter()
 const searchKeyword = ref('')
 const searchResults = ref<DiaryEntry[]>([])
 const searchTotal = ref(0)
+const archiveResults = ref<Archive[]>([])
 const showPopover = ref(false)
 const searching = ref(false)
 const isFocused = ref(false)
@@ -206,6 +208,7 @@ async function triggerSearch(keyword?: string): Promise<void> {
   if (!kw && !hasFilters) {
     searchResults.value = []
     searchTotal.value = 0
+    archiveResults.value = []
     showPopover.value = searchHistory.value.length > 0
     return
   }
@@ -221,9 +224,16 @@ async function triggerSearch(keyword?: string): Promise<void> {
       params.dateFrom = filterDateRange.value[0]
       params.dateTo = filterDateRange.value[1]
     }
-    const result = await window.api.searchDiaries(params as never)
-    searchResults.value = result.entries
-    searchTotal.value = result.total
+
+    // 同时搜索日记和档案
+    const [diaryResult, archives] = await Promise.all([
+      window.api.searchDiaries(params as never),
+      kw ? window.api.getArchives({ search: kw }) : Promise.resolve([])
+    ])
+
+    searchResults.value = diaryResult.entries
+    searchTotal.value = diaryResult.total
+    archiveResults.value = archives
     showPopover.value = true
   } catch (error) {
     console.error('搜索失败:', error)
@@ -240,6 +250,7 @@ const handleSearchInput = (value: string): void => {
   if (!value.trim() && !filterMood.value && !filterTags.value.length && !filterDateRange.value) {
     searchResults.value = []
     searchTotal.value = 0
+    archiveResults.value = []
     showPopover.value = searchHistory.value.length > 0
     return
   }
@@ -259,11 +270,23 @@ const goToEntry = (entry: DiaryEntry): void => {
   const query: Record<string, string> = { id: entry.id }
   if (kw) query.keyword = kw
   router.push({ path: '/today', query })
+  closeSearch()
+}
+
+/** Navigate to archive detail */
+const goToArchive = (archive: Archive): void => {
+  router.push({ path: '/archives', query: { id: archive.id } })
+  closeSearch()
+}
+
+/** Close search popover and reset state */
+function closeSearch(): void {
   showPopover.value = false
   showFilter.value = false
   searchKeyword.value = ''
   searchResults.value = []
   searchTotal.value = 0
+  archiveResults.value = []
 }
 
 const formatDate = (ts: number): string => {
@@ -427,6 +450,7 @@ onBeforeUnmount(() => {
                       searchKeyword = ''
                       searchResults = []
                       searchTotal = 0
+                      archiveResults = []
                       showPopover = searchHistory.length > 0
                     }
                   "
@@ -529,58 +553,110 @@ onBeforeUnmount(() => {
 
           <!-- 搜索结果 -->
           <div v-else class="search-results">
-            <!-- 结果计数 -->
-            <div v-if="searchResults.length > 0" class="result-count">
-              找到 {{ searchTotal }} 条相关日记
-              <span v-if="searchTotal > searchResults.length" class="result-hint">
-                （显示前 {{ searchResults.length }} 条）
-              </span>
-            </div>
+            <!-- 档案结果 -->
+            <template v-if="archiveResults.length > 0">
+              <div class="result-section-title">档案</div>
+              <n-list hoverable clickable size="small" class="archive-result-list">
+                <n-list-item
+                  v-for="archive in archiveResults.slice(0, 5)"
+                  :key="archive.id"
+                  @click="goToArchive(archive)"
+                >
+                  <template #prefix>
+                    <n-avatar
+                      :src="archive.mainImage || undefined"
+                      :size="28"
+                      round
+                      :style="{ background: archive.mainImage ? 'transparent' : '#e7f5ee' }"
+                    >
+                      <template v-if="!archive.mainImage">
+                        {{ archive.name.charAt(0) }}
+                      </template>
+                    </n-avatar>
+                  </template>
+                  <n-thing>
+                    <template #header>
+                      <span v-html="highlightText(archive.name, searchKeyword)" />
+                    </template>
+                    <template #description>
+                      <n-space size="small" align="center">
+                        <n-tag
+                          :type="archive.type === 'person' ? 'info' : archive.type === 'object' ? 'success' : 'warning'"
+                          size="tiny"
+                        >
+                          {{ archive.type === 'person' ? '人物' : archive.type === 'object' ? '物品' : '其他' }}
+                        </n-tag>
+                        <span
+                          v-if="archive.aliases?.length"
+                          class="archive-alias"
+                          v-html="highlightText(archive.aliases.join('、'), searchKeyword)"
+                        />
+                      </n-space>
+                    </template>
+                  </n-thing>
+                </n-list-item>
+              </n-list>
+              <div v-if="archiveResults.length > 5" class="result-more">
+                还有 {{ archiveResults.length - 5 }} 个档案
+              </div>
+            </template>
 
-            <n-list v-if="searchResults.length > 0" hoverable clickable size="small">
-              <n-list-item
-                v-for="(entry, index) in searchResults"
-                :key="entry.id"
-                :class="{ active: activeIndex === index }"
-                @click="goToEntry(entry)"
-              >
-                <n-thing>
-                  <template #header>
-                    <span v-html="highlightText(entry.title || '无标题', searchKeyword)" />
-                  </template>
-                  <template #description>
-                    <n-space size="small" style="margin-bottom: 4px" align="center">
-                      <n-tag size="tiny" :bordered="false">{{ formatDate(entry.createdAt) }}</n-tag>
-                      <n-tag size="tiny" type="success" :bordered="false">{{
-                        moodLabels[entry.mood] || entry.mood
-                      }}</n-tag>
-                      <n-tag
-                        v-for="tag in entry.tags.slice(0, 3)"
-                        :key="tag"
-                        size="tiny"
-                        type="info"
-                        :bordered="false"
-                      >
-                        {{ tag }}
-                      </n-tag>
-                      <span v-if="entry.tags.length > 3" class="more-tags"
-                        >+{{ entry.tags.length - 3 }}</span
-                      >
-                    </n-space>
-                    <div
-                      v-if="searchKeyword.trim()"
-                      class="content-snippet"
-                      v-html="
-                        highlightText(extractSnippet(entry.content, searchKeyword), searchKeyword)
-                      "
-                    />
-                  </template>
-                </n-thing>
-              </n-list-item>
-            </n-list>
+            <!-- 日记结果 -->
+            <template v-if="searchResults.length > 0 || activeFilterCount > 0">
+              <div v-if="archiveResults.length > 0" class="result-section-title">日记</div>
+              <div v-if="searchResults.length > 0" class="result-count">
+                找到 {{ searchTotal }} 条相关日记
+                <span v-if="searchTotal > searchResults.length" class="result-hint">
+                  （显示前 {{ searchResults.length }} 条）
+                </span>
+              </div>
+
+              <n-list v-if="searchResults.length > 0" hoverable clickable size="small">
+                <n-list-item
+                  v-for="(entry, index) in searchResults"
+                  :key="entry.id"
+                  :class="{ active: activeIndex === index }"
+                  @click="goToEntry(entry)"
+                >
+                  <n-thing>
+                    <template #header>
+                      <span v-html="highlightText(entry.title || '无标题', searchKeyword)" />
+                    </template>
+                    <template #description>
+                      <n-space size="small" style="margin-bottom: 4px" align="center">
+                        <n-tag size="tiny" :bordered="false">{{ formatDate(entry.createdAt) }}</n-tag>
+                        <n-tag size="tiny" type="success" :bordered="false">{{
+                          moodLabels[entry.mood] || entry.mood
+                        }}</n-tag>
+                        <n-tag
+                          v-for="tag in entry.tags.slice(0, 3)"
+                          :key="tag"
+                          size="tiny"
+                          type="info"
+                          :bordered="false"
+                        >
+                          {{ tag }}
+                        </n-tag>
+                        <span v-if="entry.tags.length > 3" class="more-tags"
+                          >+{{ entry.tags.length - 3 }}</span
+                        >
+                      </n-space>
+                      <div
+                        v-if="searchKeyword.trim()"
+                        class="content-snippet"
+                        v-html="
+                          highlightText(extractSnippet(entry.content, searchKeyword), searchKeyword)
+                        "
+                      />
+                    </template>
+                  </n-thing>
+                </n-list-item>
+              </n-list>
+            </template>
+
             <n-empty
-              v-else-if="!searching && (searchKeyword.trim() || activeFilterCount > 0)"
-              description="没有找到相关日记，换个关键词试试？"
+              v-if="!searching && searchResults.length === 0 && archiveResults.length === 0 && (searchKeyword.trim() || activeFilterCount > 0)"
+              description="没有找到相关内容，换个关键词试试？"
               size="small"
               style="padding: 24px 0"
             />
@@ -588,7 +664,7 @@ onBeforeUnmount(() => {
 
           <!-- 底部快捷键提示 -->
           <div
-            v-if="showPopover && (searchResults.length > 0 || showingHistory)"
+            v-if="showPopover && (searchResults.length > 0 || archiveResults.length > 0 || showingHistory)"
             class="search-footer"
           >
             <span class="shortcut-hint">
@@ -773,8 +849,15 @@ onBeforeUnmount(() => {
 }
 
 /* Search results */
-.result-count {
+.result-section-title {
   padding: 8px 14px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--n-text-color-2, #666);
+}
+
+.result-count {
+  padding: 4px 14px;
   font-size: 12px;
   color: var(--n-text-color-3, #999);
 }
@@ -811,6 +894,23 @@ onBeforeUnmount(() => {
   color: var(--n-primary-color, #18a058);
   border-radius: 2px;
   padding: 0 1px;
+}
+
+/* Archive results */
+.archive-result-list {
+  margin-bottom: 8px;
+}
+
+.archive-alias {
+  font-size: 11px;
+  color: var(--n-text-color-3, #999);
+}
+
+.result-more {
+  padding: 4px 14px 8px;
+  font-size: 11px;
+  color: var(--n-text-color-4, #bbb);
+  text-align: center;
 }
 
 /* Footer shortcuts hint */

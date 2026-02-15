@@ -32,17 +32,39 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { NEmpty } from 'naive-ui'
 import type { Archive } from '../../../../types/model'
 import ArchiveList from '../../components/ArchiveList.vue'
 import ArchiveDetail from '../../components/ArchiveDetail.vue'
+
+const route = useRoute()
 
 const archiveListRef = ref<InstanceType<typeof ArchiveList> | null>(null)
 const archiveDetailRef = ref<InstanceType<typeof ArchiveDetail> | null>(null)
 
 const selectedArchiveId = ref<string | null>(null)
 const isCreating = ref(false)
+
+// 监听路由参数变化，支持从全局搜索跳转
+watch(
+  () => route.query.id,
+  (id) => {
+    if (id && typeof id === 'string') {
+      selectedArchiveId.value = id
+      isCreating.value = false
+    }
+  }
+)
+
+onMounted(() => {
+  // 初始化时检查路由参数
+  const id = route.query.id
+  if (id && typeof id === 'string') {
+    selectedArchiveId.value = id
+  }
+})
 
 // ========== 可拖拽分割线 ==========
 const leftWidth = ref(280)
@@ -159,7 +181,7 @@ onBeforeUnmount(() => {
 
 .resize-handle:hover::after,
 .resize-handle:active::after {
-  background: #667eea;
+  background: #10b981;
   width: 3px;
   left: 0;
 }

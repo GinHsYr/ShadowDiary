@@ -42,7 +42,7 @@
           :src="archive.mainImage || undefined"
           :size="40"
           round
-          :style="{ background: archive.mainImage ? 'transparent' : '#667eea20' }"
+          :style="{ background: archive.mainImage ? 'transparent' : '#10b98120' }"
         >
           <template v-if="!archive.mainImage">
             {{ archive.name.charAt(0) }}
@@ -50,7 +50,9 @@
         </n-avatar>
         <div class="item-info">
           <div class="item-name">{{ archive.name }}</div>
-          <div v-if="archive.aliases?.length" class="item-alias">{{ archive.aliases.join('、') }}</div>
+          <div v-if="archive.aliases?.length" class="item-alias">
+            {{ archive.aliases.join('、') }}
+          </div>
         </div>
         <n-tag :type="typeTagMap[archive.type]" size="tiny" round>
           {{ typeLabels[archive.type] }}
@@ -77,7 +79,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { NInput, NIcon, NTag, NAvatar, NButton, NSpin, NEmpty } from 'naive-ui'
+import { NAvatar, NButton, NEmpty, NIcon, NInput, NSpin, NTag } from 'naive-ui'
 import { SearchOutline } from '@vicons/ionicons5'
 import type { Archive, ArchiveType } from '../../../types/model'
 
@@ -133,11 +135,10 @@ async function loadArchives(): Promise<void> {
 
   loading.value = true
   try {
-    const result = await window.api.getArchives({
+    archives.value = await window.api.getArchives({
       search: searchKeyword.value || undefined,
       type: selectedType.value === 'all' ? undefined : selectedType.value
     })
-    archives.value = result
   } catch (error) {
     console.error('加载档案列表失败:', error)
   } finally {
@@ -194,12 +195,12 @@ defineExpose({ refresh })
 }
 
 .archive-item:hover {
-  background: rgba(102, 126, 234, 0.06);
+  background: rgba(16, 185, 129, 0.06);
 }
 
 .archive-item.active {
-  background: rgba(102, 126, 234, 0.12);
-  box-shadow: inset 3px 0 0 #667eea;
+  background: rgba(16, 185, 129, 0.12);
+  box-shadow: inset 3px 0 0 #10b981;
 }
 
 .item-info {
