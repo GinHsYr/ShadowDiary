@@ -10,8 +10,8 @@ asarUnpack:
 compression: maximum
 win:
   executableName: ShadowDiary
+  artifactName: ShadowDiary-${version}-${os}-${arch}-setup.${ext}
 nsis:
-  artifactName: 影迹-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
@@ -28,7 +28,7 @@ mac:
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
 dmg:
-  artifactName: 影迹-${version}.${ext}
+  artifactName: ShadowDiary-${version}-${os}-${arch}.${ext}
 linux:
   target:
     - target: AppImage
@@ -40,7 +40,7 @@ linux:
   maintainer: electronjs.org
   category: Utility
 appImage:
-  artifactName: 影迹-${version}.${ext}
+  artifactName: ShadowDiary-${version}-${os}-${arch}.${ext}
 npmRebuild: true
 publish:
   provider: github

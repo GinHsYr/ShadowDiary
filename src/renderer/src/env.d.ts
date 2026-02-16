@@ -6,6 +6,7 @@ import type {
   DiaryEntry,
   DiaryListResult,
   SearchParams,
+  SearchResult,
   HomePageStats,
   AttachmentInfo,
   Archive
@@ -39,7 +40,7 @@ interface DiaryAPI {
   getDiaryDates(yearMonth: string): Promise<string[]>
 
   // 搜索
-  searchDiaries(params: SearchParams): Promise<DiaryListResult>
+  searchDiaries(params: SearchParams): Promise<SearchResult>
 
   // 标签
   getAllTags(): Promise<{ id: number; name: string }[]>
