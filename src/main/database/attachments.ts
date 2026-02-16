@@ -90,7 +90,9 @@ export async function addAttachment(diaryId: string): Promise<AttachmentInfo | n
 
 export async function deleteAttachment(id: string): Promise<boolean> {
   const db = getDatabase()
-  const row = db.prepare('SELECT * FROM attachments WHERE id = ?').get(id) as AttachmentRow | undefined
+  const row = db.prepare('SELECT * FROM attachments WHERE id = ?').get(id) as
+    | AttachmentRow
+    | undefined
   if (!row) return false
 
   // Delete file

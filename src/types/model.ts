@@ -49,6 +49,12 @@ export interface DiaryListResult {
   total: number
 }
 
+export interface SearchResult {
+  entries: DiaryEntry[]
+  total: number
+  expandedKeywords?: string[] // 扩展后的关键词列表（包含档案别名）
+}
+
 export type ArchiveType = 'person' | 'object' | 'other'
 
 export interface Archive {

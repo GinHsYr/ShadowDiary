@@ -27,9 +27,11 @@ export const useThemeStore = defineStore('theme', {
     setMode(mode: ThemeMode) {
       this.mode = mode
       // 自动保存到数据库
-      window.api.setSetting('settings.theme', mode === ThemeMode.Dark ? 'dark' : 'light').catch((error) => {
-        console.error('保存主题设置失败:', error)
-      })
+      window.api
+        .setSetting('settings.theme', mode === ThemeMode.Dark ? 'dark' : 'light')
+        .catch((error) => {
+          console.error('保存主题设置失败:', error)
+        })
     },
 
     // 从数据库加载主题设置

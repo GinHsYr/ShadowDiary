@@ -40,6 +40,7 @@ const searchKeyword = ref('')
 const searchResults = ref<DiaryEntry[]>([])
 const searchTotal = ref(0)
 const archiveResults = ref<Archive[]>([])
+const expandedKeywords = ref<string[]>([]) // 扩展后的关键词（包含档案别名）
 const showPopover = ref(false)
 const searching = ref(false)
 const isFocused = ref(false)
@@ -141,9 +142,14 @@ function getKeywords(input: string): string[] {
 // --- Utility functions ---
 // stripHtml function removed - no longer needed with lightweight mode
 
-/** Highlight all keywords in text (supports multi-keyword) */
+/** Escape special regex characters */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** Highlight all keywords in text (supports multi-keyword and expanded keywords) */
 // 在 highlightText 函数中对输入进行 HTML 转义
-function highlightText(text: string, keyword: string): string {
+function highlightText(text: string, keyword: string, extraKeywords?: string[]): string {
   const escapeHtml = (str: string): string => {
     const map: Record<string, string> = {
       '&': '&amp;',
@@ -157,30 +163,55 @@ function highlightText(text: string, keyword: string): string {
   }
 
   const escapedText = escapeHtml(text)
-  const escapedKeyword = escapeHtml(keyword)
 
-  const keywords = escapedKeyword.trim().split(/\s+/).filter(Boolean)
+  // 收集所有需要高亮的关键词
+  const allKeywords = new Set<string>()
+
+  // 添加原始关键词
+  const originalKeywords = keyword.trim().split(/\s+/).filter(Boolean)
+  for (const kw of originalKeywords) {
+    allKeywords.add(escapeHtml(kw))
+  }
+
+  // 添加扩展的关键词（档案别名）
+  if (extraKeywords && extraKeywords.length > 0) {
+    for (const kw of extraKeywords) {
+      allKeywords.add(escapeHtml(kw))
+    }
+  }
+
   let result = escapedText
 
-  for (const kw of keywords) {
-    const regex = new RegExp(`(${kw})`, 'gi')
+  for (const kw of allKeywords) {
+    const regex = new RegExp(`(${escapeRegex(kw)})`, 'gi')
     result = result.replace(regex, '<mark>$1</mark>')
   }
 
   return result
 }
 /** Extract snippet around the first matching keyword */
-function extractSnippet(html: string, rawKeyword: string, around = 40): string {
+function extractSnippet(
+  html: string,
+  rawKeyword: string,
+  around = 40,
+  extraKeywords?: string[]
+): string {
   // lightweight 模式下 html 已经是纯文本
   const plain = html
-  const keywords = getKeywords(rawKeyword)
-  if (keywords.length === 0) return plain.slice(0, around * 2)
+
+  // 收集所有关键词（原始 + 扩展）
+  const allKeywords = [...getKeywords(rawKeyword)]
+  if (extraKeywords && extraKeywords.length > 0) {
+    allKeywords.push(...extraKeywords)
+  }
+
+  if (allKeywords.length === 0) return plain.slice(0, around * 2)
 
   // Find the earliest match among all keywords
   const lower = plain.toLowerCase()
   let bestIdx = -1
-  let bestKw = keywords[0]
-  for (const kw of keywords) {
+  let bestKw = allKeywords[0]
+  for (const kw of allKeywords) {
     const idx = lower.indexOf(kw.toLowerCase())
     if (idx !== -1 && (bestIdx === -1 || idx < bestIdx)) {
       bestIdx = idx
@@ -234,6 +265,8 @@ async function triggerSearch(keyword?: string): Promise<void> {
     searchResults.value = diaryResult.entries
     searchTotal.value = diaryResult.total
     archiveResults.value = archives
+    // 保存扩展后的关键词用于高亮
+    expandedKeywords.value = diaryResult.expandedKeywords || []
     showPopover.value = true
   } catch (error) {
     console.error('搜索失败:', error)
@@ -581,10 +614,22 @@ onBeforeUnmount(() => {
                     <template #description>
                       <n-space size="small" align="center">
                         <n-tag
-                          :type="archive.type === 'person' ? 'info' : archive.type === 'object' ? 'success' : 'warning'"
+                          :type="
+                            archive.type === 'person'
+                              ? 'info'
+                              : archive.type === 'object'
+                                ? 'success'
+                                : 'warning'
+                          "
                           size="tiny"
                         >
-                          {{ archive.type === 'person' ? '人物' : archive.type === 'object' ? '物品' : '其他' }}
+                          {{
+                            archive.type === 'person'
+                              ? '人物'
+                              : archive.type === 'object'
+                                ? '物品'
+                                : '其他'
+                          }}
                         </n-tag>
                         <span
                           v-if="archive.aliases?.length"
@@ -620,11 +665,17 @@ onBeforeUnmount(() => {
                 >
                   <n-thing>
                     <template #header>
-                      <span v-html="highlightText(entry.title || '无标题', searchKeyword)" />
+                      <span
+                        v-html="
+                          highlightText(entry.title || '无标题', searchKeyword, expandedKeywords)
+                        "
+                      />
                     </template>
                     <template #description>
                       <n-space size="small" style="margin-bottom: 4px" align="center">
-                        <n-tag size="tiny" :bordered="false">{{ formatDate(entry.createdAt) }}</n-tag>
+                        <n-tag size="tiny" :bordered="false">{{
+                          formatDate(entry.createdAt)
+                        }}</n-tag>
                         <n-tag size="tiny" type="success" :bordered="false">{{
                           moodLabels[entry.mood] || entry.mood
                         }}</n-tag>
@@ -645,7 +696,11 @@ onBeforeUnmount(() => {
                         v-if="searchKeyword.trim()"
                         class="content-snippet"
                         v-html="
-                          highlightText(extractSnippet(entry.content, searchKeyword), searchKeyword)
+                          highlightText(
+                            extractSnippet(entry.content, searchKeyword, 40, expandedKeywords),
+                            searchKeyword,
+                            expandedKeywords
+                          )
                         "
                       />
                     </template>
@@ -655,7 +710,12 @@ onBeforeUnmount(() => {
             </template>
 
             <n-empty
-              v-if="!searching && searchResults.length === 0 && archiveResults.length === 0 && (searchKeyword.trim() || activeFilterCount > 0)"
+              v-if="
+                !searching &&
+                searchResults.length === 0 &&
+                archiveResults.length === 0 &&
+                (searchKeyword.trim() || activeFilterCount > 0)
+              "
               description="没有找到相关内容，换个关键词试试？"
               size="small"
               style="padding: 24px 0"
@@ -664,7 +724,10 @@ onBeforeUnmount(() => {
 
           <!-- 底部快捷键提示 -->
           <div
-            v-if="showPopover && (searchResults.length > 0 || archiveResults.length > 0 || showingHistory)"
+            v-if="
+              showPopover &&
+              (searchResults.length > 0 || archiveResults.length > 0 || showingHistory)
+            "
             class="search-footer"
           >
             <span class="shortcut-hint">

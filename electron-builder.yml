@@ -6,7 +6,7 @@ files:
   - out/**
   - package.json
 asarUnpack:
-  - "**/*.node"
+  - '**/*.node'
 compression: maximum
 win:
   executableName: ShadowDiary

@@ -137,6 +137,8 @@ const handleCheckUpdate = async (): Promise<void> => {
   padding: 32px;
   max-width: 800px;
   margin: 0 auto;
+  height: 100%;
+  overflow: hidden;
 }
 
 .page-header {

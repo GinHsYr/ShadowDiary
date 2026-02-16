@@ -3,6 +3,7 @@ import type {
   DiaryEntry,
   DiaryListResult,
   SearchParams,
+  SearchResult,
   HomePageStats,
   AttachmentInfo,
   Archive
@@ -36,7 +37,7 @@ interface DiaryAPI {
   getDiaryDates(yearMonth: string): Promise<string[]>
 
   // 搜索
-  searchDiaries(params: SearchParams): Promise<DiaryListResult>
+  searchDiaries(params: SearchParams): Promise<SearchResult>
 
   // 标签
   getAllTags(): Promise<{ id: number; name: string }[]>
@@ -55,9 +56,7 @@ interface DiaryAPI {
   getStats(): Promise<HomePageStats>
 
   // 图片保存（将 base64 转换为文件）
-  saveImage(
-    base64Data: string
-  ): Promise<{
+  saveImage(base64Data: string): Promise<{
     success: boolean
     id?: string
     path?: string

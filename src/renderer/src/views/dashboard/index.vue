@@ -112,13 +112,25 @@ const calendarDays = computed((): CalendarDay[] => {
     const m = month === 0 ? 12 : month
     const y = month === 0 ? year - 1 : year
     const fullDate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    days.push({ date: d, fullDate, isCurrentMonth: false, isToday: fullDate === todayStr, hasDiary: diaryDates.value.has(fullDate) })
+    days.push({
+      date: d,
+      fullDate,
+      isCurrentMonth: false,
+      isToday: fullDate === todayStr,
+      hasDiary: diaryDates.value.has(fullDate)
+    })
   }
 
   // 当月
   for (let d = 1; d <= lastDay.getDate(); d++) {
     const fullDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    days.push({ date: d, fullDate, isCurrentMonth: true, isToday: fullDate === todayStr, hasDiary: diaryDates.value.has(fullDate) })
+    days.push({
+      date: d,
+      fullDate,
+      isCurrentMonth: true,
+      isToday: fullDate === todayStr,
+      hasDiary: diaryDates.value.has(fullDate)
+    })
   }
 
   // 下月填充（补满6行 = 42格）
@@ -127,7 +139,13 @@ const calendarDays = computed((): CalendarDay[] => {
     const m = month + 2 > 12 ? 1 : month + 2
     const y = month + 2 > 12 ? year + 1 : year
     const fullDate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    days.push({ date: d, fullDate, isCurrentMonth: false, isToday: fullDate === todayStr, hasDiary: diaryDates.value.has(fullDate) })
+    days.push({
+      date: d,
+      fullDate,
+      isCurrentMonth: false,
+      isToday: fullDate === todayStr,
+      hasDiary: diaryDates.value.has(fullDate)
+    })
   }
 
   return days
@@ -156,7 +174,20 @@ const goToToday = (): void => {
 const showYearMonthPicker = ref(false)
 const pickerYear = ref(new Date().getFullYear())
 
-const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
+const months = [
+  '1月',
+  '2月',
+  '3月',
+  '4月',
+  '5月',
+  '6月',
+  '7月',
+  '8月',
+  '9月',
+  '10月',
+  '11月',
+  '12月'
+]
 
 const pickerPrevYear = (): void => {
   pickerYear.value--
@@ -258,7 +289,9 @@ onBeforeUnmount(() => {
             class="ym-popover"
           >
             <template #trigger>
-              <span class="month-label clickable" @click="openYearMonthPicker">{{ monthLabel }}</span>
+              <span class="month-label clickable" @click="openYearMonthPicker">{{
+                monthLabel
+              }}</span>
             </template>
             <div class="ym-picker">
               <div class="ym-year-nav">
@@ -370,7 +403,9 @@ onBeforeUnmount(() => {
     <!-- 最近列表 -->
     <div class="list-header">
       <h3>最近回忆</h3>
-      <n-button text type="primary" size="small" @click="router.push('/calendar')">查看全部</n-button>
+      <n-button text type="primary" size="small" @click="router.push('/calendar')"
+        >查看全部</n-button
+      >
     </div>
 
     <n-list hoverable clickable>
@@ -383,7 +418,9 @@ onBeforeUnmount(() => {
           <template #description>
             <n-space size="small">
               <n-tag size="small" :bordered="false">{{ formatDate(item.createdAt) }}</n-tag>
-              <n-tag size="small" type="success" :bordered="false">{{ moodLabels[item.mood] || item.mood }}</n-tag>
+              <n-tag size="small" type="success" :bordered="false">{{
+                moodLabels[item.mood] || item.mood
+              }}</n-tag>
             </n-space>
           </template>
         </n-thing>
@@ -481,7 +518,9 @@ onBeforeUnmount(() => {
   font-size: 13px;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
   user-select: none;
 }
 
@@ -540,7 +579,9 @@ onBeforeUnmount(() => {
   height: 40px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s;
   gap: 2px;
 }
 

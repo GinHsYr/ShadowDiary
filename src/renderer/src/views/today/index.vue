@@ -7,6 +7,7 @@
         :selected-id="existingEntryId"
         @select="handleSelectEntry"
         @create="handleCreate"
+        @delete="handleDeleteEntry"
       />
     </div>
 
@@ -55,6 +56,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useDialog } from 'naive-ui'
 import type { DiaryEntry, Mood } from '../../../../types/model'
 import DiaryList from '../../components/DiaryList.vue'
 import DiaryEditor from '../../components/DiaryEditor.vue'
@@ -73,6 +75,7 @@ const moods: MoodOption[] = [
   { value: 'tired', label: '疲惫', emoji: '😴' }
 ]
 
+const dialog = useDialog()
 const diaryListRef = ref<InstanceType<typeof DiaryList> | null>(null)
 const diaryEditorRef = ref<InstanceType<typeof DiaryEditor> | null>(null)
 
@@ -242,6 +245,30 @@ async function handleCreate(dateStr?: string): Promise<void> {
     selectedDate.value = dateParam ? new Date(dateParam + 'T12:00:00') : new Date()
     isDirty.value = false
   }
+}
+
+async function handleDeleteEntry(entry: DiaryEntry): Promise<void> {
+  dialog.warning({
+    title: '删除确认',
+    content: `确定要删除「${entry.title || '无标题'}」吗？`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await window.api.deleteDiaryEntry(entry.id)
+        diaryListRef.value?.removeEntry(entry.id)
+        if (existingEntryId.value === entry.id) {
+          existingEntryId.value = null
+          diaryTitle.value = ''
+          diaryContent.value = ''
+          selectedMood.value = 'calm'
+          isDirty.value = false
+        }
+      } catch (error) {
+        console.error('删除日记失败:', error)
+      }
+    }
+  })
 }
 
 // ========== 搜索跳转 + 关键词定位 ==========
@@ -463,7 +490,7 @@ onBeforeUnmount(() => {
 }
 
 html.dark .title-input::placeholder {
-  color: #C1BEBE61;
+  color: #c1bebe61;
 }
 
 .date-label {

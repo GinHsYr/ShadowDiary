@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { getDatabase } from './index'
 import { stripHtmlToPlain } from './migrations'
-import type { DiaryEntry, Mood, SearchParams, HomePageStats } from '../../types/model'
+import type { DiaryEntry, Mood, SearchParams, HomePageStats, SearchResult } from '../../types/model'
 
 interface DiaryRow {
   id: string
@@ -197,7 +197,37 @@ export function getDiaryDates(yearMonth: string): string[] {
   return Array.from(dateSet)
 }
 
-export function searchDiaries(params: SearchParams): { entries: DiaryEntry[]; total: number } {
+// 根据关键词查找匹配的档案，返回该档案的所有名称（name + aliases）
+function expandKeywordWithArchiveAliases(keyword: string): string[] {
+  const db = getDatabase()
+  const lowerKw = keyword.toLowerCase()
+
+  // 查找 name 或 alias 包含该关键词的档案
+  const rows = db
+    .prepare('SELECT name, alias FROM archives WHERE LOWER(name) LIKE ? OR LOWER(alias) LIKE ?')
+    .all(`%${lowerKw}%`, `%${lowerKw}%`) as { name: string; alias: string | null }[]
+
+  const allNames = new Set<string>([keyword])
+
+  for (const row of rows) {
+    // 添加档案名称
+    allNames.add(row.name)
+    // 添加所有别名
+    if (row.alias) {
+      const aliases = row.alias
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+      for (const alias of aliases) {
+        allNames.add(alias)
+      }
+    }
+  }
+
+  return Array.from(allNames)
+}
+
+export function searchDiaries(params: SearchParams): SearchResult {
   const db = getDatabase()
   const limit = params.limit ?? 20
   const offset = params.offset ?? 0
@@ -210,13 +240,39 @@ export function searchDiaries(params: SearchParams): { entries: DiaryEntry[]; to
     ? 'e.id, e.title, e.mood, e.weather, e.created_at, e.updated_at, e.plain_content as content'
     : 'e.*'
 
+  // 收集所有扩展后的关键词用于前端高亮
+  const allExpandedKeywords = new Set<string>()
+
   // Keyword search: split by spaces for multi-keyword AND matching
+  // 每个关键词如果匹配到档案，则扩展为该档案的所有名称（OR 逻辑）
   if (params.keyword && params.keyword.trim()) {
     const keywords = params.keyword.trim().split(/\s+/).filter(Boolean)
     for (const kw of keywords) {
-      const likePattern = `%${kw}%`
-      conditions.push('(e.title LIKE ? COLLATE NOCASE OR e.plain_content LIKE ? COLLATE NOCASE)')
-      values.push(likePattern, likePattern)
+      // 扩展关键词：如果匹配档案，加入该档案的所有别名
+      const expandedKeywords = expandKeywordWithArchiveAliases(kw)
+
+      // 收集所有扩展的关键词
+      for (const ek of expandedKeywords) {
+        allExpandedKeywords.add(ek)
+      }
+
+      if (expandedKeywords.length === 1) {
+        // 没有匹配到档案，使用原始关键词
+        const likePattern = `%${kw}%`
+        conditions.push('(e.title LIKE ? COLLATE NOCASE OR e.plain_content LIKE ? COLLATE NOCASE)')
+        values.push(likePattern, likePattern)
+      } else {
+        // 匹配到档案，使用 OR 连接所有扩展的关键词
+        const orConditions: string[] = []
+        for (const expandedKw of expandedKeywords) {
+          const likePattern = `%${expandedKw}%`
+          orConditions.push(
+            '(e.title LIKE ? COLLATE NOCASE OR e.plain_content LIKE ? COLLATE NOCASE)'
+          )
+          values.push(likePattern, likePattern)
+        }
+        conditions.push(`(${orConditions.join(' OR ')})`)
+      }
     }
   }
 
@@ -257,7 +313,12 @@ export function searchDiaries(params: SearchParams): { entries: DiaryEntry[]; to
   const rows = db.prepare(querySql).all(...values, limit, offset) as DiaryRow[]
 
   const entries = rows.map((row) => rowToEntry(row, getTagsForDiary(row.id)))
-  return { entries, total }
+
+  // 只有当关键词被扩展时才返回 expandedKeywords
+  const expandedKeywords =
+    allExpandedKeywords.size > 0 ? Array.from(allExpandedKeywords) : undefined
+
+  return { entries, total, expandedKeywords }
 }
 
 export function getStats(): HomePageStats {

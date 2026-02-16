@@ -27,7 +27,12 @@ export const archives = {
     return rows.map((row: any) => ({
       id: row.id,
       name: row.name,
-      aliases: row.alias ? row.alias.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+      aliases: row.alias
+        ? row.alias
+            .split(',')
+            .map((s: string) => s.trim())
+            .filter(Boolean)
+        : [],
       description: row.description,
       type: row.type,
       mainImage: row.main_image,
@@ -45,7 +50,12 @@ export const archives = {
     return {
       id: row.id,
       name: row.name,
-      aliases: row.alias ? row.alias.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+      aliases: row.alias
+        ? row.alias
+            .split(',')
+            .map((s: string) => s.trim())
+            .filter(Boolean)
+        : [],
       description: row.description,
       type: row.type,
       mainImage: row.main_image,

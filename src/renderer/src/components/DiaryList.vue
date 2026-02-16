@@ -8,6 +8,7 @@
         class="diary-item"
         :class="{ active: entry.id === selectedId }"
         @click="$emit('select', entry)"
+        @contextmenu.prevent="handleContextMenu($event, entry)"
       >
         <div class="item-header">
           <span class="item-date">{{ formatDate(entry.createdAt) }}</span>
@@ -26,22 +27,32 @@
       </div>
     </div>
 
+    <!-- 右键菜单 -->
+    <n-dropdown
+      placement="bottom-start"
+      trigger="manual"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      :options="contextMenuOptions"
+      :show="showContextMenu"
+      @select="handleContextMenuSelect"
+      @clickoutside="showContextMenu = false"
+    />
+
     <!-- 新建按钮 -->
     <div class="list-footer">
-      <n-popover trigger="click" placement="top" :show="showDatePicker" @update:show="showDatePicker = $event">
+      <n-popover
+        trigger="click"
+        placement="top"
+        :show="showDatePicker"
+        @update:show="showDatePicker = $event"
+      >
         <template #trigger>
-          <n-button block type="primary" ghost size="small">
-            + 新建日记
-          </n-button>
+          <n-button block type="primary" ghost size="small"> + 新建日记 </n-button>
         </template>
         <div class="date-picker-popup">
           <p class="date-picker-label">选择日期</p>
-          <n-date-picker
-            v-model:value="newDiaryDate"
-            type="date"
-            :actions="[]"
-            panel
-          />
+          <n-date-picker v-model:value="newDiaryDate" type="date" :actions="[]" panel />
           <n-button
             type="primary"
             size="small"
@@ -59,7 +70,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { NButton, NSpin, NPopover, NDatePicker } from 'naive-ui'
+import { NButton, NSpin, NPopover, NDatePicker, NDropdown } from 'naive-ui'
 import type { DiaryEntry } from '../../../types/model'
 
 defineProps<{
@@ -69,10 +80,32 @@ defineProps<{
 const emit = defineEmits<{
   select: [entry: DiaryEntry]
   create: [dateStr: string]
+  delete: [entry: DiaryEntry]
 }>()
 
 const showDatePicker = ref(false)
 const newDiaryDate = ref<number>(Date.now())
+
+// 右键菜单
+const showContextMenu = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+const contextMenuEntry = ref<DiaryEntry | null>(null)
+const contextMenuOptions = [{ label: '删除', key: 'delete' }]
+
+function handleContextMenu(e: MouseEvent, entry: DiaryEntry): void {
+  contextMenuX.value = e.clientX
+  contextMenuY.value = e.clientY
+  contextMenuEntry.value = entry
+  showContextMenu.value = true
+}
+
+function handleContextMenuSelect(key: string): void {
+  showContextMenu.value = false
+  if (key === 'delete' && contextMenuEntry.value) {
+    emit('delete', contextMenuEntry.value)
+  }
+}
 
 function confirmCreate(): void {
   const d = new Date(newDiaryDate.value)
@@ -162,7 +195,14 @@ function updateEntry(id: string, patch: Partial<DiaryEntry>): void {
   }
 }
 
-defineExpose({ refresh, updateEntry })
+function removeEntry(id: string): void {
+  const idx = entries.value.findIndex((e) => e.id === id)
+  if (idx !== -1) {
+    entries.value.splice(idx, 1)
+  }
+}
+
+defineExpose({ refresh, updateEntry, removeEntry })
 </script>
 
 <style scoped>

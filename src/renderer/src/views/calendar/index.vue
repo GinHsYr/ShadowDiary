@@ -12,18 +12,18 @@
 
       <div class="diary-list-section">
         <h3 class="section-title">{{ selectedDateText }}</h3>
-        <div v-if="loading" style="text-align: center; padding: 40px 0; color: var(--n-text-color-3)">
+        <div
+          v-if="loading"
+          style="text-align: center; padding: 40px 0; color: var(--n-text-color-3)"
+        >
           加载中...
         </div>
         <template v-else>
-          <n-card
-            v-if="diaryForDate"
-            :bordered="false"
-            class="diary-card"
-            @click="goToEdit"
-          >
+          <n-card v-if="diaryForDate" :bordered="false" class="diary-card" @click="goToEdit">
             <div class="diary-header">
-              <span class="diary-mood">{{ moodLabels[diaryForDate.mood] || diaryForDate.mood }}</span>
+              <span class="diary-mood">{{
+                moodLabels[diaryForDate.mood] || diaryForDate.mood
+              }}</span>
               <span class="diary-time">{{ formatTime(diaryForDate.createdAt) }}</span>
             </div>
             <h4 v-if="diaryForDate.title" class="diary-title">{{ diaryForDate.title }}</h4>
@@ -117,6 +117,8 @@ const stripHtml = (html: string): string => {
   padding: 32px;
   max-width: 1200px;
   margin: 0 auto;
+  height: 100%;
+  overflow: hidden;
 }
 
 .page-header {

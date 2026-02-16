@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NConfigProvider, NLayout, NLayoutContent } from 'naive-ui'
+import { NConfigProvider, NDialogProvider, NLayout, NLayoutContent } from 'naive-ui'
 import { watch } from 'vue'
 import TitleBar from './components/TitleBar.vue'
 import AppSidebar from './components/AppSidebar.vue'
@@ -24,25 +24,30 @@ watch(
 
 <template>
   <n-config-provider :theme="theme.getTheme">
-    <TitleBar />
-    <n-layout has-sider position="absolute" style="top: 32px">
-      <AppSidebar />
+    <n-dialog-provider>
+      <TitleBar />
+      <n-layout has-sider position="absolute" style="top: 32px">
+        <AppSidebar />
 
-      <n-layout>
-        <AppHeader />
-        <n-layout-content class="main-content">
-          <router-view />
-        </n-layout-content>
+        <n-layout>
+          <AppHeader />
+          <n-layout-content class="main-content">
+            <router-view />
+          </n-layout-content>
+        </n-layout>
       </n-layout>
-    </n-layout>
+    </n-dialog-provider>
   </n-config-provider>
 </template>
 
 <style>
 /* 全局重置 */
+html,
 body {
   margin: 0;
   padding: 0;
+  height: 100%;
+  overflow: hidden;
   font-family:
     v-sans,
     system-ui,
@@ -50,6 +55,17 @@ body {
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
+}
+
+#app {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 禁止 Naive UI 布局组件的滚动 */
+.n-layout,
+.n-layout-scroll-container {
+  overflow: hidden !important;
 }
 
 .main-content {
