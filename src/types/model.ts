@@ -55,6 +55,24 @@ export interface SearchResult {
   expandedKeywords?: string[] // 扩展后的关键词列表（包含档案别名）
 }
 
+export interface PersonMentionDetailItem {
+  id: string
+  title: string
+  content: string // plain_content（纯文本）
+  mood: Mood
+  createdAt: number
+  updatedAt: number
+  mentionCount: number
+  matchedKeywords: string[]
+}
+
+export interface PersonMentionDetailResult {
+  personName: string
+  keywords: string[]
+  entries: PersonMentionDetailItem[]
+  total: number
+}
+
 export type ArchiveType = 'person' | 'object' | 'other'
 
 export interface Archive {

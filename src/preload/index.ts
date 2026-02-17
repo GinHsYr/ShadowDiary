@@ -1,88 +1,90 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { DiaryAPI } from '../types/api'
+
+const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => {
+  return ipcRenderer.invoke(channel, ...args) as Promise<T>
+}
 
 // Custom APIs for renderer
-const api = {
+const api: DiaryAPI = {
   // 日记
-  getDiaryEntries: (params: { limit?: number; offset?: number; lightweight?: boolean }) =>
-    ipcRenderer.invoke('diary:list', params),
-  getDiaryEntry: (id: string) => ipcRenderer.invoke('diary:get', id),
-  saveDiaryEntry: (entry: {
-    id?: string
-    title: string
-    content: string
-    mood: string
-    tags?: string[]
-    weather?: string
-    createdAt?: number
-  }) => ipcRenderer.invoke('diary:save', entry),
-  deleteDiaryEntry: (id: string) => ipcRenderer.invoke('diary:delete', id),
-  getDiaryByDate: (dateStr: string) => ipcRenderer.invoke('diary:getByDate', dateStr),
-  getDiaryDates: (yearMonth: string) => ipcRenderer.invoke('diary:getDates', yearMonth),
+  getDiaryEntries: (params) => invoke('diary:list', params),
+  getDiaryEntry: (id) => invoke('diary:get', id),
+  saveDiaryEntry: (entry) => invoke('diary:save', entry),
+  deleteDiaryEntry: (id) => invoke('diary:delete', id),
+  getDiaryByDate: (dateStr) => invoke('diary:getByDate', dateStr),
+  getDiaryDates: (yearMonth) => invoke('diary:getDates', yearMonth),
 
   // 档案
-  getArchives: (params?: { type?: string; search?: string }) =>
-    ipcRenderer.invoke('archives:list', params),
-  getArchive: (id: string) => ipcRenderer.invoke('archives:get', id),
-  saveArchive: (archive: any) => ipcRenderer.invoke('archives:save', archive),
-  deleteArchive: (id: string) => ipcRenderer.invoke('archives:delete', id),
+  getArchives: (params) => invoke('archives:list', params),
+  getArchive: (id) => invoke('archives:get', id),
+  saveArchive: (archive) => invoke('archives:save', archive),
+  deleteArchive: (id) => invoke('archives:delete', id),
 
   // 搜索
-  searchDiaries: (params: {
-    keyword?: string
-    mood?: string
-    tags?: string[]
-    dateFrom?: number
-    dateTo?: number
-    limit?: number
-    offset?: number
-    lightweight?: boolean
-  }) => ipcRenderer.invoke('diary:search', params),
+  searchDiaries: (params) => invoke('diary:search', params),
 
   // 标签
-  getAllTags: () => ipcRenderer.invoke('tags:list'),
+  getAllTags: () => invoke('tags:list'),
 
   // 附件
-  addAttachment: (diaryId: string) => ipcRenderer.invoke('attachment:add', diaryId),
-  deleteAttachment: (id: string) => ipcRenderer.invoke('attachment:delete', id),
-  getAttachments: (diaryId: string) => ipcRenderer.invoke('attachment:list', diaryId),
+  addAttachment: (diaryId) => invoke('attachment:add', diaryId),
+  deleteAttachment: (id) => invoke('attachment:delete', id),
+  getAttachments: (diaryId) => invoke('attachment:list', diaryId),
 
   // 设置
-  getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
-  setSetting: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
-  getAllSettings: () => ipcRenderer.invoke('settings:getAll'),
+  getSetting: (key) => invoke('settings:get', key),
+  setSetting: (key, value) => invoke('settings:set', key, value),
+  getAllSettings: () => invoke('settings:getAll'),
 
   // 统计
-  getStats: () => ipcRenderer.invoke('stats:get'),
+  getStats: () => invoke('stats:get'),
+  getPersonMentionStats: () => invoke('stats:personMentions'),
+  getPersonMentionDetails: (personName, params) =>
+    invoke('stats:personMentionDetails', personName, params),
 
   // 图片保存（将 base64 转换为文件）
-  saveImage: (base64Data: string) => ipcRenderer.invoke('image:save', base64Data),
+  saveImage: (base64Data) => invoke('image:save', base64Data),
 
   // 清理未使用的图片
-  cleanupImages: () => ipcRenderer.invoke('image:cleanup'),
+  cleanupImages: () => invoke('image:cleanup'),
 
   // 图片选择（编辑器插入图片）
-  selectImage: () => ipcRenderer.invoke('select-image'),
-
-  // 读取图片文件为 dataUrl（拖拽插入）
-  readImageFile: (filePath: string) => ipcRenderer.invoke('read-image-file', filePath),
+  selectImage: () => invoke('select-image'),
 
   // 图片操作（右键菜单）
-  copyImage: (dataUrl: string) => ipcRenderer.invoke('image:copy', dataUrl),
-  saveImageAs: (dataUrl: string) => ipcRenderer.invoke('image:save-as', dataUrl),
+  copyImage: (dataUrl) => invoke('image:copy', dataUrl),
+  saveImageAs: (dataUrl) => invoke('image:save-as', dataUrl),
 
   // 头像
-  selectAvatar: () => ipcRenderer.invoke('select-avatar'),
+  selectAvatar: () => invoke('select-avatar'),
 
   // 窗口控制
-  windowMinimize: () => ipcRenderer.invoke('window:minimize'),
-  windowMaximize: () => ipcRenderer.invoke('window:maximize'),
-  windowClose: () => ipcRenderer.invoke('window:close'),
-  windowIsMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+  windowMinimize: () => invoke('window:minimize'),
+  windowMaximize: () => invoke('window:maximize'),
+  windowClose: () => invoke('window:close'),
+  windowIsMaximized: () => invoke('window:isMaximized'),
 
   // 应用信息和更新
-  getAppInfo: () => ipcRenderer.invoke('app:getInfo'),
-  checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates')
+  getAppInfo: () => invoke('app:getInfo'),
+  checkForUpdates: (options) => invoke('app:checkForUpdates', options),
+  downloadUpdate: () => invoke('app:downloadUpdate'),
+  installUpdate: () => invoke('app:installUpdate'),
+  onDownloadProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: { percent: number }): void => {
+      callback(progress)
+    }
+    ipcRenderer.on('update:download-progress', listener)
+    return () => ipcRenderer.removeListener('update:download-progress', listener)
+  },
+  onUpdateDownloaded: (callback) => {
+    const listener = (): void => {
+      callback()
+    }
+    ipcRenderer.on('update:downloaded', listener)
+    return () => ipcRenderer.removeListener('update:downloaded', listener)
+  }
 }
 
 if (process.contextIsolated) {

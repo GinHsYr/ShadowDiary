@@ -1,23 +1,29 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, computed } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import {
   NGrid,
   NGi,
   NCard,
   NStatistic,
-  NList,
-  NListItem,
-  NThing,
-  NTag,
   NSpace,
   NButton,
   NNumberAnimation,
   NIcon,
-  NPopover
+  NPopover,
+  NModal,
+  NTag,
+  NSpin
 } from 'naive-ui'
 import { ChevronBackOutline, ChevronForwardOutline, TodayOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
-import type { DiaryEntry } from '../../../../types/model'
+import type { DiaryEntry, PersonMentionDetailItem } from '../../../../types/model'
+import { use } from 'echarts/core'
+import { PieChart } from 'echarts/charts'
+import { TitleComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import VChart from 'vue-echarts'
+
+use([PieChart, TitleComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const router = useRouter()
 
@@ -26,14 +32,13 @@ const totalEntries = ref(0)
 const currentStreak = ref(0)
 const recentEntries = ref<DiaryEntry[]>([])
 const diaryDates = ref<Set<string>>(new Set())
-
-const moodLabels: Record<string, string> = {
-  happy: '😊 开心',
-  calm: '😌 平静',
-  sad: '😢 难过',
-  excited: '🤩 兴奋',
-  tired: '😴 疲惫'
-}
+const personMentionData = ref<{ name: string; count: number }[]>([])
+const showMentionModal = ref(false)
+const mentionLoading = ref(false)
+const selectedPerson = ref('')
+const mentionKeywords = ref<string[]>([])
+const mentionEntries = ref<PersonMentionDetailItem[]>([])
+const mentionTotal = ref(0)
 
 // 加载统计数据
 async function loadStats(): Promise<void> {
@@ -69,11 +74,215 @@ async function loadDiaryDates(): Promise<void> {
   }
 }
 
+// 加载人物提及统计
+async function loadPersonMentions(): Promise<void> {
+  try {
+    personMentionData.value = await window.api.getPersonMentionStats()
+  } catch (error) {
+    console.error('加载人物提及统计失败:', error)
+  }
+}
+
+// 饼图配置
+const pieChartOption = computed(() => {
+  const top10 = personMentionData.value.slice(0, 10)
+  const rest = personMentionData.value.slice(10)
+  const restCount = rest.reduce((sum, item) => sum + item.count, 0)
+
+  const chartData = top10.map((item) => ({
+    name: item.name,
+    value: item.count
+  }))
+
+  if (restCount > 0) {
+    chartData.push({ name: '其他', value: restCount })
+  }
+
+  return {
+    title: {
+      text: '人物提及次数',
+      left: 'center',
+      textStyle: {
+        fontSize: 14,
+        fontWeight: 600
+      }
+    },
+    tooltip: {
+      trigger: 'item',
+      formatter: '{b}: {c}次 ({d}%)'
+    },
+    legend: {
+      orient: 'vertical',
+      left: 'left',
+      top: 'middle'
+    },
+    series: [
+      {
+        type: 'pie',
+        radius: ['40%', '70%'],
+        center: ['60%', '55%'],
+        avoidLabelOverlap: true,
+        itemStyle: {
+          borderRadius: 6,
+          borderColor: '#fff',
+          borderWidth: 2
+        },
+        label: {
+          show: false
+        },
+        emphasis: {
+          label: {
+            show: true,
+            fontSize: 14,
+            fontWeight: 'bold'
+          }
+        },
+        data: chartData
+      }
+    ]
+  }
+})
+
 onMounted(() => {
   loadStats()
   loadRecentEntries()
   loadDiaryDates()
+  loadPersonMentions()
 })
+
+interface PieClickParams {
+  componentType?: string
+  seriesType?: string
+  name?: string
+}
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function escapeHtml(str: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  }
+  return str.replace(/[&<>"']/g, (m) => map[m])
+}
+
+function formatDate(ts: number): string {
+  const d = new Date(ts)
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${month}-${day}`
+}
+
+function getSnippet(text: string, keywords: string[], around = 40): string {
+  const plain = text || ''
+  if (!plain) return ''
+  if (keywords.length === 0) return plain.slice(0, around * 2)
+
+  const lower = plain.toLowerCase()
+  let bestIdx = -1
+  let bestLen = 0
+  for (const kw of keywords) {
+    const idx = lower.indexOf(kw.toLowerCase())
+    if (idx !== -1 && (bestIdx === -1 || idx < bestIdx)) {
+      bestIdx = idx
+      bestLen = kw.length
+    }
+  }
+
+  if (bestIdx === -1) return plain.slice(0, around * 2)
+
+  const start = Math.max(0, bestIdx - around)
+  const end = Math.min(plain.length, bestIdx + bestLen + around)
+  let snippet = ''
+  if (start > 0) snippet += '...'
+  snippet += plain.slice(start, end)
+  if (end < plain.length) snippet += '...'
+  return snippet
+}
+
+function highlightText(text: string, keywords: string[]): string {
+  if (!text) return ''
+  if (keywords.length === 0) return escapeHtml(text)
+
+  let result = escapeHtml(text)
+  const sortedKeywords = [...new Set(keywords)].sort((a, b) => b.length - a.length)
+  for (const keyword of sortedKeywords) {
+    const escaped = escapeRegex(escapeHtml(keyword))
+    result = result.replace(new RegExp(`(${escaped})`, 'gi'), '<mark>$1</mark>')
+  }
+  return result
+}
+
+function getHighlightedSnippet(entry: PersonMentionDetailItem): string {
+  const entryKeywords =
+    entry.matchedKeywords.length > 0 ? entry.matchedKeywords : mentionKeywords.value
+  const snippet = getSnippet(entry.content, entryKeywords)
+  return highlightText(snippet, entryKeywords)
+}
+
+async function loadMentionDetails(personName: string): Promise<void> {
+  mentionLoading.value = true
+  selectedPerson.value = personName
+  showMentionModal.value = true
+  mentionEntries.value = []
+  mentionTotal.value = 0
+  mentionKeywords.value = [personName]
+
+  try {
+    const pageSize = 100
+    let offset = 0
+    let total = 0
+    const allEntries: PersonMentionDetailItem[] = []
+    let loadedKeywords: string[] = [personName]
+    let normalizedName = personName
+
+    do {
+      const result = await window.api.getPersonMentionDetails(personName, {
+        limit: pageSize,
+        offset
+      })
+      normalizedName = result.personName
+      loadedKeywords = result.keywords.length > 0 ? result.keywords : [personName]
+      total = result.total
+      allEntries.push(...result.entries)
+      offset += result.entries.length
+      if (result.entries.length === 0) break
+    } while (allEntries.length < total)
+
+    selectedPerson.value = normalizedName
+    mentionKeywords.value = loadedKeywords
+    mentionEntries.value = allEntries
+    mentionTotal.value = total
+  } catch (error) {
+    console.error('加载人物提及明细失败:', error)
+  } finally {
+    mentionLoading.value = false
+  }
+}
+
+async function handlePieClick(params: PieClickParams): Promise<void> {
+  if (params.componentType !== 'series' || params.seriesType !== 'pie') return
+  const personName = params.name?.trim()
+  if (!personName || personName === '其他') return
+  await loadMentionDetails(personName)
+}
+
+function openMentionDiary(entry: PersonMentionDetailItem): void {
+  const keyword = mentionKeywords.value.join(' ').trim() || selectedPerson.value
+  showMentionModal.value = false
+  router.push({
+    path: '/today',
+    query: {
+      id: entry.id,
+      keyword
+    }
+  })
+}
 
 // ========== 日历相关 ==========
 const currentMonth = ref(new Date())
@@ -251,20 +460,10 @@ const jumpToLastMonth = (): void => {
   const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   router.push({ path: '/today', query: { date: dateStr } })
 }
-
-const formatDate = (ts: number): string => {
-  const d = new Date(ts)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-onBeforeUnmount(() => {
-  // 清理操作
-})
 </script>
 
 <template>
   <div class="home-view">
-    <!-- 欢迎 -->
     <div class="welcome-box">
       <h2>👋 你好，准备写点什么？</h2>
     </div>
@@ -400,32 +599,57 @@ onBeforeUnmount(() => {
       </n-gi>
     </n-grid>
 
-    <!-- 最近列表 -->
-    <div class="list-header">
-      <h3>最近回忆</h3>
-      <n-button text type="primary" size="small" @click="router.push('/calendar')"
-        >查看全部</n-button
-      >
-    </div>
+    <!-- 人物提及饼图 -->
+    <n-card v-if="personMentionData.length > 0" :bordered="false" class="chart-card">
+      <v-chart :option="pieChartOption" autoresize class="pie-chart" @click="handlePieClick" />
+    </n-card>
 
-    <n-list hoverable clickable>
-      <n-list-item
-        v-for="item in recentEntries"
-        :key="item.id"
-        @click="router.push({ path: '/today', query: { date: formatDate(item.createdAt) } })"
-      >
-        <n-thing :title="item.title || '无标题'">
-          <template #description>
-            <n-space size="small">
-              <n-tag size="small" :bordered="false">{{ formatDate(item.createdAt) }}</n-tag>
-              <n-tag size="small" type="success" :bordered="false">{{
-                moodLabels[item.mood] || item.mood
-              }}</n-tag>
-            </n-space>
-          </template>
-        </n-thing>
-      </n-list-item>
-    </n-list>
+    <n-modal
+      v-model:show="showMentionModal"
+      preset="card"
+      :title="`${selectedPerson} · 提及明细`"
+      style="width: min(860px, 92vw); border-radius: 14px"
+      class="mention-modal-card"
+      :bordered="false"
+      :segmented="{ content: 'soft' }"
+    >
+      <div class="mention-meta">共 {{ mentionTotal }} 篇日记提及</div>
+
+      <div v-if="mentionLoading" class="mention-loading">
+        <n-spin size="small" />
+      </div>
+
+      <div v-else-if="mentionEntries.length === 0" class="mention-empty">暂无提及记录</div>
+
+      <div v-else class="mention-list">
+        <div v-for="entry in mentionEntries" :key="entry.id" class="mention-item">
+          <div class="mention-item-head">
+            <span class="mention-item-date">{{ formatDate(entry.createdAt) }}</span>
+            <span class="mention-item-count">提及 {{ entry.mentionCount }} 次</span>
+          </div>
+          <div class="mention-item-title">{{ entry.title || '无标题' }}</div>
+          <!-- eslint-disable-next-line vue/no-v-html -->
+          <div class="mention-item-snippet" v-html="getHighlightedSnippet(entry)" />
+          <div class="mention-item-footer">
+            <div class="mention-tags">
+              <n-tag
+                v-for="kw in entry.matchedKeywords"
+                :key="`${entry.id}-${kw}`"
+                size="small"
+                round
+                type="success"
+                :bordered="false"
+              >
+                {{ kw }}
+              </n-tag>
+            </div>
+            <n-button size="tiny" tertiary type="primary" @click="openMentionDiary(entry)">
+              打开日记
+            </n-button>
+          </div>
+        </div>
+      </div>
+    </n-modal>
   </div>
 </template>
 
@@ -665,11 +889,89 @@ onBeforeUnmount(() => {
   border-radius: 12px;
 }
 
-/* ===== 列表 ===== */
-.list-header {
+/* ===== 饼图 ===== */
+.chart-card {
+  margin-bottom: 24px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.pie-chart {
+  height: 300px;
+  width: 100%;
+  cursor: pointer;
+}
+
+/* ===== 提及明细弹窗 ===== */
+.mention-meta {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--n-text-color-3, #888);
+}
+
+.mention-loading,
+.mention-empty {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--n-text-color-3, #999);
+}
+
+.mention-list {
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.mention-item {
+  border: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.08));
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--n-color, #fff);
+}
+
+.mention-item-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--n-text-color-3, #999);
+}
+
+.mention-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--n-text-color, #333);
+  margin-bottom: 6px;
+}
+
+.mention-item-snippet {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--n-text-color-2, #666);
+}
+
+.mention-item-snippet :deep(mark) {
+  background: rgba(16, 185, 129, 0.2);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.mention-item-footer {
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.mention-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 </style>

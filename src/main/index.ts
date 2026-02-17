@@ -9,7 +9,10 @@ import {
   protocol
 } from 'electron'
 import { autoUpdater } from 'electron-updater'
-import { join, extname, resolve } from 'path'
+import type { AppUpdateInfo, CheckForUpdatesResult, UpdateCheckOptions } from '../types/api'
+
+let mainWindow: BrowserWindow | null = null
+import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { promises as fs } from 'fs'
@@ -23,11 +26,18 @@ import {
   getDiaryDates,
   searchDiaries,
   getStats,
-  getAllDiaryContents
+  getAllDiaryContents,
+  getPersonMentionStats,
+  getPersonMentionDetails
 } from './database/diary'
 import { archives } from './database/archives'
 import { getAllTags } from './database/tags'
-import { addAttachment, deleteAttachment, getAttachments } from './database/attachments'
+import {
+  addAttachment,
+  deleteAttachment,
+  deleteAttachmentFiles,
+  getAttachments
+} from './database/attachments'
 import { getSetting, setSetting, getAllSettings } from './database/settings'
 import {
   saveImage,
@@ -37,8 +47,119 @@ import {
   extractImageIds
 } from './utils/imageStorage'
 
+const IMAGE_MIME_MAP: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp'
+}
+
+const UPDATE_CACHE_TTL_MS = 5 * 60 * 1000
+let cachedUpdateCheck: CheckForUpdatesResult | null = null
+
+function getImageMimeType(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  return IMAGE_MIME_MAP[ext || 'png'] || 'image/png'
+}
+
+async function loadDiaryImage(url: string): Promise<{ mimeType: string; data: Buffer } | null> {
+  try {
+    const fileName = decodeURIComponent(url.replace('diary-image://', ''))
+    const buffer = await getImage(fileName)
+    return {
+      mimeType: getImageMimeType(fileName),
+      data: buffer
+    }
+  } catch (error) {
+    console.error('Failed to load image:', error)
+    return null
+  }
+}
+
+function registerDiaryImageProtocol(): void {
+  if (typeof protocol.handle === 'function') {
+    protocol.handle('diary-image', async (request) => {
+      const result = await loadDiaryImage(request.url)
+      if (!result) {
+        return new Response('', { status: 404, headers: { 'content-type': 'image/png' } })
+      }
+
+      return new Response(new Uint8Array(result.data), {
+        headers: { 'content-type': result.mimeType }
+      })
+    })
+    return
+  }
+
+  protocol.registerBufferProtocol('diary-image', async (request, callback) => {
+    const result = await loadDiaryImage(request.url)
+    if (!result) {
+      callback({ mimeType: 'image/png', data: Buffer.from('') })
+      return
+    }
+    callback(result)
+  })
+}
+
+function normalizeUpdateInfo(
+  updateInfo:
+    | {
+        version: string
+        releaseDate?: string
+        releaseName?: string | null
+      }
+    | undefined
+): AppUpdateInfo | undefined {
+  if (!updateInfo) return undefined
+
+  return {
+    version: updateInfo.version,
+    releaseDate: updateInfo.releaseDate,
+    releaseName: updateInfo.releaseName
+  }
+}
+
+function isUpdateCacheFresh(): boolean {
+  if (!cachedUpdateCheck) return false
+  return Date.now() - cachedUpdateCheck.checkedAt < UPDATE_CACHE_TTL_MS
+}
+
+async function runUpdateCheck(): Promise<CheckForUpdatesResult> {
+  try {
+    const result = await autoUpdater.checkForUpdates()
+    return {
+      success: true,
+      updateInfo: normalizeUpdateInfo(result?.updateInfo),
+      checkedAt: Date.now(),
+      fromCache: false
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: String(error),
+      checkedAt: Date.now(),
+      fromCache: false
+    }
+  }
+}
+
+async function getUpdateCheckResult(options?: UpdateCheckOptions): Promise<CheckForUpdatesResult> {
+  if (!options?.force && isUpdateCacheFresh() && cachedUpdateCheck) {
+    return {
+      ...cachedUpdateCheck,
+      fromCache: true
+    }
+  }
+
+  const fresh = await runUpdateCheck()
+  cachedUpdateCheck = fresh
+  return fresh
+}
+
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
     show: false,
@@ -56,7 +177,7 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow?.show()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -89,41 +210,16 @@ app.whenReady().then(() => {
   initDatabase()
 
   // Ensure image directories exist
-  ensureImageDirs()
+  void ensureImageDirs()
 
   // Register custom protocol for images
-  protocol.registerBufferProtocol('diary-image', async (request, callback) => {
-    try {
-      const url = request.url.replace('diary-image://', '')
-      const buffer = await getImage(url)
-
-      // 根据文件扩展名确定 MIME 类型
-      const ext = url.split('.').pop()?.toLowerCase()
-      const mimeMap: Record<string, string> = {
-        jpg: 'image/jpeg',
-        jpeg: 'image/jpeg',
-        png: 'image/png',
-        gif: 'image/gif',
-        webp: 'image/webp',
-        bmp: 'image/bmp'
-      }
-      const mimeType = mimeMap[ext || 'png'] || 'image/png'
-
-      callback({
-        mimeType,
-        data: buffer
-      })
-    } catch (error) {
-      console.error('Failed to load image:', error)
-      callback({ mimeType: 'image/png', data: Buffer.from('') })
-    }
-  })
+  registerDiaryImageProtocol()
 
   // Register IPC handlers
   registerIpcHandlers()
 
   createWindow()
-  autoUpdater.checkForUpdatesAndNotify()
+  void getUpdateCheckResult({ force: true })
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -169,8 +265,10 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('diary:delete', async (_event, id: string) => {
+    const attachments = getAttachments(id)
     const result = deleteDiaryEntry(id)
     if (result) {
+      await deleteAttachmentFiles(attachments.map((attachment) => attachment.filePath))
       const usedIds = collectAllUsedImageIds()
       await cleanupUnusedImages(usedIds)
     }
@@ -244,6 +342,17 @@ function registerIpcHandlers(): void {
     return getStats()
   })
 
+  ipcMain.handle('stats:personMentions', () => {
+    return getPersonMentionStats()
+  })
+
+  ipcMain.handle(
+    'stats:personMentionDetails',
+    (_event, personName: string, params?: { limit?: number; offset?: number }) => {
+      return getPersonMentionDetails(personName, params)
+    }
+  )
+
   // 保存图片（将 base64 转换为文件）
   ipcMain.handle('image:save', async (_event, base64Data: string) => {
     try {
@@ -302,33 +411,6 @@ function registerIpcHandlers(): void {
     } catch (error) {
       console.error('选择图片失败:', error)
       return { canceled: true }
-    }
-  })
-
-  // 读取图片文件为 dataUrl（用于拖拽插入）
-  ipcMain.handle('read-image-file', async (_event, filePath: string) => {
-    try {
-      // 安全校验：只允许读取图片文件
-      const allowedImageExts = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'])
-      const normalizedPath = resolve(filePath)
-      const ext = extname(normalizedPath).toLowerCase()
-      if (!allowedImageExts.has(ext)) return { success: false }
-
-      const data = await fs.readFile(normalizedPath)
-      const mimeMap: Record<string, string> = {
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.png': 'image/png',
-        '.gif': 'image/gif',
-        '.webp': 'image/webp',
-        '.bmp': 'image/bmp'
-      }
-      const mime = mimeMap[ext]
-      if (!mime) return { success: false }
-      const dataUrl = `data:${mime};base64,${data.toString('base64')}`
-      return { success: true, dataUrl }
-    } catch {
-      return { success: false }
     }
   })
 
@@ -442,19 +524,28 @@ function registerIpcHandlers(): void {
   })
 
   // 检查更新
-  ipcMain.handle('app:checkForUpdates', async () => {
-    try {
-      const result = await autoUpdater.checkForUpdates()
-      return {
-        success: true,
-        updateInfo: result?.updateInfo
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: String(error)
-      }
-    }
+  ipcMain.handle('app:checkForUpdates', async (_event, options?: UpdateCheckOptions) => {
+    return await getUpdateCheckResult(options)
+  })
+
+  // 下载更新
+  ipcMain.handle('app:downloadUpdate', async () => {
+    await autoUpdater.downloadUpdate()
+  })
+
+  // 安装更新
+  ipcMain.handle('app:installUpdate', () => {
+    autoUpdater.quitAndInstall()
+  })
+
+  // 更新下载进度事件
+  autoUpdater.on('download-progress', (progress) => {
+    mainWindow?.webContents.send('update:download-progress', progress)
+  })
+
+  // 更新下载完成事件
+  autoUpdater.on('update-downloaded', () => {
+    mainWindow?.webContents.send('update:downloaded')
   })
 }
 

@@ -34,10 +34,27 @@
               <div class="setting-info">
                 <span class="setting-description">检查是否有新版本可用</span>
               </div>
-              <n-button :loading="checkingUpdate" @click="handleCheckUpdate"> 检查更新 </n-button>
+              <n-button
+                :loading="checkingUpdate"
+                :disabled="downloading"
+                @click="handleCheckUpdate"
+              >
+                检查更新
+              </n-button>
             </div>
             <div v-if="updateMessage" class="update-message" :class="updateMessageType">
-              {{ updateMessage }}
+              <span>{{ updateMessage }}</span>
+              <template v-if="hasUpdate && !downloading && !downloaded">
+                <n-button class="update-btn" @click="handleDownloadUpdate"> 下载更新 </n-button>
+              </template>
+              <template v-if="downloaded">
+                <n-button type="primary" class="update-btn" @click="handleInstallUpdate">
+                  立即安装
+                </n-button>
+              </template>
+            </div>
+            <div v-if="downloading" class="download-progress">
+              <n-progress type="line" :percentage="downloadProgress" :show-indicator="true" />
             </div>
           </n-space>
         </n-card>
@@ -64,8 +81,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { NButton, NCard, NSpace, NSwitch } from 'naive-ui'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { NButton, NCard, NSpace, NSwitch, NProgress } from 'naive-ui'
 import { ThemeMode, useThemeStore } from '@renderer/stores/themes'
 
 interface AppInfo {
@@ -80,6 +97,11 @@ const theme = useThemeStore()
 const checkingUpdate = ref(false)
 const updateMessage = ref('')
 const updateMessageType = ref<'success' | 'error' | 'info'>('info')
+const hasUpdate = ref(false)
+const downloading = ref(false)
+const downloadProgress = ref(0)
+const downloaded = ref(false)
+const removeUpdateListeners: Array<() => void> = []
 
 const appInfo = ref<AppInfo>({
   name: '',
@@ -100,6 +122,30 @@ async function loadAppInfo(): Promise<void> {
 
 onMounted(() => {
   loadAppInfo()
+
+  // 监听下载进度
+  removeUpdateListeners.push(
+    window.api.onDownloadProgress((progress) => {
+      downloadProgress.value = Math.round(progress.percent)
+    })
+  )
+
+  // 监听下载完成
+  removeUpdateListeners.push(
+    window.api.onUpdateDownloaded(() => {
+      downloading.value = false
+      downloaded.value = true
+      updateMessage.value = '更新已下载完成，点击安装后将重启应用'
+      updateMessageType.value = 'success'
+    })
+  )
+})
+
+onBeforeUnmount(() => {
+  while (removeUpdateListeners.length > 0) {
+    const removeListener = removeUpdateListeners.pop()
+    removeListener?.()
+  }
 })
 
 const handleThemeChange = (value: boolean): void => {
@@ -109,12 +155,15 @@ const handleThemeChange = (value: boolean): void => {
 const handleCheckUpdate = async (): Promise<void> => {
   checkingUpdate.value = true
   updateMessage.value = ''
+  hasUpdate.value = false
+  downloaded.value = false
   try {
     const result = await window.api.checkForUpdates()
     if (result.success) {
       if (result.updateInfo) {
         updateMessage.value = `发现新版本 ${result.updateInfo.version}`
         updateMessageType.value = 'success'
+        hasUpdate.value = true
       } else {
         updateMessage.value = '当前已是最新版本'
         updateMessageType.value = 'info'
@@ -129,6 +178,24 @@ const handleCheckUpdate = async (): Promise<void> => {
   } finally {
     checkingUpdate.value = false
   }
+}
+
+const handleDownloadUpdate = async (): Promise<void> => {
+  downloading.value = true
+  downloadProgress.value = 0
+  updateMessage.value = '正在下载更新...'
+  updateMessageType.value = 'info'
+  try {
+    await window.api.downloadUpdate()
+  } catch (error) {
+    downloading.value = false
+    updateMessage.value = `下载更新失败: ${error}`
+    updateMessageType.value = 'error'
+  }
+}
+
+const handleInstallUpdate = (): void => {
+  window.api.installUpdate()
 }
 </script>
 
@@ -151,7 +218,14 @@ const handleCheckUpdate = async (): Promise<void> => {
   margin: 0 0 8px 0;
   color: var(--n-text-color);
 }
+.update-message {
+  display: flex;
+  align-items: center;
+}
 
+.update-btn {
+  margin-left: auto;
+}
 .page-subtitle {
   font-size: 16px;
   color: var(--n-text-color-3);
@@ -228,6 +302,10 @@ const handleCheckUpdate = async (): Promise<void> => {
 .update-message.info {
   background-color: rgba(42, 148, 229, 0.1);
   color: #2a94e5;
+}
+
+.download-progress {
+  padding: 8px 0;
 }
 
 @media (max-width: 768px) {

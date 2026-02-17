@@ -1,5 +1,5 @@
 <template>
-  <div class="diary-editor-wrapper" @contextmenu="handleContextMenu">
+  <div ref="editorRootRef" class="diary-editor-wrapper" @contextmenu="handleContextMenu">
     <froala v-model:value="content" :tag="'textarea'" :config="editorConfig" />
     <n-dropdown
       placement="bottom-start"
@@ -28,6 +28,13 @@ import { useThemeStore } from '@renderer/stores/themes'
 
 const themeStore = useThemeStore()
 const isDark = computed(() => themeStore.isDark)
+const isEditorDebugEnabled = import.meta.env.DEV
+
+const debugLog = (...args: unknown[]): void => {
+  if (isEditorDebugEnabled) {
+    console.debug('[DiaryEditor]', ...args)
+  }
+}
 
 const props = defineProps<{
   modelValue: string
@@ -37,6 +44,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
+const editorRootRef = ref<HTMLElement | null>(null)
 const content = ref(props.modelValue || '')
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const editorInstance = ref<any>(null)
@@ -158,6 +166,50 @@ const handleContextMenuSelect = async (key: string): Promise<void> => {
   }
 }
 
+function scrollToKeyword(keyword: string): boolean {
+  const keywords = keyword
+    .trim()
+    .split(/\s+/)
+    .map((item) => item.toLowerCase())
+    .filter(Boolean)
+  if (keywords.length === 0) return false
+
+  const contentEl = editorRootRef.value?.querySelector('.fr-element.fr-view') as HTMLElement | null
+  if (!contentEl) return false
+
+  const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT)
+  let foundNode: Text | null = null
+
+  while (walker.nextNode()) {
+    const textNode = walker.currentNode as Text
+    const text = textNode.textContent?.toLowerCase() ?? ''
+    if (keywords.some((kw) => text.includes(kw))) {
+      foundNode = textNode
+      break
+    }
+  }
+
+  if (!foundNode?.parentElement) return false
+
+  const target = foundNode.parentElement
+  const containerRect = contentEl.getBoundingClientRect()
+  const targetRect = target.getBoundingClientRect()
+  const targetScrollTop =
+    contentEl.scrollTop + (targetRect.top - containerRect.top) - contentEl.clientHeight / 2
+
+  contentEl.scrollTo({
+    top: Math.max(targetScrollTop, 0),
+    behavior: 'smooth'
+  })
+
+  target.classList.add('keyword-scroll-highlight')
+  setTimeout(() => {
+    target.classList.remove('keyword-scroll-highlight')
+  }, 1500)
+
+  return true
+}
+
 // 将文件转换为 base64
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -170,7 +222,7 @@ const fileToBase64 = (file: File): Promise<string> => {
 
 // 插入图片到编辑器
 const insertImage = async (file: File): Promise<void> => {
-  console.log('insertImage called, editorInstance:', editorInstance.value)
+  debugLog('insertImage called, editorInstance:', editorInstance.value)
   if (!editorInstance.value) {
     console.error('Editor instance not available')
     return
@@ -179,33 +231,33 @@ const insertImage = async (file: File): Promise<void> => {
   // 检查文件类型
   const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
   if (!allowedTypes.includes(file.type)) {
-    console.warn('不支持的图片格式:', file.type)
+    debugLog('不支持的图片格式:', file.type)
     return
   }
 
   // 检查文件大小 (10MB)
   const maxSize = 10 * 1024 * 1024
   if (file.size > maxSize) {
-    console.warn('图片大小超过限制:', file.size)
+    debugLog('图片大小超过限制:', file.size)
     return
   }
 
   try {
-    console.log('Converting file to base64...')
+    debugLog('Converting file to base64...')
     // 转换为 base64
     const base64 = await fileToBase64(file)
-    console.log('Base64 conversion complete, length:', base64.length)
+    debugLog('Base64 conversion complete, length:', base64.length)
 
     // 保存为文件并获取 diary-image:// URL
-    console.log('Saving image...')
+    debugLog('Saving image...')
     const result = await window.api.saveImage(base64)
-    console.log('Save result:', result)
+    debugLog('Save result:', result)
 
     if (result.success && result.path) {
       // 插入使用 diary-image:// 协议的 URL
-      console.log('Inserting image with path:', result.path)
+      debugLog('Inserting image with path:', result.path)
       editorInstance.value.image.insert(result.path, false, null, editorInstance.value.image.get())
-      console.log('Image inserted successfully')
+      debugLog('Image inserted successfully')
     } else {
       console.error('保存图片失败:', result.error)
     }
@@ -282,24 +334,87 @@ const editorConfig = {
   // 隐藏底部水印
   attribution: false,
   // 内容样式
-  htmlAllowedTags: ['.*'],
-  htmlAllowedAttrs: ['.*'],
-  htmlRemoveTags: ['script'],
+  htmlAllowedTags: [
+    'a',
+    'b',
+    'blockquote',
+    'br',
+    'code',
+    'div',
+    'em',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'hr',
+    'img',
+    'li',
+    'ol',
+    'p',
+    'pre',
+    'span',
+    'strong',
+    'table',
+    'tbody',
+    'td',
+    'th',
+    'thead',
+    'tr',
+    'u',
+    'ul'
+  ],
+  htmlAllowedAttrs: [
+    'alt',
+    'class',
+    'colspan',
+    'href',
+    'rel',
+    'rowspan',
+    'src',
+    'style',
+    'target',
+    'title'
+  ],
+  htmlAllowedStyleProps: [
+    'background-color',
+    'color',
+    'font-size',
+    'font-style',
+    'font-weight',
+    'line-height',
+    'text-align',
+    'text-decoration'
+  ],
+  htmlExecuteScripts: false,
+  htmlRemoveTags: [
+    'script',
+    'style',
+    'iframe',
+    'object',
+    'embed',
+    'form',
+    'input',
+    'button',
+    'textarea',
+    'select',
+    'option',
+    'link',
+    'meta',
+    'base'
+  ],
+  pasteDeniedTags: ['script', 'style', 'iframe', 'object', 'embed'],
   // 事件处理
   events: {
     initialized: function (): void {
       editorInstance.value = this
-      console.log('Froala Editor initialized')
-    },
-    contentChanged: function (): void {
-      emit('update:modelValue', content.value)
+      debugLog('Froala Editor initialized')
     },
     'image.beforeUpload': function (files: FileList): boolean {
-      console.log('image.beforeUpload triggered, files:', files)
+      debugLog('image.beforeUpload triggered, files:', files)
       // 处理通过按钮选择的图片
       if (files && files.length > 0) {
         Array.from(files).forEach((file) => {
-          console.log('Processing file:', file.name, file.type)
+          debugLog('Processing file:', file.name, file.type)
           insertImage(file)
         })
       }
@@ -309,7 +424,7 @@ const editorConfig = {
       console.error('Froala image error:', error, response)
     },
     'image.inserted': function ($img: unknown): void {
-      console.log('Image inserted:', $img)
+      debugLog('Image inserted:', $img)
     },
     'paste.afterCleanup': async function (clipboardHtml: string): Promise<string> {
       // 处理粘贴的图片（base64）
@@ -373,6 +488,10 @@ watch(isDark, () => {
     editorInstance.value.toolbar.hide()
     editorInstance.value.toolbar.show()
   }
+})
+
+defineExpose({
+  scrollToKeyword
 })
 </script>
 
@@ -455,6 +574,11 @@ watch(isDark, () => {
 
 .diary-editor-wrapper :deep(.fr-element p) {
   margin: 0.15em 0;
+}
+
+.diary-editor-wrapper :deep(.keyword-scroll-highlight) {
+  background: rgba(16, 185, 129, 0.16);
+  transition: background 0.3s ease;
 }
 
 .diary-editor-wrapper :deep(.fr-element blockquote) {

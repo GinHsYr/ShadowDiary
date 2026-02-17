@@ -188,11 +188,13 @@ onMounted(() => {
   loadEntries(true)
 })
 
-function updateEntry(id: string, patch: Partial<DiaryEntry>): void {
+function updateEntry(id: string, patch: Partial<DiaryEntry>): boolean {
   const idx = entries.value.findIndex((e) => e.id === id)
   if (idx !== -1) {
     entries.value[idx] = { ...entries.value[idx], ...patch }
+    return true
   }
+  return false
 }
 
 function removeEntry(id: string): void {

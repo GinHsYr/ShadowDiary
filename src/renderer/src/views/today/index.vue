@@ -77,7 +77,7 @@ const moods: MoodOption[] = [
 
 const dialog = useDialog()
 const diaryListRef = ref<InstanceType<typeof DiaryList> | null>(null)
-const diaryEditorRef = ref<InstanceType<typeof DiaryEditor> | null>(null)
+const diaryEditorRef = ref<{ scrollToKeyword: (keyword: string) => boolean } | null>(null)
 
 const route = useRoute()
 const selectedMood = ref<Mood>('calm')
@@ -167,6 +167,7 @@ async function doSave(): Promise<void> {
   if (!diaryTitle.value.trim() && (!diaryContent.value || diaryContent.value === '<p></p>')) return
 
   try {
+    const wasNewEntry = !existingEntryId.value
     const d = new Date(selectedDate.value)
     d.setHours(12, 0, 0, 0)
 
@@ -179,7 +180,20 @@ async function doSave(): Promise<void> {
     })
     existingEntryId.value = saved.id
     isDirty.value = false
-    diaryListRef.value?.refresh()
+    const updatedInList =
+      diaryListRef.value?.updateEntry(saved.id, {
+        title: saved.title,
+        content: saved.content,
+        mood: saved.mood,
+        createdAt: saved.createdAt,
+        updatedAt: saved.updatedAt
+      }) ?? false
+
+    if (!updatedInList || wasNewEntry) {
+      void diaryListRef.value?.refresh().catch((error) => {
+        console.error('刷新日记列表失败:', error)
+      })
+    }
   } catch (error) {
     console.error('自动保存失败:', error)
   }
@@ -204,6 +218,15 @@ const currentDate = computed((): string => {
   const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
   return `${year}年${month}月${day}日 ${weekdays[d.getDay()]}`
 })
+
+function resetEditorState(date: Date = new Date()): void {
+  existingEntryId.value = null
+  diaryTitle.value = ''
+  diaryContent.value = ''
+  selectedMood.value = 'calm'
+  selectedDate.value = date
+  isDirty.value = false
+}
 
 async function handleSelectEntry(entry: DiaryEntry): Promise<void> {
   await flushSave()
@@ -237,13 +260,9 @@ async function handleCreate(dateStr?: string): Promise<void> {
   if (dateStr) {
     await loadOrCreateForDate(dateStr)
   } else {
-    existingEntryId.value = null
-    diaryTitle.value = ''
-    diaryContent.value = ''
-    selectedMood.value = 'calm'
     const dateParam = route.query.date as string | undefined
-    selectedDate.value = dateParam ? new Date(dateParam + 'T12:00:00') : new Date()
-    isDirty.value = false
+    const targetDate = dateParam ? new Date(dateParam + 'T12:00:00') : new Date()
+    resetEditorState(targetDate)
   }
 }
 
@@ -258,11 +277,7 @@ async function handleDeleteEntry(entry: DiaryEntry): Promise<void> {
         await window.api.deleteDiaryEntry(entry.id)
         diaryListRef.value?.removeEntry(entry.id)
         if (existingEntryId.value === entry.id) {
-          existingEntryId.value = null
-          diaryTitle.value = ''
-          diaryContent.value = ''
-          selectedMood.value = 'calm'
-          isDirty.value = false
+          resetEditorState(new Date(selectedDate.value))
         }
       } catch (error) {
         console.error('删除日记失败:', error)
@@ -273,61 +288,14 @@ async function handleDeleteEntry(entry: DiaryEntry): Promise<void> {
 
 // ========== 搜索跳转 + 关键词定位 ==========
 
-/**
- * Scroll the editor to the first occurrence of any keyword in the content.
- * Uses DOM TreeWalker to find text nodes, then scrolls the match into view
- * with a temporary highlight effect.
- */
 function scrollToKeyword(keyword: string): void {
-  const keywords = keyword.trim().split(/\s+/).filter(Boolean)
-  if (keywords.length === 0) return
+  if (!keyword.trim()) return
 
   // Wait for editor DOM to update
   nextTick(() => {
     setTimeout(() => {
-      const editorEl = diaryEditorRef.value?.$el as HTMLElement | undefined
-      if (!editorEl) return
-
-      const tiptapEl = editorEl.querySelector('.tiptap') as HTMLElement | null
-      if (!tiptapEl) return
-
-      // Walk all text nodes to find the first keyword match
-      const walker = document.createTreeWalker(tiptapEl, NodeFilter.SHOW_TEXT)
-      let foundNode: Text | null = null
-
-      outer: while (walker.nextNode()) {
-        const textNode = walker.currentNode as Text
-        const text = textNode.textContent?.toLowerCase() || ''
-        for (const kw of keywords) {
-          const idx = text.indexOf(kw.toLowerCase())
-          if (idx !== -1) {
-            foundNode = textNode
-            break outer
-          }
-        }
-      }
-
-      if (!foundNode) return
-
-      // 直接滚动到父元素，避免修改 DOM 结构干扰 Tiptap
-      const parentEl = foundNode.parentElement
-      if (parentEl) {
-        parentEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-
-        // 使用 CSS 类添加临时高亮效果，而不是修改 DOM 结构
-        const originalBg = parentEl.style.background
-        const originalTransition = parentEl.style.transition
-        parentEl.style.transition = 'background 0.3s ease'
-        parentEl.style.background = 'rgba(16, 185, 129, 0.15)'
-
-        setTimeout(() => {
-          parentEl.style.background = originalBg
-          setTimeout(() => {
-            parentEl.style.transition = originalTransition
-          }, 300)
-        }, 1500)
-      }
-    }, 200) // Small delay to let Tiptap render content
+      diaryEditorRef.value?.scrollToKeyword(keyword)
+    }, 200)
   })
 }
 // 从搜索结果跳转
@@ -339,6 +307,13 @@ async function loadEntryById(id: string, keyword?: string): Promise<void> {
       if (keyword) {
         scrollToKeyword(keyword)
       }
+    } else {
+      resetEditorState()
+      dialog.warning({
+        title: '提示',
+        content: '日记不存在或已删除',
+        positiveText: '知道了'
+      })
     }
   } catch (error) {
     console.error('加载日记失败:', error)
@@ -349,7 +324,8 @@ async function loadEntryById(id: string, keyword?: string): Promise<void> {
 async function loadOrCreateForDate(dateStr: string): Promise<void> {
   await flushSave()
 
-  selectedDate.value = new Date(dateStr + 'T12:00:00')
+  const targetDate = new Date(dateStr + 'T12:00:00')
+  selectedDate.value = targetDate
   try {
     const entry = await window.api.getDiaryByDate(dateStr)
     if (entry) {
@@ -358,13 +334,10 @@ async function loadOrCreateForDate(dateStr: string): Promise<void> {
       diaryContent.value = entry.content
       selectedMood.value = entry.mood
       selectedDate.value = new Date(entry.createdAt)
+      isDirty.value = false
     } else {
-      existingEntryId.value = null
-      diaryTitle.value = ''
-      diaryContent.value = ''
-      selectedMood.value = 'calm'
+      resetEditorState(targetDate)
     }
-    isDirty.value = false
   } catch (error) {
     console.error('加载日记失败:', error)
   }

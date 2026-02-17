@@ -4,15 +4,15 @@
       <div class="title-bar-title"></div>
     </div>
     <div class="title-bar-controls">
-      <button class="title-bar-button minimize" @click="minimize" title="最小化">
+      <button class="title-bar-button minimize" title="最小化" @click="minimize">
         <svg width="12" height="12" viewBox="0 0 12 12">
           <rect x="0" y="5" width="12" height="1" fill="currentColor" />
         </svg>
       </button>
       <button
         class="title-bar-button maximize"
-        @click="toggleMaximize"
         :title="isMaximized ? '还原' : '最大化'"
+        @click="toggleMaximize"
       >
         <svg v-if="!isMaximized" width="12" height="12" viewBox="0 0 12 12">
           <rect
@@ -46,7 +46,7 @@
           />
         </svg>
       </button>
-      <button class="title-bar-button close" @click="close" title="关闭">
+      <button class="title-bar-button close" title="关闭" @click="close">
         <svg width="12" height="12" viewBox="0 0 12 12">
           <line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1" />
           <line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1" />
@@ -69,7 +69,7 @@ const minimize = (): void => {
   window.api.windowMinimize()
 }
 
-const toggleMaximize = async () => {
+const toggleMaximize = async (): Promise<void> => {
   await window.api.windowMaximize()
   isMaximized.value = await window.api.windowIsMaximized()
 }

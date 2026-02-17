@@ -1,7 +1,15 @@
 import { randomUUID } from 'crypto'
 import { getDatabase } from './index'
 import { stripHtmlToPlain } from './migrations'
-import type { DiaryEntry, Mood, SearchParams, HomePageStats, SearchResult } from '../../types/model'
+import type {
+  DiaryEntry,
+  Mood,
+  SearchParams,
+  HomePageStats,
+  SearchResult,
+  PersonMentionDetailItem,
+  PersonMentionDetailResult
+} from '../../types/model'
 
 interface DiaryRow {
   id: string
@@ -16,6 +24,25 @@ interface DiaryRow {
 
 interface TagRow {
   name: string
+}
+
+interface TagGroupRow {
+  diary_id: string
+  tags: string | null
+}
+
+interface PersonArchiveRow {
+  name: string
+  alias: string | null
+}
+
+interface MentionDiaryRow {
+  id: string
+  title: string
+  plain_content: string
+  mood: Mood
+  created_at: number
+  updated_at: number
 }
 
 function rowToEntry(row: DiaryRow, tags: string[]): DiaryEntry {
@@ -41,6 +68,34 @@ function getTagsForDiary(diaryId: string): string[] {
   return rows.map((r) => r.name)
 }
 
+const TAG_CONCAT_DELIMITER = '\u001f'
+
+function getTagsByDiaryIds(diaryIds: string[]): Map<string, string[]> {
+  const tagsByDiaryId = new Map<string, string[]>()
+  if (diaryIds.length === 0) return tagsByDiaryId
+
+  const db = getDatabase()
+  const placeholders = diaryIds.map(() => '?').join(',')
+  const rows = db
+    .prepare(
+      `SELECT dt.diary_id, GROUP_CONCAT(t.name, '${TAG_CONCAT_DELIMITER}') as tags
+       FROM diary_tags dt
+       JOIN tags t ON t.id = dt.tag_id
+       WHERE dt.diary_id IN (${placeholders})
+       GROUP BY dt.diary_id`
+    )
+    .all(...diaryIds) as TagGroupRow[]
+
+  for (const row of rows) {
+    tagsByDiaryId.set(
+      row.diary_id,
+      row.tags ? row.tags.split(TAG_CONCAT_DELIMITER).filter(Boolean) : []
+    )
+  }
+
+  return tagsByDiaryId
+}
+
 function syncTags(diaryId: string, tags: string[]): void {
   const db = getDatabase()
 
@@ -60,6 +115,56 @@ function syncTags(diaryId: string, tags: string[]): void {
     const row = getTagId.get(tag) as { id: number }
     insertDiaryTag.run(diaryId, row.id)
   }
+}
+
+const blockedHtmlTags = [
+  'script',
+  'style',
+  'iframe',
+  'object',
+  'embed',
+  'form',
+  'input',
+  'button',
+  'textarea',
+  'select',
+  'option',
+  'link',
+  'meta',
+  'base'
+]
+const blockedHtmlTagPattern = blockedHtmlTags.join('|')
+
+function sanitizeDiaryHtml(content: string): string {
+  let sanitized = content
+
+  sanitized = sanitized.replace(
+    new RegExp(`<\\s*(${blockedHtmlTagPattern})\\b[^>]*>[\\s\\S]*?<\\s*\\/\\s*\\1\\s*>`, 'gi'),
+    ''
+  )
+  sanitized = sanitized.replace(
+    new RegExp(`<\\s*(?:${blockedHtmlTagPattern})\\b[^>]*\\/?>`, 'gi'),
+    ''
+  )
+  sanitized = sanitized.replace(/\s+on[a-z]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gis, '')
+  sanitized = sanitized.replace(/\s+(href|src)\s*=\s*(['"])\s*javascript:[\s\S]*?\2/gis, '')
+  sanitized = sanitized.replace(/\s+(href|src)\s*=\s*(['"])\s*data:text\/html[\s\S]*?\2/gis, '')
+  sanitized = sanitized.replace(
+    /\s+style\s*=\s*(['"])([\s\S]*?)\1/gis,
+    (_match, quote: string, styleValue: string) => {
+      const loweredStyle = styleValue.toLowerCase()
+      if (
+        loweredStyle.includes('expression') ||
+        loweredStyle.includes('javascript:') ||
+        loweredStyle.includes('url(')
+      ) {
+        return ''
+      }
+      return ` style=${quote}${styleValue}${quote}`
+    }
+  )
+
+  return sanitized
 }
 
 export function getDiaryEntries(params: {
@@ -85,7 +190,8 @@ export function getDiaryEntries(params: {
     .prepare(`SELECT ${selectFields} FROM diary_entries ORDER BY created_at DESC LIMIT ? OFFSET ?`)
     .all(limit, offset) as DiaryRow[]
 
-  const entries = rows.map((row) => rowToEntry(row, getTagsForDiary(row.id)))
+  const tagsByDiaryId = getTagsByDiaryIds(rows.map((row) => row.id))
+  const entries = rows.map((row) => rowToEntry(row, tagsByDiaryId.get(row.id) ?? []))
   return { entries, total }
 }
 
@@ -124,7 +230,8 @@ export function saveDiaryEntry(entry: {
 }): DiaryEntry {
   const db = getDatabase()
   const now = Date.now()
-  const plainContent = stripHtmlToPlain(entry.content)
+  const sanitizedContent = sanitizeDiaryHtml(entry.content)
+  const plainContent = stripHtmlToPlain(sanitizedContent)
 
   const save = db.transaction(() => {
     if (entry.id) {
@@ -136,7 +243,7 @@ export function saveDiaryEntry(entry: {
           'UPDATE diary_entries SET title = ?, content = ?, plain_content = ?, mood = ?, weather = ?, updated_at = ? WHERE id = ?'
         ).run(
           entry.title,
-          entry.content,
+          sanitizedContent,
           plainContent,
           entry.mood,
           entry.weather ?? null,
@@ -156,7 +263,7 @@ export function saveDiaryEntry(entry: {
     ).run(
       id,
       entry.title,
-      entry.content,
+      sanitizedContent,
       plainContent,
       entry.mood,
       entry.weather ?? null,
@@ -283,13 +390,19 @@ export function searchDiaries(params: SearchParams): SearchResult {
   }
 
   // Date range
-  if (params.dateFrom) {
+  if (typeof params.dateFrom === 'number' && Number.isFinite(params.dateFrom)) {
     conditions.push('e.created_at >= ?')
     values.push(params.dateFrom)
   }
-  if (params.dateTo) {
-    conditions.push('e.created_at <= ?')
-    values.push(params.dateTo)
+  if (typeof params.dateTo === 'number' && Number.isFinite(params.dateTo)) {
+    const dateTo = new Date(params.dateTo)
+    const dateToExclusive = new Date(
+      dateTo.getFullYear(),
+      dateTo.getMonth(),
+      dateTo.getDate() + 1
+    ).getTime()
+    conditions.push('e.created_at < ?')
+    values.push(dateToExclusive)
   }
 
   // Tag filter (AND logic: entry must have ALL specified tags)
@@ -312,7 +425,8 @@ export function searchDiaries(params: SearchParams): SearchResult {
   const querySql = `SELECT ${selectClause} FROM ${fromClause} ${whereClause} ORDER BY e.created_at DESC LIMIT ? OFFSET ?`
   const rows = db.prepare(querySql).all(...values, limit, offset) as DiaryRow[]
 
-  const entries = rows.map((row) => rowToEntry(row, getTagsForDiary(row.id)))
+  const tagsByDiaryId = getTagsByDiaryIds(rows.map((row) => row.id))
+  const entries = rows.map((row) => rowToEntry(row, tagsByDiaryId.get(row.id) ?? []))
 
   // 只有当关键词被扩展时才返回 expandedKeywords
   const expandedKeywords =
@@ -391,4 +505,294 @@ export function getAllDiaryContents(): string[] {
   const db = getDatabase()
   const rows = db.prepare('SELECT content FROM diary_entries').all() as { content: string }[]
   return rows.map((r) => r.content)
+}
+
+interface PersonMentionMatcher {
+  personNames: string[]
+  personTokens: string[][]
+  tokenOwners: Map<string, Set<number>>
+  tokenMetaByKey: Map<string, PersonTokenMeta>
+  mentionRegex: RegExp | null
+}
+
+interface PersonTokenMeta {
+  personIndex: number
+  isAlias: boolean
+  charLength: number
+}
+
+function splitAliases(alias: string | null): string[] {
+  if (!alias) return []
+  return alias
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function buildPersonMentionMatcher(personArchives: PersonArchiveRow[]): PersonMentionMatcher {
+  const personNames = personArchives.map((p) => p.name)
+  const personTokens: string[][] = []
+  const tokenOwners = new Map<string, Set<number>>()
+  const tokenMetaByKey = new Map<string, PersonTokenMeta>()
+
+  for (let i = 0; i < personArchives.length; i++) {
+    const person = personArchives[i]
+    const tokenMetaForPerson = new Map<string, { token: string; isAlias: boolean }>()
+    const rawTokens = [
+      { token: person.name, isAlias: false },
+      ...splitAliases(person.alias).map((token) => ({ token, isAlias: true }))
+    ]
+
+    for (const { token, isAlias } of rawTokens) {
+      const key = token.toLocaleLowerCase()
+      const existing = tokenMetaForPerson.get(key)
+      if (!existing || (existing.isAlias && !isAlias)) {
+        tokenMetaForPerson.set(key, { token, isAlias })
+      }
+    }
+
+    const tokenList = [...tokenMetaForPerson.values()].map((item) => item.token)
+    personTokens.push(tokenList)
+
+    for (const [key, tokenMeta] of tokenMetaForPerson) {
+      let owners = tokenOwners.get(key)
+      if (!owners) {
+        owners = new Set<number>()
+        tokenOwners.set(key, owners)
+      }
+      owners.add(i)
+
+      if (!tokenMetaByKey.has(key)) {
+        tokenMetaByKey.set(key, {
+          personIndex: i,
+          isAlias: tokenMeta.isAlias,
+          charLength: [...tokenMeta.token].length
+        })
+      }
+    }
+  }
+
+  const orderedTokens = [...tokenOwners.keys()].sort((a, b) => {
+    const lenDiff = b.length - a.length
+    if (lenDiff !== 0) return lenDiff
+    return a.localeCompare(b)
+  })
+
+  return {
+    personNames,
+    personTokens,
+    tokenOwners,
+    tokenMetaByKey,
+    mentionRegex:
+      orderedTokens.length > 0 ? new RegExp(orderedTokens.map(escapeRegExp).join('|'), 'giu') : null
+  }
+}
+
+function isWordLikeChar(char: string | undefined): boolean {
+  if (!char) return false
+  return /[\p{L}\p{N}]/u.test(char)
+}
+
+function isSingleCharAliasStandaloneMatch(
+  text: string,
+  match: RegExpExecArray,
+  tokenMeta: PersonTokenMeta
+): boolean {
+  if (!tokenMeta.isAlias || tokenMeta.charLength !== 1) return true
+
+  const start = match.index
+  const end = start + match[0].length
+  const prevChar = start > 0 ? text[start - 1] : undefined
+  const nextChar = end < text.length ? text[end] : undefined
+
+  return !isWordLikeChar(prevChar) && !isWordLikeChar(nextChar)
+}
+
+function countMentionsForPerson(
+  text: string,
+  personIndex: number,
+  mentionRegex: RegExp,
+  tokenOwners: Map<string, Set<number>>,
+  tokenMetaByKey: Map<string, PersonTokenMeta>
+): { count: number; matchedKeys: Set<string> } {
+  mentionRegex.lastIndex = 0
+
+  let count = 0
+  const matchedKeys = new Set<string>()
+  let match: RegExpExecArray | null
+
+  while ((match = mentionRegex.exec(text)) !== null) {
+    const key = match[0].toLocaleLowerCase()
+    const owners = tokenOwners.get(key)
+
+    // 同名/同别名冲突时跳过，避免错误归属。
+    if (!owners || owners.size !== 1 || !owners.has(personIndex)) continue
+
+    const tokenMeta = tokenMetaByKey.get(key)
+    if (!tokenMeta || tokenMeta.personIndex !== personIndex) continue
+    if (!isSingleCharAliasStandaloneMatch(text, match, tokenMeta)) continue
+
+    count++
+    matchedKeys.add(key)
+  }
+
+  return { count, matchedKeys }
+}
+
+export function getPersonMentionStats(): { name: string; count: number }[] {
+  const db = getDatabase()
+
+  // 获取所有 type='person' 的档案
+  const personArchives = db
+    .prepare('SELECT name, alias FROM archives WHERE type = ?')
+    .all('person') as PersonArchiveRow[]
+
+  if (personArchives.length === 0) return []
+
+  const matcher = buildPersonMentionMatcher(personArchives)
+  if (!matcher.mentionRegex) return []
+
+  const mentionCounts = new Array<number>(personArchives.length).fill(0)
+  const diaryRows = db.prepare('SELECT plain_content FROM diary_entries').iterate() as Iterable<{
+    plain_content: string
+  }>
+
+  for (const row of diaryRows) {
+    const text = row.plain_content || ''
+    if (!text) continue
+
+    matcher.mentionRegex.lastIndex = 0
+    let match: RegExpExecArray | null
+    while ((match = matcher.mentionRegex.exec(text)) !== null) {
+      const key = match[0].toLocaleLowerCase()
+      const owners = matcher.tokenOwners.get(key)
+      if (!owners || owners.size !== 1) continue
+
+      const ownerIndex = owners.values().next().value
+      if (typeof ownerIndex !== 'number') continue
+
+      const tokenMeta = matcher.tokenMetaByKey.get(key)
+      if (!tokenMeta || tokenMeta.personIndex !== ownerIndex) continue
+      if (!isSingleCharAliasStandaloneMatch(text, match, tokenMeta)) continue
+
+      mentionCounts[ownerIndex]++
+    }
+  }
+
+  return matcher.personNames
+    .map((name, index) => ({ name, count: mentionCounts[index] }))
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count)
+}
+
+export function getPersonMentionDetails(
+  personName: string,
+  params?: { limit?: number; offset?: number }
+): PersonMentionDetailResult {
+  const db = getDatabase()
+  const limit = params?.limit ?? 50
+  const offset = params?.offset ?? 0
+
+  const personArchives = db
+    .prepare('SELECT name, alias FROM archives WHERE type = ?')
+    .all('person') as PersonArchiveRow[]
+
+  if (personArchives.length === 0) {
+    return { personName, keywords: [personName], entries: [], total: 0 }
+  }
+
+  const matcher = buildPersonMentionMatcher(personArchives)
+  if (!matcher.mentionRegex) {
+    return { personName, keywords: [personName], entries: [], total: 0 }
+  }
+
+  let personIndex = matcher.personNames.findIndex((name) => name === personName)
+  if (personIndex === -1) {
+    const target = personName.toLocaleLowerCase()
+    personIndex = matcher.personNames.findIndex((name) => name.toLocaleLowerCase() === target)
+  }
+
+  if (personIndex === -1) {
+    return { personName, keywords: [personName], entries: [], total: 0 }
+  }
+
+  const personKeywords = matcher.personTokens[personIndex]
+  const coarseKeywords = [
+    ...new Set(personKeywords.map((token) => token.toLocaleLowerCase()))
+  ].filter(Boolean)
+  if (coarseKeywords.length === 0) {
+    return {
+      personName: matcher.personNames[personIndex],
+      keywords: personKeywords,
+      entries: [],
+      total: 0
+    }
+  }
+
+  const likeConditions = coarseKeywords
+    .map(() => "(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(plain_content) LIKE ? ESCAPE '\\')")
+    .join(' OR ')
+  const likeValues = coarseKeywords.flatMap((token) => {
+    const pattern = `%${escapeLikePattern(token)}%`
+    return [pattern, pattern]
+  })
+
+  const rows = db
+    .prepare(
+      `SELECT id, title, plain_content, mood, created_at, updated_at
+       FROM diary_entries
+       WHERE ${likeConditions}
+       ORDER BY created_at DESC`
+    )
+    .iterate(...likeValues) as Iterable<MentionDiaryRow>
+
+  const entries: PersonMentionDetailItem[] = []
+  let total = 0
+  for (const row of rows) {
+    const textForMatch = `${row.title || ''}\n${row.plain_content || ''}`
+    const { count, matchedKeys } = countMentionsForPerson(
+      textForMatch,
+      personIndex,
+      matcher.mentionRegex,
+      matcher.tokenOwners,
+      matcher.tokenMetaByKey
+    )
+
+    if (count <= 0) continue
+
+    const currentMatchIndex = total
+    total++
+
+    const matchedKeywords = personKeywords.filter((token) =>
+      matchedKeys.has(token.toLocaleLowerCase())
+    )
+
+    if (currentMatchIndex >= offset && entries.length < limit) {
+      entries.push({
+        id: row.id,
+        title: row.title,
+        content: row.plain_content,
+        mood: row.mood,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        mentionCount: count,
+        matchedKeywords
+      })
+    }
+  }
+
+  return {
+    personName: matcher.personNames[personIndex],
+    keywords: personKeywords,
+    entries,
+    total
+  }
+}
+
+function escapeLikePattern(str: string): string {
+  return str.replace(/[\\%_]/g, '\\$&')
+}
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

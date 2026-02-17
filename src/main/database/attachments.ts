@@ -95,13 +95,7 @@ export async function deleteAttachment(id: string): Promise<boolean> {
     | undefined
   if (!row) return false
 
-  // Delete file
-  try {
-    const fullPath = join(app.getPath('userData'), row.file_path)
-    await fs.unlink(fullPath)
-  } catch {
-    // File may already be deleted, continue
-  }
+  await deleteAttachmentFiles([row.file_path])
 
   const result = db.prepare('DELETE FROM attachments WHERE id = ?').run(id)
   return result.changes > 0
@@ -113,6 +107,21 @@ export function getAttachments(diaryId: string): AttachmentInfo[] {
     .prepare('SELECT * FROM attachments WHERE diary_id = ? ORDER BY created_at')
     .all(diaryId) as AttachmentRow[]
   return rows.map(rowToAttachment)
+}
+
+export async function deleteAttachmentFiles(filePaths: string[]): Promise<void> {
+  if (filePaths.length === 0) return
+
+  await Promise.all(
+    filePaths.map(async (filePath) => {
+      try {
+        const fullPath = join(app.getPath('userData'), filePath)
+        await fs.unlink(fullPath)
+      } catch {
+        // File may already be deleted, continue
+      }
+    })
+  )
 }
 
 function getMimeType(ext: string): string {

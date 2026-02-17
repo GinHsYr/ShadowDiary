@@ -20,13 +20,10 @@ export async function ensureImageDirs(): Promise<void> {
   const imageDir = getImageDir()
   const thumbnailDir = getThumbnailDir()
 
-  if (!existsSync(imageDir)) {
-    await mkdir(imageDir, { recursive: true })
-  }
-
-  if (!existsSync(thumbnailDir)) {
-    await mkdir(thumbnailDir, { recursive: true })
-  }
+  await Promise.all([
+    mkdir(imageDir, { recursive: true }),
+    mkdir(thumbnailDir, { recursive: true })
+  ])
 }
 
 // 保存图片并生成缩略图

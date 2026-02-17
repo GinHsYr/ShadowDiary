@@ -64,7 +64,6 @@ const activeKey = computed(() => {
   const path = route.path
   if (path.startsWith('/dashboard')) return 'dashboard'
   if (path.startsWith('/today')) return 'today'
-  if (path.startsWith('/calendar')) return 'calendar'
   if (path.startsWith('/archives')) return 'archives'
   if (path.startsWith('/settings')) return 'settings'
   return 'dashboard'

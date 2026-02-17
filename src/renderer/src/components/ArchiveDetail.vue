@@ -173,6 +173,9 @@ async function loadArchive(): Promise<void> {
       form.images = archive.images || []
       isDirty.value = false
       currentEditingId = archive.id
+    } else {
+      resetForm()
+      currentEditingId = null
     }
   } catch (error) {
     console.error('加载档案失败:', error)
@@ -272,7 +275,7 @@ watch(
   async (_, oldId) => {
     const idToSave = currentEditingId ?? oldId
     await flushSave(idToSave)
-    loadArchive()
+    await loadArchive()
   }
 )
 

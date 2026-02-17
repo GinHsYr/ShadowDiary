@@ -31,6 +31,7 @@ import {
 import { ThemeMode, useThemeStore } from '../stores/themes'
 import { useRouter } from 'vue-router'
 import type { Archive, DiaryEntry, Mood } from '../../../types/model'
+import SafeHighlightedText from './SafeHighlightedText.vue'
 
 const theme = useThemeStore()
 const router = useRouter()
@@ -142,53 +143,6 @@ function getKeywords(input: string): string[] {
 // --- Utility functions ---
 // stripHtml function removed - no longer needed with lightweight mode
 
-/** Escape special regex characters */
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/** Highlight all keywords in text (supports multi-keyword and expanded keywords) */
-// 在 highlightText 函数中对输入进行 HTML 转义
-function highlightText(text: string, keyword: string, extraKeywords?: string[]): string {
-  const escapeHtml = (str: string): string => {
-    const map: Record<string, string> = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    }
-
-    return str.replace(/[&<>"']/g, (m) => map[m])
-  }
-
-  const escapedText = escapeHtml(text)
-
-  // 收集所有需要高亮的关键词
-  const allKeywords = new Set<string>()
-
-  // 添加原始关键词
-  const originalKeywords = keyword.trim().split(/\s+/).filter(Boolean)
-  for (const kw of originalKeywords) {
-    allKeywords.add(escapeHtml(kw))
-  }
-
-  // 添加扩展的关键词（档案别名）
-  if (extraKeywords && extraKeywords.length > 0) {
-    for (const kw of extraKeywords) {
-      allKeywords.add(escapeHtml(kw))
-    }
-  }
-
-  let result = escapedText
-
-  for (const kw of allKeywords) {
-    const regex = new RegExp(`(${escapeRegex(kw)})`, 'gi')
-    result = result.replace(regex, '<mark>$1</mark>')
-  }
-
-  return result
-}
 /** Extract snippet around the first matching keyword */
 function extractSnippet(
   html: string,
@@ -609,7 +563,7 @@ onBeforeUnmount(() => {
                   </template>
                   <n-thing>
                     <template #header>
-                      <span v-html="highlightText(archive.name, searchKeyword)" />
+                      <SafeHighlightedText :text="archive.name" :keyword="searchKeyword" />
                     </template>
                     <template #description>
                       <n-space size="small" align="center">
@@ -631,10 +585,11 @@ onBeforeUnmount(() => {
                                 : '其他'
                           }}
                         </n-tag>
-                        <span
+                        <SafeHighlightedText
                           v-if="archive.aliases?.length"
                           class="archive-alias"
-                          v-html="highlightText(archive.aliases.join('、'), searchKeyword)"
+                          :text="archive.aliases.join('、')"
+                          :keyword="searchKeyword"
                         />
                       </n-space>
                     </template>
@@ -665,10 +620,10 @@ onBeforeUnmount(() => {
                 >
                   <n-thing>
                     <template #header>
-                      <span
-                        v-html="
-                          highlightText(entry.title || '无标题', searchKeyword, expandedKeywords)
-                        "
+                      <SafeHighlightedText
+                        :text="entry.title || '无标题'"
+                        :keyword="searchKeyword"
+                        :extra-keywords="expandedKeywords"
                       />
                     </template>
                     <template #description>
@@ -692,17 +647,13 @@ onBeforeUnmount(() => {
                           >+{{ entry.tags.length - 3 }}</span
                         >
                       </n-space>
-                      <div
-                        v-if="searchKeyword.trim()"
-                        class="content-snippet"
-                        v-html="
-                          highlightText(
-                            extractSnippet(entry.content, searchKeyword, 40, expandedKeywords),
-                            searchKeyword,
-                            expandedKeywords
-                          )
-                        "
-                      />
+                      <div v-if="searchKeyword.trim()" class="content-snippet">
+                        <SafeHighlightedText
+                          :text="extractSnippet(entry.content, searchKeyword, 40, expandedKeywords)"
+                          :keyword="searchKeyword"
+                          :extra-keywords="expandedKeywords"
+                        />
+                      </div>
                     </template>
                   </n-thing>
                 </n-list-item>
