@@ -141,10 +141,17 @@ function syncListEntry(): void {
   if (existingEntryId.value) {
     diaryListRef.value?.updateEntry(existingEntryId.value, {
       title: diaryTitle.value,
-      content: diaryContent.value,
+      content: toPlainPreviewText(diaryContent.value),
       mood: selectedMood.value
     })
   }
+}
+
+function toPlainPreviewText(content: string): string {
+  if (!content) return ''
+  const temp = document.createElement('div')
+  temp.innerHTML = content
+  return (temp.textContent || temp.innerText || '').replace(/\s+/g, ' ').trim()
 }
 
 function scheduleSave(): void {
@@ -230,28 +237,22 @@ function resetEditorState(date: Date = new Date()): void {
 
 async function handleSelectEntry(entry: DiaryEntry): Promise<void> {
   await flushSave()
-
-  // 检测是否是 lightweight 模式的数据（纯文本，不包含 HTML 标签）
-  // 如果 content 不包含 HTML 标签，说明是 plain_content，需要重新加载完整内容
-  const hasHtmlTags = /<[^>]+>/.test(entry.content)
-
-  if (!hasHtmlTags && entry.content) {
-    // lightweight 模式，需要加载完整内容
-    try {
-      const fullEntry = await window.api.getDiaryEntry(entry.id)
-      if (fullEntry) {
-        entry = fullEntry
-      }
-    } catch (error) {
-      console.error('加载完整日记内容失败:', error)
+  let targetEntry = entry
+  // 列表使用 lightweight 模式，选中后统一按 id 拉取完整内容，避免覆盖原始富文本/图片
+  try {
+    const fullEntry = await window.api.getDiaryEntry(entry.id)
+    if (fullEntry) {
+      targetEntry = fullEntry
     }
+  } catch (error) {
+    console.error('加载完整日记内容失败:', error)
   }
 
-  existingEntryId.value = entry.id
-  diaryTitle.value = entry.title
-  diaryContent.value = entry.content
-  selectedMood.value = entry.mood
-  selectedDate.value = new Date(entry.createdAt)
+  existingEntryId.value = targetEntry.id
+  diaryTitle.value = targetEntry.title
+  diaryContent.value = targetEntry.content
+  selectedMood.value = targetEntry.mood
+  selectedDate.value = new Date(targetEntry.createdAt)
   isDirty.value = false
 }
 

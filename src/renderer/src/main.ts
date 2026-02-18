@@ -13,6 +13,17 @@ import 'froala-editor/css/froala_editor.pkgd.min.css'
 import 'froala-editor/css/froala_style.min.css'
 import 'froala-editor/js/plugins.pkgd.min.js'
 
+// Prevent browser default file-drop navigation; editor components handle file drop explicitly.
+const preventFileDropDefault = (event: DragEvent): void => {
+  if (event.dataTransfer?.files && event.dataTransfer.files.length > 0) {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  }
+}
+window.addEventListener('dragenter', preventFileDropDefault, true)
+window.addEventListener('dragover', preventFileDropDefault, true)
+window.addEventListener('drop', preventFileDropDefault, true)
+
 const app = createApp(App)
 app.use(VueFroala)
 

@@ -141,6 +141,9 @@ function handleCancelCreate(): void {
 }
 
 onBeforeUnmount(() => {
+  void archiveDetailRef.value?.flushSave().catch((error) => {
+    console.error('页面卸载时保存档案失败:', error)
+  })
   cleanupResizeListeners()
 })
 </script>

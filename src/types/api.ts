@@ -51,6 +51,28 @@ export interface CheckForUpdatesResult {
   fromCache: boolean
 }
 
+export interface ImageSaveResult {
+  success: boolean
+  id?: string
+  path?: string
+  thumbnailPath?: string
+  error?: string
+}
+
+export interface ImageSelectResult {
+  canceled: boolean
+  path?: string
+  thumbnailPath?: string
+  dataUrl?: string
+}
+
+export interface DataTransferResult {
+  success: boolean
+  canceled?: boolean
+  path?: string
+  error?: string
+}
+
 export interface DiaryAPI {
   // 档案
   getArchives(params?: ArchiveQueryParams): Promise<Archive[]>
@@ -85,6 +107,8 @@ export interface DiaryAPI {
   getSetting(key: string): Promise<string | null>
   setSetting(key: string, value: string): Promise<void>
   getAllSettings(): Promise<Record<string, string>>
+  exportData(): Promise<DataTransferResult>
+  importData(): Promise<DataTransferResult>
 
   // 统计
   getStats(): Promise<HomePageStats>
@@ -95,19 +119,14 @@ export interface DiaryAPI {
   ): Promise<PersonMentionDetailResult>
 
   // 图片保存（将 base64 转换为文件）
-  saveImage(base64Data: string): Promise<{
-    success: boolean
-    id?: string
-    path?: string
-    thumbnailPath?: string
-    error?: string
-  }>
+  saveImage(base64Data: string): Promise<ImageSaveResult>
 
   // 清理未使用的图片
   cleanupImages(): Promise<{ success: boolean; error?: string }>
 
   // 图片选择
-  selectImage(): Promise<{ canceled: boolean; dataUrl?: string }>
+  selectImage(): Promise<ImageSelectResult>
+  selectArchiveAvatar(): Promise<ImageSelectResult>
 
   // 图片操作（右键菜单）
   copyImage(dataUrl: string): Promise<{ success: boolean }>

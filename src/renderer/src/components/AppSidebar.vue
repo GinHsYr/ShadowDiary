@@ -72,6 +72,7 @@ const activeKey = computed(() => {
 const collapsed = ref(false)
 const showModal = ref(false)
 const menuKey = ref(0)
+const savingProfile = ref(false)
 
 // 从 store 获取用户信息
 const userName = computed(() => userStore.name)
@@ -82,13 +83,34 @@ const newName = ref('')
 const newAvatar = ref('')
 const avatarType = ref<'upload'>('upload')
 
-const handleSave = (): void => {
-  userStore.updateUserInfo({
-    name: newName.value || userName.value,
-    avatar: newAvatar.value
-  })
-  showModal.value = false
-  console.log('保存成功:', userStore.getUserInfo)
+function notify(type: 'success' | 'error', message: string): void {
+  const api = window.$message
+  if (api) {
+    api[type](message)
+    return
+  }
+  if (type === 'error') {
+    alert(message)
+  }
+}
+
+const handleSave = async (): Promise<void> => {
+  if (savingProfile.value) return
+  savingProfile.value = true
+
+  try {
+    await userStore.updateUserInfo({
+      name: newName.value || userName.value,
+      avatar: newAvatar.value
+    })
+    showModal.value = false
+    notify('success', '保存成功')
+  } catch (error) {
+    console.error('保存个人信息失败:', error)
+    notify('error', '保存失败，请重试')
+  } finally {
+    savingProfile.value = false
+  }
 }
 
 const selectAvatar = async (): Promise<void> => {
@@ -249,7 +271,7 @@ const handleTodayClick = (): void => {
       <template #footer>
         <n-space justify="end" :size="12">
           <n-button @click="showModal = false"> 取消 </n-button>
-          <n-button type="primary" @click="handleSave"> 保存 </n-button>
+          <n-button type="primary" :loading="savingProfile" @click="handleSave"> 保存 </n-button>
         </n-space>
       </template>
     </n-modal>

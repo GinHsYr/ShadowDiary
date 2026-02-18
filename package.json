@@ -5,15 +5,19 @@
   "main": "./out/main/index.js",
   "author": "HsYr",
   "homepage": "https://electron-vite.org",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
+    "check:node": "node -e \"const [major, minor] = process.versions.node.split('.').map(Number); if (major < 20 || (major === 20 && minor < 19)) { console.error('Node.js >= 20.19.0 is required. Current: ' + process.versions.node); process.exit(1) }\"",
     "format": "prettier --write .",
     "lint": "eslint --cache .",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "start": "electron-vite preview",
-    "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build",
+    "start": "npm run check:node && electron-vite preview",
+    "dev": "npm run check:node && electron-vite dev",
+    "build": "npm run check:node && npm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",

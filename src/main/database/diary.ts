@@ -275,13 +275,18 @@ export function saveDiaryEntry(entry: {
   })
 
   const id = save()
+  invalidatePersonMentionCache()
   return getDiaryEntry(id)!
 }
 
 export function deleteDiaryEntry(id: string): boolean {
   const db = getDatabase()
   const result = db.prepare('DELETE FROM diary_entries WHERE id = ?').run(id)
-  return result.changes > 0
+  const deleted = result.changes > 0
+  if (deleted) {
+    invalidatePersonMentionCache()
+  }
+  return deleted
 }
 
 export function getDiaryDates(yearMonth: string): string[] {
@@ -320,18 +325,34 @@ function expandKeywordWithArchiveAliases(keyword: string): string[] {
     // 添加档案名称
     allNames.add(row.name)
     // 添加所有别名
-    if (row.alias) {
-      const aliases = row.alias
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-      for (const alias of aliases) {
-        allNames.add(alias)
-      }
+    for (const alias of splitAliases(row.alias)) {
+      allNames.add(alias)
     }
   }
 
   return Array.from(allNames)
+}
+
+function quoteFtsToken(token: string): string | null {
+  const trimmed = token.trim()
+  if (!trimmed) return null
+  const escaped = trimmed.replace(/"/g, '""')
+  return `"${escaped}"`
+}
+
+function buildFtsMatchExpression(keywordGroups: string[][]): string | null {
+  if (keywordGroups.length === 0) return null
+
+  const groupExpressions = keywordGroups
+    .map((group) => {
+      const terms = group.map(quoteFtsToken).filter((term): term is string => Boolean(term))
+      if (terms.length === 0) return null
+      return terms.length === 1 ? terms[0] : `(${terms.join(' OR ')})`
+    })
+    .filter((expr): expr is string => Boolean(expr))
+
+  if (groupExpressions.length === 0) return null
+  return groupExpressions.join(' AND ')
 }
 
 export function searchDiaries(params: SearchParams): SearchResult {
@@ -350,36 +371,68 @@ export function searchDiaries(params: SearchParams): SearchResult {
   // 收集所有扩展后的关键词用于前端高亮
   const allExpandedKeywords = new Set<string>()
 
+  const keywordGroups: string[][] = []
+
   // Keyword search: split by spaces for multi-keyword AND matching
   // 每个关键词如果匹配到档案，则扩展为该档案的所有名称（OR 逻辑）
   if (params.keyword && params.keyword.trim()) {
     const keywords = params.keyword.trim().split(/\s+/).filter(Boolean)
     for (const kw of keywords) {
       // 扩展关键词：如果匹配档案，加入该档案的所有别名
-      const expandedKeywords = expandKeywordWithArchiveAliases(kw)
+      const expandedKeywords = [
+        ...new Set(expandKeywordWithArchiveAliases(kw).map((k) => k.trim()))
+      ].filter(Boolean)
+      if (expandedKeywords.length === 0) continue
+      keywordGroups.push(expandedKeywords)
 
       // 收集所有扩展的关键词
       for (const ek of expandedKeywords) {
         allExpandedKeywords.add(ek)
       }
+    }
+  }
 
-      if (expandedKeywords.length === 1) {
-        // 没有匹配到档案，使用原始关键词
-        const likePattern = `%${kw}%`
-        conditions.push('(e.title LIKE ? COLLATE NOCASE OR e.plain_content LIKE ? COLLATE NOCASE)')
-        values.push(likePattern, likePattern)
-      } else {
-        // 匹配到档案，使用 OR 连接所有扩展的关键词
-        const orConditions: string[] = []
-        for (const expandedKw of expandedKeywords) {
-          const likePattern = `%${expandedKw}%`
-          orConditions.push(
-            '(e.title LIKE ? COLLATE NOCASE OR e.plain_content LIKE ? COLLATE NOCASE)'
-          )
-          values.push(likePattern, likePattern)
-        }
-        conditions.push(`(${orConditions.join(' OR ')})`)
+  if (keywordGroups.length > 0) {
+    const ftsExpression = buildFtsMatchExpression(keywordGroups)
+    const likeGroupConditions: string[] = []
+    const likeValues: unknown[] = []
+
+    for (const keywordGroup of keywordGroups) {
+      const orConditions: string[] = []
+      for (const keyword of keywordGroup) {
+        const likePattern = `%${escapeLikePattern(keyword)}%`
+        orConditions.push(
+          "(e.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR e.plain_content LIKE ? ESCAPE '\\' COLLATE NOCASE)"
+        )
+        likeValues.push(likePattern, likePattern)
       }
+      if (orConditions.length > 0) {
+        likeGroupConditions.push(`(${orConditions.join(' OR ')})`)
+      }
+    }
+
+    const keywordClauses: string[] = []
+    const keywordValues: unknown[] = []
+
+    if (ftsExpression) {
+      keywordClauses.push(
+        'e.rowid IN (SELECT rowid FROM diary_search_fts WHERE diary_search_fts MATCH ?)'
+      )
+      keywordValues.push(ftsExpression)
+    }
+
+    if (likeGroupConditions.length > 0) {
+      keywordClauses.push(likeGroupConditions.join(' AND '))
+      keywordValues.push(...likeValues)
+    }
+
+    if (keywordClauses.length === 1) {
+      conditions.push(keywordClauses[0])
+      values.push(...keywordValues)
+    } else if (keywordClauses.length > 1) {
+      // FTS 命中快，但中文连续文本场景可能被分词漏掉，补充 LIKE 保证不漏召回。
+      conditions.push(`(${keywordClauses.join(' OR ')})`)
+      values.push(...keywordValues)
     }
   }
 
@@ -524,7 +577,7 @@ interface PersonTokenMeta {
 function splitAliases(alias: string | null): string[] {
   if (!alias) return []
   return alias
-    .split(',')
+    .split(/[,，、;；\n\r]+/g)
     .map((s) => s.trim())
     .filter(Boolean)
 }
@@ -639,6 +692,32 @@ function countMentionsForPerson(
   return { count, matchedKeys }
 }
 
+interface PersonMentionCacheEntry {
+  personName: string
+  keywords: string[]
+  entries: PersonMentionDetailItem[]
+}
+
+const PERSON_MENTION_CACHE_LIMIT = 6
+const personMentionDetailCache = new Map<string, PersonMentionCacheEntry>()
+
+function setPersonMentionCache(key: string, entry: PersonMentionCacheEntry): void {
+  if (
+    !personMentionDetailCache.has(key) &&
+    personMentionDetailCache.size >= PERSON_MENTION_CACHE_LIMIT
+  ) {
+    const oldestKey = personMentionDetailCache.keys().next().value
+    if (oldestKey) {
+      personMentionDetailCache.delete(oldestKey)
+    }
+  }
+  personMentionDetailCache.set(key, entry)
+}
+
+export function invalidatePersonMentionCache(): void {
+  personMentionDetailCache.clear()
+}
+
 export function getPersonMentionStats(): { name: string; count: number }[] {
   const db = getDatabase()
 
@@ -716,38 +795,66 @@ export function getPersonMentionDetails(
     return { personName, keywords: [personName], entries: [], total: 0 }
   }
 
+  const normalizedPersonName = matcher.personNames[personIndex]
   const personKeywords = matcher.personTokens[personIndex]
-  const coarseKeywords = [
-    ...new Set(personKeywords.map((token) => token.toLocaleLowerCase()))
-  ].filter(Boolean)
-  if (coarseKeywords.length === 0) {
+  const normalizedKeywords = [...new Set(personKeywords.map((token) => token.trim()))].filter(
+    Boolean
+  )
+  if (normalizedKeywords.length === 0) {
     return {
-      personName: matcher.personNames[personIndex],
-      keywords: personKeywords,
+      personName: normalizedPersonName,
+      keywords: normalizedKeywords,
       entries: [],
       total: 0
     }
   }
 
-  const likeConditions = coarseKeywords
-    .map(() => "(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(plain_content) LIKE ? ESCAPE '\\')")
-    .join(' OR ')
-  const likeValues = coarseKeywords.flatMap((token) => {
-    const pattern = `%${escapeLikePattern(token)}%`
-    return [pattern, pattern]
-  })
+  const cacheKey = normalizedPersonName.toLocaleLowerCase()
+  const cached = personMentionDetailCache.get(cacheKey)
+  if (cached) {
+    return {
+      personName: cached.personName,
+      keywords: cached.keywords,
+      entries: cached.entries.slice(offset, offset + limit),
+      total: cached.entries.length
+    }
+  }
 
-  const rows = db
-    .prepare(
-      `SELECT id, title, plain_content, mood, created_at, updated_at
-       FROM diary_entries
-       WHERE ${likeConditions}
-       ORDER BY created_at DESC`
-    )
-    .iterate(...likeValues) as Iterable<MentionDiaryRow>
+  const rows: Iterable<MentionDiaryRow> = (() => {
+    const coarseKeywords = [
+      ...new Set(normalizedKeywords.map((token) => token.toLocaleLowerCase()))
+    ]
+    const likeConditions = coarseKeywords
+      .map(() => "(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(plain_content) LIKE ? ESCAPE '\\')")
+      .join(' OR ')
+    const likeValues = coarseKeywords.flatMap((token) => {
+      const pattern = `%${escapeLikePattern(token)}%`
+      return [pattern, pattern]
+    })
 
-  const entries: PersonMentionDetailItem[] = []
-  let total = 0
+    const filters = [`(${likeConditions})`]
+    const values: unknown[] = [...likeValues]
+
+    const ftsExpression = buildFtsMatchExpression([normalizedKeywords])
+    if (ftsExpression) {
+      // FTS 命中快，但中文连续文本场景可能被分词漏掉，补充 LIKE 保证不漏召回。
+      filters.unshift(
+        `rowid IN (SELECT rowid FROM diary_search_fts WHERE diary_search_fts MATCH ?)`
+      )
+      values.unshift(ftsExpression)
+    }
+
+    return db
+      .prepare(
+        `SELECT id, title, plain_content, mood, created_at, updated_at
+         FROM diary_entries
+         WHERE ${filters.join(' OR ')}
+         ORDER BY created_at DESC`
+      )
+      .iterate(...values) as Iterable<MentionDiaryRow>
+  })()
+
+  const allEntries: PersonMentionDetailItem[] = []
   for (const row of rows) {
     const textForMatch = `${row.title || ''}\n${row.plain_content || ''}`
     const { count, matchedKeys } = countMentionsForPerson(
@@ -760,32 +867,33 @@ export function getPersonMentionDetails(
 
     if (count <= 0) continue
 
-    const currentMatchIndex = total
-    total++
-
-    const matchedKeywords = personKeywords.filter((token) =>
+    const matchedKeywords = normalizedKeywords.filter((token) =>
       matchedKeys.has(token.toLocaleLowerCase())
     )
 
-    if (currentMatchIndex >= offset && entries.length < limit) {
-      entries.push({
-        id: row.id,
-        title: row.title,
-        content: row.plain_content,
-        mood: row.mood,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        mentionCount: count,
-        matchedKeywords
-      })
-    }
+    allEntries.push({
+      id: row.id,
+      title: row.title,
+      content: row.plain_content,
+      mood: row.mood,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      mentionCount: count,
+      matchedKeywords
+    })
   }
 
+  setPersonMentionCache(cacheKey, {
+    personName: normalizedPersonName,
+    keywords: normalizedKeywords,
+    entries: allEntries
+  })
+
   return {
-    personName: matcher.personNames[personIndex],
-    keywords: personKeywords,
-    entries,
-    total
+    personName: normalizedPersonName,
+    keywords: normalizedKeywords,
+    entries: allEntries.slice(offset, offset + limit),
+    total: allEntries.length
   }
 }
 

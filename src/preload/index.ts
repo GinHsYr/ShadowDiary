@@ -37,6 +37,8 @@ const api: DiaryAPI = {
   getSetting: (key) => invoke('settings:get', key),
   setSetting: (key, value) => invoke('settings:set', key, value),
   getAllSettings: () => invoke('settings:getAll'),
+  exportData: () => invoke('data:export'),
+  importData: () => invoke('data:import'),
 
   // 统计
   getStats: () => invoke('stats:get'),
@@ -52,6 +54,9 @@ const api: DiaryAPI = {
 
   // 图片选择（编辑器插入图片）
   selectImage: () => invoke('select-image'),
+
+  // 档案头像选择（自动裁切并保存为 webp 缩略图）
+  selectArchiveAvatar: () => invoke('select-archive-avatar'),
 
   // 图片操作（右键菜单）
   copyImage: (dataUrl) => invoke('image:copy', dataUrl),
@@ -95,8 +100,10 @@ if (process.contextIsolated) {
     console.error(error)
   }
 } else {
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
-  // @ts-ignore (define in dts)
-  window.api = api
+  const globalWindow = globalThis as typeof globalThis & {
+    electron: typeof electronAPI
+    api: DiaryAPI
+  }
+  globalWindow.electron = electronAPI
+  globalWindow.api = api
 }

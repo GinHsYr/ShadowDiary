@@ -15,7 +15,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, h } from 'vue'
+import { ref, watch, computed, h, onMounted, onBeforeUnmount, type Component } from 'vue'
 import { NDropdown, NIcon } from 'naive-ui'
 import {
   CopyOutline,
@@ -46,8 +46,132 @@ const emit = defineEmits<{
 
 const editorRootRef = ref<HTMLElement | null>(null)
 const content = ref(props.modelValue || '')
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const editorInstance = ref<any>(null)
+
+const IMAGE_MIME_BY_EXT: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  svg: 'image/svg+xml'
+}
+const SUPPORTED_IMAGE_TYPES = new Set(Object.values(IMAGE_MIME_BY_EXT))
+const SUPPORTED_IMAGE_EXTENSIONS = new Set(Object.keys(IMAGE_MIME_BY_EXT))
+
+interface FroalaDragEventLike {
+  preventDefault?: () => void
+  stopPropagation?: () => void
+  dataTransfer?: DataTransfer | null
+  originalEvent?: DragEvent
+}
+
+interface FroalaEditorInstance {
+  html: {
+    insert(text: string): void
+    get(): string
+  }
+  commands: {
+    bold(): void
+    italic(): void
+    underline(): void
+    strikeThrough(): void
+    clearFormatting(): void
+  }
+  image: {
+    insert(src: string, sanitize?: boolean, data?: unknown, response?: unknown): void
+    get(): unknown
+  }
+  opts: {
+    theme: string
+  }
+  toolbar: {
+    hide(): void
+    show(): void
+  }
+}
+
+const editorInstance = ref<FroalaEditorInstance | null>(null)
+
+function syncContentFromEditor(editor: FroalaEditorInstance | null): void {
+  if (!editor) return
+  const html = editor.html.get()
+  if (html !== content.value) {
+    content.value = html
+  }
+}
+
+function getFileExtension(fileName: string): string | null {
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  return ext && ext.length > 0 ? ext : null
+}
+
+function getFileMimeType(file: File): string | null {
+  if (file.type && file.type.trim()) return file.type.trim().toLowerCase()
+  const ext = getFileExtension(file.name)
+  if (!ext) return null
+  return IMAGE_MIME_BY_EXT[ext] ?? null
+}
+
+function isSupportedImageFile(file: File): boolean {
+  const mimeType = getFileMimeType(file)
+  if (mimeType && SUPPORTED_IMAGE_TYPES.has(mimeType)) {
+    return true
+  }
+
+  const ext = getFileExtension(file.name)
+  return Boolean(ext && SUPPORTED_IMAGE_EXTENSIONS.has(ext))
+}
+
+function normalizeImageDataUrl(dataUrl: string, file: File): string {
+  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(dataUrl)) {
+    return dataUrl
+  }
+
+  const commaIndex = dataUrl.indexOf(',')
+  if (commaIndex < 0) return dataUrl
+
+  const mimeType = getFileMimeType(file)
+  if (!mimeType) return dataUrl
+
+  const base64Payload = dataUrl.slice(commaIndex + 1)
+  return `data:${mimeType};base64,${base64Payload}`
+}
+
+function getDroppedFiles(dropEvent: FroalaDragEventLike): File[] {
+  const dataTransfer = dropEvent.dataTransfer ?? dropEvent.originalEvent?.dataTransfer
+  if (!dataTransfer?.files || dataTransfer.files.length === 0) return []
+  return Array.from(dataTransfer.files)
+}
+
+function hasDraggedFiles(dataTransfer: DataTransfer | null | undefined): boolean {
+  if (!dataTransfer) return false
+  if (dataTransfer.files && dataTransfer.files.length > 0) return true
+  return Array.from(dataTransfer.types || []).includes('Files')
+}
+
+function preventFileDropDefault(event: DragEvent): void {
+  if (!hasDraggedFiles(event.dataTransfer)) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+function handleEditorDrop(event: DragEvent): void {
+  if (!hasDraggedFiles(event.dataTransfer)) return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  const files = Array.from(event.dataTransfer?.files || [])
+  files.forEach((file) => {
+    if (isSupportedImageFile(file)) {
+      void insertImage(file)
+    }
+  })
+}
 
 // 右键菜单状态
 const showContextMenu = ref(false)
@@ -55,8 +179,7 @@ const contextMenuX = ref(0)
 const contextMenuY = ref(0)
 
 // 渲染图标
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const renderIcon = (icon: any) => {
+const renderIcon = (icon: Component) => {
   return () => h(NIcon, null, { default: () => h(icon) })
 }
 
@@ -229,9 +352,8 @@ const insertImage = async (file: File): Promise<void> => {
   }
 
   // 检查文件类型
-  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
-  if (!allowedTypes.includes(file.type)) {
-    debugLog('不支持的图片格式:', file.type)
+  if (!isSupportedImageFile(file)) {
+    debugLog('不支持的图片格式:', file.type, file.name)
     return
   }
 
@@ -245,7 +367,7 @@ const insertImage = async (file: File): Promise<void> => {
   try {
     debugLog('Converting file to base64...')
     // 转换为 base64
-    const base64 = await fileToBase64(file)
+    const base64 = normalizeImageDataUrl(await fileToBase64(file), file)
     debugLog('Base64 conversion complete, length:', base64.length)
 
     // 保存为文件并获取 diary-image:// URL
@@ -367,13 +489,15 @@ const editorConfig = {
     'alt',
     'class',
     'colspan',
+    'height',
     'href',
     'rel',
     'rowspan',
     'src',
     'style',
     'target',
-    'title'
+    'title',
+    'width'
   ],
   htmlAllowedStyleProps: [
     'background-color',
@@ -381,9 +505,15 @@ const editorConfig = {
     'font-size',
     'font-style',
     'font-weight',
+    'height',
     'line-height',
+    'max-height',
+    'max-width',
+    'min-height',
+    'min-width',
     'text-align',
-    'text-decoration'
+    'text-decoration',
+    'width'
   ],
   htmlExecuteScripts: false,
   htmlRemoveTags: [
@@ -405,11 +535,19 @@ const editorConfig = {
   pasteDeniedTags: ['script', 'style', 'iframe', 'object', 'embed'],
   // 事件处理
   events: {
-    initialized: function (): void {
+    initialized: function (this: FroalaEditorInstance): void {
       editorInstance.value = this
       debugLog('Froala Editor initialized')
     },
-    'image.beforeUpload': function (files: FileList): boolean {
+    // Some Froala actions (e.g. remove image) don't reliably trigger v-model updates in the wrapper.
+    // Sync from editor HTML to keep parent state (and autosave) correct.
+    contentChanged: function (this: FroalaEditorInstance): void {
+      syncContentFromEditor(this)
+    },
+    'image.removed': function (this: FroalaEditorInstance): void {
+      syncContentFromEditor(this)
+    },
+    'image.beforeUpload': function (files: FileList | File[]): boolean {
       debugLog('image.beforeUpload triggered, files:', files)
       // 处理通过按钮选择的图片
       if (files && files.length > 0) {
@@ -452,16 +590,31 @@ const editorConfig = {
       await Promise.all(promises)
       return clipboardHtml
     },
-    drop: function (dropEvent: DragEvent): void {
+    dragover: function (dragEvent: FroalaDragEventLike): boolean {
+      const files = getDroppedFiles(dragEvent)
+      if (files.length === 0) return true
+
+      dragEvent.preventDefault?.()
+      dragEvent.originalEvent?.preventDefault()
+      return false
+    },
+    drop: function (dropEvent: FroalaDragEventLike): boolean {
       // 处理拖拽上传
-      const files = dropEvent.dataTransfer?.files
-      if (files && files.length > 0) {
-        Array.from(files).forEach((file) => {
-          if (file.type.startsWith('image/')) {
+      dropEvent.preventDefault?.()
+      dropEvent.stopPropagation?.()
+      dropEvent.originalEvent?.preventDefault()
+      dropEvent.originalEvent?.stopPropagation()
+
+      const files = getDroppedFiles(dropEvent)
+      if (files.length > 0) {
+        files.forEach((file) => {
+          if (isSupportedImageFile(file)) {
             insertImage(file)
           }
         })
+        return false
       }
+      return true
     }
   }
 }
@@ -488,6 +641,24 @@ watch(isDark, () => {
     editorInstance.value.toolbar.hide()
     editorInstance.value.toolbar.show()
   }
+})
+
+onMounted(() => {
+  const root = editorRootRef.value
+  if (!root) return
+
+  root.addEventListener('dragenter', preventFileDropDefault, true)
+  root.addEventListener('dragover', preventFileDropDefault, true)
+  root.addEventListener('drop', handleEditorDrop, true)
+})
+
+onBeforeUnmount(() => {
+  const root = editorRootRef.value
+  if (!root) return
+
+  root.removeEventListener('dragenter', preventFileDropDefault, true)
+  root.removeEventListener('dragover', preventFileDropDefault, true)
+  root.removeEventListener('drop', handleEditorDrop, true)
 })
 
 defineExpose({

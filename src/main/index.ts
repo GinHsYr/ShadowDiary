@@ -28,7 +28,8 @@ import {
   getStats,
   getAllDiaryContents,
   getPersonMentionStats,
-  getPersonMentionDetails
+  getPersonMentionDetails,
+  invalidatePersonMentionCache
 } from './database/diary'
 import { archives } from './database/archives'
 import { getAllTags } from './database/tags'
@@ -41,11 +42,15 @@ import {
 import { getSetting, setSetting, getAllSettings } from './database/settings'
 import {
   saveImage,
+  saveImageFromFile,
+  saveArchiveAvatarFromFile,
   getImage,
   ensureImageDirs,
   cleanupUnusedImages,
-  extractImageIds
+  extractImageIds,
+  parseImageDataUrl
 } from './utils/imageStorage'
+import { exportAppData, importAppData } from './utils/dataTransfer'
 
 const IMAGE_MIME_MAP: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -53,7 +58,8 @@ const IMAGE_MIME_MAP: Record<string, string> = {
   png: 'image/png',
   gif: 'image/gif',
   webp: 'image/webp',
-  bmp: 'image/bmp'
+  bmp: 'image/bmp',
+  svg: 'image/svg+xml'
 }
 
 const UPDATE_CACHE_TTL_MS = 5 * 60 * 1000
@@ -64,9 +70,27 @@ function getImageMimeType(fileName: string): string {
   return IMAGE_MIME_MAP[ext || 'png'] || 'image/png'
 }
 
+function parseDiaryImageFileName(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'diary-image:') return null
+
+    const rawFileName = `${parsed.hostname}${parsed.pathname}`.replace(/^\/+/, '')
+    if (!rawFileName) return null
+
+    return decodeURIComponent(rawFileName)
+  } catch {
+    return null
+  }
+}
+
 async function loadDiaryImage(url: string): Promise<{ mimeType: string; data: Buffer } | null> {
   try {
-    const fileName = decodeURIComponent(url.replace('diary-image://', ''))
+    const fileName = parseDiaryImageFileName(url)
+    if (!fileName) {
+      return null
+    }
+
     const buffer = await getImage(fileName)
     return {
       mimeType: getImageMimeType(fileName),
@@ -76,6 +100,25 @@ async function loadDiaryImage(url: string): Promise<{ mimeType: string; data: Bu
     console.error('Failed to load image:', error)
     return null
   }
+}
+
+interface ResolvedImagePayload {
+  buffer: Buffer
+  ext: string
+}
+
+async function resolveImagePayload(imageSource: string): Promise<ResolvedImagePayload | null> {
+  const parsedDataUrl = parseImageDataUrl(imageSource)
+  if (parsedDataUrl) {
+    return { buffer: parsedDataUrl.buffer, ext: parsedDataUrl.ext }
+  }
+
+  const fileName = parseDiaryImageFileName(imageSource)
+  if (!fileName) return null
+
+  const buffer = await getImage(fileName)
+  const ext = fileName.split('.').pop()?.toLowerCase() || 'png'
+  return { buffer, ext }
 }
 
 function registerDiaryImageProtocol(): void {
@@ -241,12 +284,27 @@ app.on('before-quit', () => {
 function collectAllUsedImageIds(): Set<string> {
   const contents = getAllDiaryContents()
   const usedIds = new Set<string>()
+
   for (const content of contents) {
     const ids = extractImageIds(content)
     for (const id of ids) {
       usedIds.add(id)
     }
   }
+
+  const archiveEntries = archives.list()
+  for (const archive of archiveEntries) {
+    const archiveImageRefs = [archive.mainImage, ...archive.images].filter(
+      (value): value is string => Boolean(value)
+    )
+    for (const imageRef of archiveImageRefs) {
+      const ids = extractImageIds(imageRef)
+      for (const id of ids) {
+        usedIds.add(id)
+      }
+    }
+  }
+
   return usedIds
 }
 
@@ -261,13 +319,16 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('diary:save', (_event, entry) => {
-    return saveDiaryEntry(entry)
+    const saved = saveDiaryEntry(entry)
+    invalidatePersonMentionCache()
+    return saved
   })
 
   ipcMain.handle('diary:delete', async (_event, id: string) => {
     const attachments = getAttachments(id)
     const result = deleteDiaryEntry(id)
     if (result) {
+      invalidatePersonMentionCache()
       await deleteAttachmentFiles(attachments.map((attachment) => attachment.filePath))
       const usedIds = collectAllUsedImageIds()
       await cleanupUnusedImages(usedIds)
@@ -297,12 +358,17 @@ function registerIpcHandlers(): void {
     return archives.get(id)
   })
 
-  ipcMain.handle('archives:save', (_event, archive) => {
-    return archives.save(archive)
+  ipcMain.handle('archives:save', async (_event, archive) => {
+    const saved = await archives.save(archive)
+    invalidatePersonMentionCache()
+    return saved
   })
 
-  ipcMain.handle('archives:delete', (_event, id: string) => {
-    return archives.delete(id)
+  ipcMain.handle('archives:delete', async (_event, id: string) => {
+    archives.delete(id)
+    invalidatePersonMentionCache()
+    const usedIds = collectAllUsedImageIds()
+    await cleanupUnusedImages(usedIds)
   })
 
   // 标签
@@ -335,6 +401,21 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('settings:getAll', () => {
     return getAllSettings()
+  })
+
+  // 数据导入/导出
+  ipcMain.handle('data:export', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return await exportAppData(win)
+  })
+
+  ipcMain.handle('data:import', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = await importAppData(win)
+    if (result.success) {
+      invalidatePersonMentionCache()
+    }
+    return result
   })
 
   // 统计
@@ -382,7 +463,9 @@ function registerIpcHandlers(): void {
       const win = BrowserWindow.fromWebContents(event.sender)
       const dialogOptions = {
         properties: ['openFile'] as 'openFile'[],
-        filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] }],
+        filters: [
+          { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'] }
+        ],
         title: '选择图片'
       }
       const result = win
@@ -394,31 +477,46 @@ function registerIpcHandlers(): void {
       }
 
       const filePath = result.filePaths[0]
-      const data = await fs.readFile(filePath)
-      const ext = filePath.split('.').pop()?.toLowerCase() || 'png'
-      const mimeMap: Record<string, string> = {
-        jpg: 'image/jpeg',
-        jpeg: 'image/jpeg',
-        png: 'image/png',
-        gif: 'image/gif',
-        webp: 'image/webp',
-        bmp: 'image/bmp'
-      }
-      const mime = mimeMap[ext] || 'image/png'
-      const dataUrl = `data:${mime};base64,${data.toString('base64')}`
-
-      return { canceled: false, dataUrl }
+      const saved = await saveImageFromFile(filePath)
+      return { canceled: false, path: saved.path, thumbnailPath: saved.thumbnailPath }
     } catch (error) {
       console.error('选择图片失败:', error)
       return { canceled: true }
     }
   })
 
-  // 复制图片到剪贴板（接收 base64 dataUrl）
-  ipcMain.handle('image:copy', (_event, dataUrl: string) => {
+  // 档案头像选择（自动 1:1 裁切，仅保存 webp 缩略图）
+  ipcMain.handle('select-archive-avatar', async (event) => {
     try {
-      const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '')
-      const image = nativeImage.createFromBuffer(Buffer.from(base64, 'base64'))
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const dialogOptions = {
+        properties: ['openFile'] as 'openFile'[],
+        filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] }],
+        title: '选择头像图片'
+      }
+      const result = win
+        ? await dialog.showOpenDialog(win, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions)
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { canceled: true }
+      }
+
+      const filePath = result.filePaths[0]
+      const saved = await saveArchiveAvatarFromFile(filePath)
+      return { canceled: false, path: saved.path, thumbnailPath: saved.thumbnailPath }
+    } catch (error) {
+      console.error('选择档案头像失败:', error)
+      return { canceled: true }
+    }
+  })
+
+  // 复制图片到剪贴板（接收 base64 dataUrl）
+  ipcMain.handle('image:copy', async (_event, dataUrl: string) => {
+    try {
+      const payload = await resolveImagePayload(dataUrl)
+      if (!payload) return { success: false }
+      const image = nativeImage.createFromBuffer(payload.buffer)
       if (image.isEmpty()) return { success: false }
       clipboard.writeImage(image)
       return { success: true }
@@ -430,11 +528,11 @@ function registerIpcHandlers(): void {
   // 另存为图片文件
   ipcMain.handle('image:save-as', async (event, dataUrl: string) => {
     try {
+      const payload = await resolveImagePayload(dataUrl)
+      if (!payload) return { success: false }
+
       const win = BrowserWindow.fromWebContents(event.sender)
-      // 从 dataUrl 推断扩展名
-      const mimeMatch = dataUrl.match(/^data:image\/(\w+);base64,/)
-      const extRaw = mimeMatch ? mimeMatch[1] : 'png'
-      const ext = extRaw === 'jpeg' ? 'jpg' : extRaw
+      const ext = payload.ext === 'jpeg' ? 'jpg' : payload.ext
       const dialogOptions = {
         defaultPath: `image.${ext}`,
         filters: [{ name: '图片', extensions: [ext] }],
@@ -444,8 +542,7 @@ function registerIpcHandlers(): void {
         ? await dialog.showSaveDialog(win, dialogOptions)
         : await dialog.showSaveDialog(dialogOptions)
       if (result.canceled || !result.filePath) return { success: false }
-      const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '')
-      await fs.writeFile(result.filePath, Buffer.from(base64, 'base64'))
+      await fs.writeFile(result.filePath, payload.buffer)
       return { success: true }
     } catch {
       return { success: false }

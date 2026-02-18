@@ -1,6 +1,7 @@
 import { getDatabase } from './index'
 import { v4 as uuidv4 } from 'uuid'
 import type { Archive } from '../../types/model'
+import { saveImage } from '../utils/imageStorage'
 
 interface ArchiveRow {
   id: string
@@ -27,16 +28,34 @@ function parseArchiveImages(imagesJson: string | null): string[] {
   }
 }
 
+function splitArchiveAliases(alias: string | null): string[] {
+  if (!alias) return []
+  return alias
+    .split(/[,，、;；\n\r]+/g)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+const IMAGE_DATA_URL_PREFIX_RE = /^data:image\/[a-z0-9.+-]+;base64,/i
+
+async function normalizeArchiveImage(image: string | undefined): Promise<string | undefined> {
+  if (!image) return undefined
+  if (!IMAGE_DATA_URL_PREFIX_RE.test(image)) return image
+  const saved = await saveImage(image)
+  return saved.path
+}
+
+async function normalizeArchiveImageList(images: string[] | undefined): Promise<string[]> {
+  if (!images || images.length === 0) return []
+  const normalized = await Promise.all(images.map((image) => normalizeArchiveImage(image)))
+  return normalized.filter((image): image is string => Boolean(image))
+}
+
 function rowToArchive(row: ArchiveRow): Archive {
   return {
     id: row.id,
     name: row.name,
-    aliases: row.alias
-      ? row.alias
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : [],
+    aliases: splitArchiveAliases(row.alias),
     description: row.description ?? undefined,
     type: row.type,
     mainImage: row.main_image ?? undefined,
@@ -78,11 +97,13 @@ export const archives = {
     return rowToArchive(row)
   },
 
-  save(archive: Partial<Archive>): Archive {
+  async save(archive: Partial<Archive>): Promise<Archive> {
     const db = getDatabase()
     const now = Date.now()
     const aliasStr = archive.aliases?.length ? archive.aliases.join(', ') : null
-    const imagesJson = JSON.stringify(archive.images || [])
+    const normalizedMainImage = await normalizeArchiveImage(archive.mainImage)
+    const normalizedImages = await normalizeArchiveImageList(archive.images)
+    const imagesJson = JSON.stringify(normalizedImages)
 
     if (archive.id) {
       // Update
@@ -96,7 +117,7 @@ export const archives = {
         aliasStr,
         archive.description || null,
         archive.type || 'other',
-        archive.mainImage || null,
+        normalizedMainImage || null,
         imagesJson,
         now,
         archive.id
@@ -122,7 +143,7 @@ export const archives = {
         aliasStr,
         archive.description || null,
         archive.type || 'other',
-        archive.mainImage || null,
+        normalizedMainImage || null,
         imagesJson,
         now,
         now

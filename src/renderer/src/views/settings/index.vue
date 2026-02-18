@@ -20,6 +20,46 @@
           </n-space>
         </n-card>
 
+        <!-- 数据管理 -->
+        <n-card title="数据管理" :bordered="false" class="settings-card">
+          <n-space vertical :size="16">
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">导出数据</label>
+                <span class="setting-description">
+                  导出数据库和图片/附件到备份目录，建议定期备份
+                </span>
+              </div>
+              <n-button
+                :loading="exportingData"
+                :disabled="importingData"
+                @click="handleExportData"
+              >
+                导出数据
+              </n-button>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">导入数据</label>
+                <span class="setting-description">从备份目录恢复数据，会覆盖当前本地数据</span>
+              </div>
+              <n-button
+                type="warning"
+                :loading="importingData"
+                :disabled="exportingData"
+                @click="handleImportData"
+              >
+                导入数据
+              </n-button>
+            </div>
+
+            <div v-if="dataMessage" class="update-message" :class="dataMessageType">
+              <span class="message-text">{{ dataMessage }}</span>
+            </div>
+          </n-space>
+        </n-card>
+
         <!-- 关于 -->
         <n-card title="关于" :bordered="false" class="settings-card">
           <n-space vertical :size="16">
@@ -82,7 +122,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { NButton, NCard, NSpace, NSwitch, NProgress } from 'naive-ui'
+import { NButton, NCard, NSpace, NSwitch, NProgress, useDialog } from 'naive-ui'
 import { ThemeMode, useThemeStore } from '@renderer/stores/themes'
 
 interface AppInfo {
@@ -101,7 +141,12 @@ const hasUpdate = ref(false)
 const downloading = ref(false)
 const downloadProgress = ref(0)
 const downloaded = ref(false)
+const exportingData = ref(false)
+const importingData = ref(false)
+const dataMessage = ref('')
+const dataMessageType = ref<'success' | 'error' | 'info'>('info')
 const removeUpdateListeners: Array<() => void> = []
+const dialog = useDialog()
 
 const appInfo = ref<AppInfo>({
   name: '',
@@ -197,6 +242,79 @@ const handleDownloadUpdate = async (): Promise<void> => {
 const handleInstallUpdate = (): void => {
   window.api.installUpdate()
 }
+
+const handleExportData = async (): Promise<void> => {
+  exportingData.value = true
+  dataMessage.value = '正在导出数据...'
+  dataMessageType.value = 'info'
+
+  try {
+    const result = await window.api.exportData()
+    if (result.canceled) {
+      dataMessage.value = '已取消导出'
+      dataMessageType.value = 'info'
+      return
+    }
+
+    if (result.success) {
+      dataMessage.value = `导出成功：${result.path}`
+      dataMessageType.value = 'success'
+      return
+    }
+
+    dataMessage.value = `导出失败：${result.error || '未知错误'}`
+    dataMessageType.value = 'error'
+  } catch (error) {
+    dataMessage.value = `导出失败：${String(error)}`
+    dataMessageType.value = 'error'
+  } finally {
+    exportingData.value = false
+  }
+}
+
+const runImportData = async (): Promise<void> => {
+  importingData.value = true
+  dataMessage.value = '正在导入数据...'
+  dataMessageType.value = 'info'
+
+  try {
+    const result = await window.api.importData()
+    if (result.canceled) {
+      dataMessage.value = '已取消导入'
+      dataMessageType.value = 'info'
+      return
+    }
+
+    if (result.success) {
+      dataMessage.value = '导入成功，正在刷新页面...'
+      dataMessageType.value = 'success'
+      setTimeout(() => {
+        window.location.reload()
+      }, 300)
+      return
+    }
+
+    dataMessage.value = `导入失败：${result.error || '未知错误'}`
+    dataMessageType.value = 'error'
+  } catch (error) {
+    dataMessage.value = `导入失败：${String(error)}`
+    dataMessageType.value = 'error'
+  } finally {
+    importingData.value = false
+  }
+}
+
+const handleImportData = (): void => {
+  dialog.warning({
+    title: '导入确认',
+    content: '导入会覆盖当前本地数据，建议先执行一次导出备份。确认继续吗？',
+    positiveText: '继续导入',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      await runImportData()
+    }
+  })
+}
 </script>
 
 <style scoped>
@@ -205,7 +323,9 @@ const handleInstallUpdate = (): void => {
   max-width: 800px;
   margin: 0 auto;
   height: 100%;
-  overflow: hidden;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .page-header {
@@ -221,6 +341,11 @@ const handleInstallUpdate = (): void => {
 .update-message {
   display: flex;
   align-items: center;
+}
+
+.message-text {
+  width: 100%;
+  word-break: break-word;
 }
 
 .update-btn {

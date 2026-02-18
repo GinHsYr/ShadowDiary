@@ -9,6 +9,10 @@
 
 ## Project Setup
 
+### Requirements
+
+- Node.js >= 20.19.0
+
 ### Install
 
 ```bash

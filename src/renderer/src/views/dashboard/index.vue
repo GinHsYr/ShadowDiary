@@ -12,7 +12,8 @@ import {
   NPopover,
   NModal,
   NTag,
-  NSpin
+  NSpin,
+  NPagination
 } from 'naive-ui'
 import { ChevronBackOutline, ChevronForwardOutline, TodayOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
@@ -39,6 +40,11 @@ const selectedPerson = ref('')
 const mentionKeywords = ref<string[]>([])
 const mentionEntries = ref<PersonMentionDetailItem[]>([])
 const mentionTotal = ref(0)
+const mentionPage = ref(1)
+const mentionPageSize = 20
+const mentionPageCount = computed(() =>
+  Math.max(1, Math.ceil(mentionTotal.value / mentionPageSize))
+)
 
 // 加载统计数据
 async function loadStats(): Promise<void> {
@@ -225,44 +231,39 @@ function getHighlightedSnippet(entry: PersonMentionDetailItem): string {
   return highlightText(snippet, entryKeywords)
 }
 
-async function loadMentionDetails(personName: string): Promise<void> {
+async function fetchMentionDetailsPage(personName: string, page: number): Promise<void> {
   mentionLoading.value = true
-  selectedPerson.value = personName
-  showMentionModal.value = true
-  mentionEntries.value = []
-  mentionTotal.value = 0
-  mentionKeywords.value = [personName]
-
   try {
-    const pageSize = 100
-    let offset = 0
-    let total = 0
-    const allEntries: PersonMentionDetailItem[] = []
-    let loadedKeywords: string[] = [personName]
-    let normalizedName = personName
+    const result = await window.api.getPersonMentionDetails(personName, {
+      limit: mentionPageSize,
+      offset: (page - 1) * mentionPageSize
+    })
 
-    do {
-      const result = await window.api.getPersonMentionDetails(personName, {
-        limit: pageSize,
-        offset
-      })
-      normalizedName = result.personName
-      loadedKeywords = result.keywords.length > 0 ? result.keywords : [personName]
-      total = result.total
-      allEntries.push(...result.entries)
-      offset += result.entries.length
-      if (result.entries.length === 0) break
-    } while (allEntries.length < total)
-
-    selectedPerson.value = normalizedName
-    mentionKeywords.value = loadedKeywords
-    mentionEntries.value = allEntries
-    mentionTotal.value = total
+    selectedPerson.value = result.personName
+    mentionKeywords.value = result.keywords.length > 0 ? result.keywords : [personName]
+    mentionEntries.value = result.entries
+    mentionTotal.value = result.total
   } catch (error) {
     console.error('加载人物提及明细失败:', error)
   } finally {
     mentionLoading.value = false
   }
+}
+
+async function loadMentionDetails(personName: string): Promise<void> {
+  selectedPerson.value = personName
+  showMentionModal.value = true
+  mentionEntries.value = []
+  mentionTotal.value = 0
+  mentionKeywords.value = [personName]
+  mentionPage.value = 1
+  await fetchMentionDetailsPage(personName, 1)
+}
+
+async function handleMentionPageChange(page: number): Promise<void> {
+  if (!selectedPerson.value) return
+  mentionPage.value = page
+  await fetchMentionDetailsPage(selectedPerson.value, page)
 }
 
 async function handlePieClick(params: PieClickParams): Promise<void> {
@@ -454,9 +455,18 @@ const jumpToLastWeek = (): void => {
   router.push({ path: '/today', query: { date: dateStr } })
 }
 
+function shiftMonthKeepingDay(baseDate: Date, monthOffset: number): Date {
+  const day = baseDate.getDate()
+  const targetFirstDay = new Date(baseDate.getFullYear(), baseDate.getMonth() + monthOffset, 1)
+  const targetYear = targetFirstDay.getFullYear()
+  const targetMonth = targetFirstDay.getMonth()
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate()
+  const safeDay = Math.min(day, lastDay)
+  return new Date(targetYear, targetMonth, safeDay)
+}
+
 const jumpToLastMonth = (): void => {
-  const d = new Date()
-  d.setMonth(d.getMonth() - 1)
+  const d = shiftMonthKeepingDay(new Date(), -1)
   const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   router.push({ path: '/today', query: { date: dateStr } })
 }
@@ -648,6 +658,17 @@ const jumpToLastMonth = (): void => {
             </n-button>
           </div>
         </div>
+      </div>
+
+      <div v-if="mentionTotal > mentionPageSize" class="mention-pagination">
+        <n-pagination
+          :page="mentionPage"
+          :page-count="mentionPageCount"
+          :page-size="mentionPageSize"
+          :item-count="mentionTotal"
+          size="small"
+          @update:page="handleMentionPageChange"
+        />
       </div>
     </n-modal>
   </div>
@@ -973,5 +994,11 @@ const jumpToLastMonth = (): void => {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.mention-pagination {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

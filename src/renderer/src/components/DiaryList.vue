@@ -130,8 +130,10 @@ const listRef = ref<HTMLElement | null>(null)
 
 function stripHtml(html: string): string {
   if (!html) return ''
-  // lightweight 模式下 content 已经是 plain_content，直接截取
-  return html.slice(0, 80)
+  const temp = document.createElement('div')
+  temp.innerHTML = html
+  const plain = (temp.textContent || temp.innerText || '').replace(/\s+/g, ' ').trim()
+  return plain.slice(0, 80)
 }
 
 function formatDate(ts: number): string {

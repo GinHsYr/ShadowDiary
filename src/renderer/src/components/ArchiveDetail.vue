@@ -243,9 +243,9 @@ async function handleDelete(): Promise<void> {
 
 async function selectMainImage(): Promise<void> {
   try {
-    const result = await window.api.selectAvatar()
-    if (!result.canceled && result.dataUrl) {
-      form.mainImage = result.dataUrl
+    const result = await window.api.selectArchiveAvatar()
+    if (!result.canceled && result.path) {
+      form.mainImage = result.path
       scheduleSave()
     }
   } catch (error) {
@@ -256,8 +256,8 @@ async function selectMainImage(): Promise<void> {
 async function addImage(): Promise<void> {
   try {
     const result = await window.api.selectImage()
-    if (!result.canceled && result.dataUrl) {
-      form.images.push(result.dataUrl)
+    if (!result.canceled && result.path) {
+      form.images.push(result.path)
       scheduleSave()
     }
   } catch (error) {
