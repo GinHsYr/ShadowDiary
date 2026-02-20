@@ -31,6 +31,7 @@ const router = useRouter()
 // 真实数据
 const totalEntries = ref(0)
 const currentStreak = ref(0)
+const totalCharacters = ref(0)
 const recentEntries = ref<DiaryEntry[]>([])
 const diaryDates = ref<Set<string>>(new Set())
 const personMentionData = ref<{ name: string; count: number }[]>([])
@@ -52,6 +53,7 @@ async function loadStats(): Promise<void> {
     const stats = await window.api.getStats()
     totalEntries.value = stats.totalEntries
     currentStreak.value = stats.currentStreak
+    totalCharacters.value = stats.totalCharacters
   } catch (error) {
     console.error('加载统计失败:', error)
   }
@@ -590,7 +592,7 @@ const jumpToLastMonth = (): void => {
     </n-card>
 
     <!-- 统计 -->
-    <n-grid :x-gap="24" :cols="2" class="stats-grid">
+    <n-grid :x-gap="24" :cols="3" class="stats-grid">
       <n-gi>
         <n-card embedded :bordered="false" class="stat-card">
           <n-statistic label="你一共写了" tabular-nums>
@@ -604,6 +606,14 @@ const jumpToLastMonth = (): void => {
           <n-statistic label="连续记录" tabular-nums>
             <n-number-animation :from="0" :to="currentStreak" />
             <template #suffix>天</template>
+          </n-statistic>
+        </n-card>
+      </n-gi>
+      <n-gi>
+        <n-card embedded :bordered="false" class="stat-card">
+          <n-statistic label="共写了" tabular-nums>
+            <n-number-animation :from="0" :to="totalCharacters" />
+            <template #suffix>字</template>
           </n-statistic>
         </n-card>
       </n-gi>

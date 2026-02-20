@@ -15,6 +15,7 @@ export interface DiaryEntry {
 export interface HomePageStats {
   totalEntries: number
   currentStreak: number // 连续写作天数
+  totalCharacters: number // 全部日记累计字数（基于 plain_content，去空白）
   moodMap: Record<string, number> // 日期 -> 心情映射
 }
 

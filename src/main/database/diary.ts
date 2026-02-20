@@ -496,6 +496,18 @@ export function getStats(): HomePageStats {
     db.prepare('SELECT COUNT(*) as count FROM diary_entries').get() as { count: number }
   ).count
 
+  // Total characters: based on plain text content, excluding common whitespace.
+  const totalCharacters = (
+    db
+      .prepare(
+        `SELECT COALESCE(SUM(LENGTH(
+          REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(plain_content, char(13), ''), char(10), ''), char(9), ''), ' ', ''), char(12288), '')
+        )), 0) as count
+         FROM diary_entries`
+      )
+      .get() as { count: number }
+  ).count
+
   // Current streak: count consecutive days with diary entries going back from today
   let currentStreak = 0
   const today = new Date()
@@ -551,7 +563,7 @@ export function getStats(): HomePageStats {
     }
   }
 
-  return { totalEntries, currentStreak, moodMap }
+  return { totalEntries, currentStreak, totalCharacters, moodMap }
 }
 
 export function getAllDiaryContents(): string[] {

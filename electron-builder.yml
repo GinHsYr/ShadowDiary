@@ -16,9 +16,12 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
   oneClick: false
+  include: resources/installer.nsh
   allowToChangeInstallationDirectory: true
   perMachine: false
   deleteAppDataOnUninstall: false
+msi:
+  artifactName: ShadowDiary-${version}-${os}-${arch}.${ext}
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
