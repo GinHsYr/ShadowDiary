@@ -45,6 +45,13 @@ interface MentionDiaryRow {
   updated_at: number
 }
 
+interface MentionDiaryScanRow {
+  id: string
+  title: string
+  plain_content: string
+  created_at: number
+}
+
 function rowToEntry(row: DiaryRow, tags: string[]): DiaryEntry {
   return {
     id: row.id,
@@ -707,27 +714,205 @@ function countMentionsForPerson(
 interface PersonMentionCacheEntry {
   personName: string
   keywords: string[]
-  entries: PersonMentionDetailItem[]
+  indices: PersonMentionIndexItem[]
+  expiresAt: number
+  sizeBytes: number
+}
+
+interface PersonMentionIndexItem {
+  id: string
+  createdAt: number
+  mentionCount: number
 }
 
 const PERSON_MENTION_CACHE_LIMIT = 6
+const PERSON_MENTION_CACHE_TTL_MS = 5 * 60 * 1000
+const PERSON_MENTION_CACHE_MAX_BYTES = 1024 * 1024
+const PERSON_MENTION_SCAN_BATCH_SIZE = 200
 const personMentionDetailCache = new Map<string, PersonMentionCacheEntry>()
+let personMentionCacheBytes = 0
 
-function setPersonMentionCache(key: string, entry: PersonMentionCacheEntry): void {
-  if (
-    !personMentionDetailCache.has(key) &&
-    personMentionDetailCache.size >= PERSON_MENTION_CACHE_LIMIT
-  ) {
-    const oldestKey = personMentionDetailCache.keys().next().value
-    if (oldestKey) {
-      personMentionDetailCache.delete(oldestKey)
+function estimateStringBytes(value: string): number {
+  return value.length * 2
+}
+
+function estimatePersonMentionCacheSize(entry: {
+  personName: string
+  keywords: string[]
+  indices: PersonMentionIndexItem[]
+}): number {
+  const baseBytes = 128 + estimateStringBytes(entry.personName)
+  const keywordBytes = entry.keywords.reduce(
+    (sum, keyword) => sum + estimateStringBytes(keyword),
+    0
+  )
+  const indexBytes = entry.indices.reduce((sum, item) => sum + estimateStringBytes(item.id) + 24, 0)
+  return baseBytes + keywordBytes + indexBytes
+}
+
+function deletePersonMentionCacheEntry(key: string): void {
+  const entry = personMentionDetailCache.get(key)
+  if (!entry) return
+  personMentionCacheBytes = Math.max(0, personMentionCacheBytes - entry.sizeBytes)
+  personMentionDetailCache.delete(key)
+}
+
+function pruneExpiredPersonMentionCache(now = Date.now()): void {
+  for (const [key, entry] of personMentionDetailCache) {
+    if (entry.expiresAt <= now) {
+      deletePersonMentionCacheEntry(key)
     }
   }
-  personMentionDetailCache.set(key, entry)
+}
+
+function getPersonMentionCache(key: string): PersonMentionCacheEntry | null {
+  const now = Date.now()
+  pruneExpiredPersonMentionCache(now)
+
+  const cached = personMentionDetailCache.get(key)
+  if (!cached) return null
+  if (cached.expiresAt <= now) {
+    deletePersonMentionCacheEntry(key)
+    return null
+  }
+
+  // 读取时提升为最近使用，避免热点被过早淘汰
+  personMentionDetailCache.delete(key)
+  personMentionDetailCache.set(key, cached)
+  return cached
+}
+
+function setPersonMentionCache(
+  key: string,
+  entry: { personName: string; keywords: string[]; indices: PersonMentionIndexItem[] }
+): void {
+  const now = Date.now()
+  pruneExpiredPersonMentionCache(now)
+
+  const existing = personMentionDetailCache.get(key)
+  if (existing) {
+    personMentionCacheBytes = Math.max(0, personMentionCacheBytes - existing.sizeBytes)
+    personMentionDetailCache.delete(key)
+  }
+
+  const sizeBytes = estimatePersonMentionCacheSize(entry)
+  if (sizeBytes > PERSON_MENTION_CACHE_MAX_BYTES) {
+    return
+  }
+
+  if (
+    !personMentionDetailCache.has(key) &&
+    (personMentionDetailCache.size >= PERSON_MENTION_CACHE_LIMIT ||
+      personMentionCacheBytes + sizeBytes > PERSON_MENTION_CACHE_MAX_BYTES)
+  ) {
+    while (
+      personMentionDetailCache.size >= PERSON_MENTION_CACHE_LIMIT ||
+      personMentionCacheBytes + sizeBytes > PERSON_MENTION_CACHE_MAX_BYTES
+    ) {
+      const oldestKey = personMentionDetailCache.keys().next().value
+      if (!oldestKey) break
+      deletePersonMentionCacheEntry(oldestKey)
+    }
+  }
+
+  const cacheEntry: PersonMentionCacheEntry = {
+    ...entry,
+    expiresAt: now + PERSON_MENTION_CACHE_TTL_MS,
+    sizeBytes
+  }
+  personMentionDetailCache.set(key, cacheEntry)
+  personMentionCacheBytes += sizeBytes
 }
 
 export function invalidatePersonMentionCache(): void {
   personMentionDetailCache.clear()
+  personMentionCacheBytes = 0
+}
+
+function buildPersonMentionCandidateFilter(normalizedKeywords: string[]): {
+  whereClause: string
+  values: unknown[]
+} | null {
+  if (normalizedKeywords.length === 0) return null
+
+  const coarseKeywords = [...new Set(normalizedKeywords.map((token) => token.toLocaleLowerCase()))]
+  if (coarseKeywords.length === 0) return null
+
+  const likeConditions = coarseKeywords
+    .map(() => "(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(plain_content) LIKE ? ESCAPE '\\')")
+    .join(' OR ')
+  const likeValues = coarseKeywords.flatMap((token) => {
+    const pattern = `%${escapeLikePattern(token)}%`
+    return [pattern, pattern]
+  })
+
+  const filters = [`(${likeConditions})`]
+  const values: unknown[] = [...likeValues]
+
+  const ftsExpression = buildFtsMatchExpression([normalizedKeywords])
+  if (ftsExpression) {
+    // FTS 命中快，但中文连续文本场景可能被分词漏掉，补充 LIKE 保证不漏召回。
+    filters.unshift(`rowid IN (SELECT rowid FROM diary_search_fts WHERE diary_search_fts MATCH ?)`)
+    values.unshift(ftsExpression)
+  }
+
+  return {
+    whereClause: filters.join(' OR '),
+    values
+  }
+}
+
+function buildPersonMentionPageEntries(
+  db: ReturnType<typeof getDatabase>,
+  pageIndices: PersonMentionIndexItem[],
+  normalizedKeywords: string[],
+  personIndex: number,
+  matcher: PersonMentionMatcher
+): PersonMentionDetailItem[] {
+  if (pageIndices.length === 0) return []
+
+  const pageIds = pageIndices.map((item) => item.id)
+  const placeholders = pageIds.map(() => '?').join(',')
+  const rows = db
+    .prepare(
+      `SELECT id, title, plain_content, mood, created_at, updated_at
+       FROM diary_entries
+       WHERE id IN (${placeholders})`
+    )
+    .all(...pageIds) as MentionDiaryRow[]
+
+  const rowById = new Map(rows.map((row) => [row.id, row]))
+
+  return pageIndices
+    .map((indexItem) => {
+      const row = rowById.get(indexItem.id)
+      if (!row) return null
+
+      const textForMatch = `${row.title || ''}\n${row.plain_content || ''}`
+      const { matchedKeys } = countMentionsForPerson(
+        textForMatch,
+        personIndex,
+        matcher.mentionRegex!,
+        matcher.tokenOwners,
+        matcher.tokenMetaByKey
+      )
+
+      const matchedKeywords = normalizedKeywords.filter((token) =>
+        matchedKeys.has(token.toLocaleLowerCase())
+      )
+
+      return {
+        id: row.id,
+        title: row.title,
+        content: row.plain_content,
+        mood: row.mood,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        mentionCount: indexItem.mentionCount,
+        matchedKeywords
+      }
+    })
+    .filter((item): item is PersonMentionDetailItem => Boolean(item))
 }
 
 export function getPersonMentionStats(): { name: string; count: number }[] {
@@ -781,8 +966,10 @@ export function getPersonMentionDetails(
   params?: { limit?: number; offset?: number }
 ): PersonMentionDetailResult {
   const db = getDatabase()
-  const limit = params?.limit ?? 50
-  const offset = params?.offset ?? 0
+  const requestedLimit = params?.limit ?? 50
+  const requestedOffset = params?.offset ?? 0
+  const limit = Math.max(1, Math.min(100, Math.floor(requestedLimit)))
+  const offset = Math.max(0, Math.floor(requestedOffset))
 
   const personArchives = db
     .prepare('SELECT name, alias FROM archives WHERE type = ?')
@@ -822,90 +1009,105 @@ export function getPersonMentionDetails(
   }
 
   const cacheKey = normalizedPersonName.toLocaleLowerCase()
-  const cached = personMentionDetailCache.get(cacheKey)
+  const cached = getPersonMentionCache(cacheKey)
   if (cached) {
+    const pageIndices = cached.indices.slice(offset, offset + limit)
     return {
       personName: cached.personName,
       keywords: cached.keywords,
-      entries: cached.entries.slice(offset, offset + limit),
-      total: cached.entries.length
+      entries: buildPersonMentionPageEntries(
+        db,
+        pageIndices,
+        cached.keywords,
+        personIndex,
+        matcher
+      ),
+      total: cached.indices.length
     }
   }
 
-  const rows: Iterable<MentionDiaryRow> = (() => {
-    const coarseKeywords = [
-      ...new Set(normalizedKeywords.map((token) => token.toLocaleLowerCase()))
-    ]
-    const likeConditions = coarseKeywords
-      .map(() => "(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(plain_content) LIKE ? ESCAPE '\\')")
-      .join(' OR ')
-    const likeValues = coarseKeywords.flatMap((token) => {
-      const pattern = `%${escapeLikePattern(token)}%`
-      return [pattern, pattern]
-    })
+  const filter = buildPersonMentionCandidateFilter(normalizedKeywords)
+  if (!filter) {
+    return {
+      personName: normalizedPersonName,
+      keywords: normalizedKeywords,
+      entries: [],
+      total: 0
+    }
+  }
 
-    const filters = [`(${likeConditions})`]
-    const values: unknown[] = [...likeValues]
+  // 先 count 粗召回结果，再分页扫描候选数据，避免一次性把全部文本加载进内存。
+  const coarseTotal = (
+    db
+      .prepare(`SELECT COUNT(*) as count FROM diary_entries WHERE ${filter.whereClause}`)
+      .get(...filter.values) as { count: number }
+  ).count
 
-    const ftsExpression = buildFtsMatchExpression([normalizedKeywords])
-    if (ftsExpression) {
-      // FTS 命中快，但中文连续文本场景可能被分词漏掉，补充 LIKE 保证不漏召回。
-      filters.unshift(
-        `rowid IN (SELECT rowid FROM diary_search_fts WHERE diary_search_fts MATCH ?)`
+  if (coarseTotal <= 0) {
+    return {
+      personName: normalizedPersonName,
+      keywords: normalizedKeywords,
+      entries: [],
+      total: 0
+    }
+  }
+
+  const mentionIndexItems: PersonMentionIndexItem[] = []
+  let scanOffset = 0
+
+  while (scanOffset < coarseTotal) {
+    const scanRows = db
+      .prepare(
+        `SELECT id, title, plain_content, created_at
+         FROM diary_entries
+         WHERE ${filter.whereClause}
+         ORDER BY created_at DESC
+         LIMIT ? OFFSET ?`
       )
-      values.unshift(ftsExpression)
+      .all(...filter.values, PERSON_MENTION_SCAN_BATCH_SIZE, scanOffset) as MentionDiaryScanRow[]
+
+    if (scanRows.length === 0) break
+
+    for (const row of scanRows) {
+      const textForMatch = `${row.title || ''}\n${row.plain_content || ''}`
+      const { count } = countMentionsForPerson(
+        textForMatch,
+        personIndex,
+        matcher.mentionRegex,
+        matcher.tokenOwners,
+        matcher.tokenMetaByKey
+      )
+
+      if (count <= 0) continue
+      mentionIndexItems.push({
+        id: row.id,
+        createdAt: row.created_at,
+        mentionCount: count
+      })
     }
 
-    return db
-      .prepare(
-        `SELECT id, title, plain_content, mood, created_at, updated_at
-         FROM diary_entries
-         WHERE ${filters.join(' OR ')}
-         ORDER BY created_at DESC`
-      )
-      .iterate(...values) as Iterable<MentionDiaryRow>
-  })()
-
-  const allEntries: PersonMentionDetailItem[] = []
-  for (const row of rows) {
-    const textForMatch = `${row.title || ''}\n${row.plain_content || ''}`
-    const { count, matchedKeys } = countMentionsForPerson(
-      textForMatch,
-      personIndex,
-      matcher.mentionRegex,
-      matcher.tokenOwners,
-      matcher.tokenMetaByKey
-    )
-
-    if (count <= 0) continue
-
-    const matchedKeywords = normalizedKeywords.filter((token) =>
-      matchedKeys.has(token.toLocaleLowerCase())
-    )
-
-    allEntries.push({
-      id: row.id,
-      title: row.title,
-      content: row.plain_content,
-      mood: row.mood,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      mentionCount: count,
-      matchedKeywords
-    })
+    scanOffset += scanRows.length
   }
 
   setPersonMentionCache(cacheKey, {
     personName: normalizedPersonName,
     keywords: normalizedKeywords,
-    entries: allEntries
+    indices: mentionIndexItems
   })
+
+  const pageIndices = mentionIndexItems.slice(offset, offset + limit)
 
   return {
     personName: normalizedPersonName,
     keywords: normalizedKeywords,
-    entries: allEntries.slice(offset, offset + limit),
-    total: allEntries.length
+    entries: buildPersonMentionPageEntries(
+      db,
+      pageIndices,
+      normalizedKeywords,
+      personIndex,
+      matcher
+    ),
+    total: mentionIndexItems.length
   }
 }
 

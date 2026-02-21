@@ -1,4 +1,5 @@
 import { getDatabase } from './index'
+import { collectImageIdsFromText, syncImageRefs } from './imageRefs'
 
 export function getSetting(key: string): string | null {
   const db = getDatabase()
@@ -8,9 +9,16 @@ export function getSetting(key: string): string | null {
   return row?.value ?? null
 }
 
-export function setSetting(key: string, value: string): void {
+export function setSetting(key: string, value: string): string[] {
   const db = getDatabase()
+  const previous = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value)
+
+  if (key !== 'user.avatar') return []
+
+  return syncImageRefs(collectImageIdsFromText(previous?.value), collectImageIdsFromText(value))
 }
 
 export function getAllSettings(): Record<string, string> {

@@ -16,7 +16,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, h, onMounted, onBeforeUnmount, type Component } from 'vue'
-import { NDropdown, NIcon } from 'naive-ui'
+import { NDropdown, NIcon, useDialog } from 'naive-ui'
 import {
   CopyOutline,
   CutOutline,
@@ -29,6 +29,7 @@ import { useThemeStore } from '@renderer/stores/themes'
 const themeStore = useThemeStore()
 const isDark = computed(() => themeStore.isDark)
 const isEditorDebugEnabled = import.meta.env.DEV
+const dialog = useDialog()
 
 const debugLog = (...args: unknown[]): void => {
   if (isEditorDebugEnabled) {
@@ -58,6 +59,8 @@ const IMAGE_MIME_BY_EXT: Record<string, string> = {
 }
 const SUPPORTED_IMAGE_TYPES = new Set(Object.values(IMAGE_MIME_BY_EXT))
 const SUPPORTED_IMAGE_EXTENSIONS = new Set(Object.keys(IMAGE_MIME_BY_EXT))
+const IMAGE_MAX_SIZE = 10 * 1024 * 1024
+const IMAGE_SAVE_CONCURRENCY = 2
 
 interface FroalaDragEventLike {
   preventDefault?: () => void
@@ -89,6 +92,10 @@ interface FroalaEditorInstance {
     hide(): void
     show(): void
   }
+}
+
+interface NativeFile extends File {
+  path?: string
 }
 
 const editorInstance = ref<FroalaEditorInstance | null>(null)
@@ -123,19 +130,71 @@ function isSupportedImageFile(file: File): boolean {
   return Boolean(ext && SUPPORTED_IMAGE_EXTENSIONS.has(ext))
 }
 
-function normalizeImageDataUrl(dataUrl: string, file: File): string {
-  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(dataUrl)) {
-    return dataUrl
+function getNativeFilePath(file: File): string | null {
+  const path = (file as NativeFile).path
+  return typeof path === 'string' && path.trim() ? path : null
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  if (items.length === 0) return
+
+  const limit = Math.max(1, Math.min(concurrency, items.length))
+  let cursor = 0
+
+  const runners = Array.from({ length: limit }, async () => {
+    while (true) {
+      const index = cursor
+      cursor += 1
+      if (index >= items.length) return
+      await worker(items[index], index)
+    }
+  })
+
+  await Promise.all(runners)
+}
+
+async function saveImageFile(
+  file: File
+): Promise<{ success: boolean; path?: string; error?: string }> {
+  const nativePath = getNativeFilePath(file)
+  if (nativePath) {
+    return await window.api.saveImageFromFile(nativePath)
   }
 
-  const commaIndex = dataUrl.indexOf(',')
-  if (commaIndex < 0) return dataUrl
-
   const mimeType = getFileMimeType(file)
-  if (!mimeType) return dataUrl
+  if (!mimeType) {
+    return { success: false, error: '无法识别图片类型' }
+  }
 
-  const base64Payload = dataUrl.slice(commaIndex + 1)
-  return `data:${mimeType};base64,${base64Payload}`
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  return await window.api.saveImageFromBytes(bytes, mimeType)
+}
+
+function parseImageMimeTypeFromDataUrl(dataUrl: string): string | null {
+  const match = /^data:([^;,]+);base64,/i.exec(dataUrl)
+  if (!match) return null
+  return match[1].trim().toLowerCase()
+}
+
+async function saveImageDataUrl(dataUrl: string): Promise<string | null> {
+  const mimeType = parseImageMimeTypeFromDataUrl(dataUrl)
+  if (!mimeType) return null
+
+  const response = await fetch(dataUrl)
+  const buffer = await response.arrayBuffer()
+  const result = await window.api.saveImageFromBytes(new Uint8Array(buffer), mimeType)
+  return result.success && result.path ? result.path : null
+}
+
+async function insertImagesWithLimit(files: File[]): Promise<void> {
+  const imageFiles = files.filter((file) => isSupportedImageFile(file))
+  await runWithConcurrency(imageFiles, IMAGE_SAVE_CONCURRENCY, async (file) => {
+    await insertImage(file)
+  })
 }
 
 function getDroppedFiles(dropEvent: FroalaDragEventLike): File[] {
@@ -166,11 +225,7 @@ function handleEditorDrop(event: DragEvent): void {
   event.stopPropagation()
 
   const files = Array.from(event.dataTransfer?.files || [])
-  files.forEach((file) => {
-    if (isSupportedImageFile(file)) {
-      void insertImage(file)
-    }
-  })
+  void insertImagesWithLimit(files)
 }
 
 // 右键菜单状态
@@ -333,16 +388,6 @@ function scrollToKeyword(keyword: string): boolean {
   return true
 }
 
-// 将文件转换为 base64
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
-
 // 插入图片到编辑器
 const insertImage = async (file: File): Promise<void> => {
   debugLog('insertImage called, editorInstance:', editorInstance.value)
@@ -358,28 +403,21 @@ const insertImage = async (file: File): Promise<void> => {
   }
 
   // 检查文件大小 (10MB)
-  const maxSize = 10 * 1024 * 1024
-  if (file.size > maxSize) {
-    debugLog('图片大小超过限制:', file.size)
+  if (file.size > IMAGE_MAX_SIZE) {
+    dialog.warning({
+      title: '图片过大',
+      content: `图片「${file.name}」超过 10MB 限制，请压缩后再插入。`,
+      positiveText: '知道了'
+    })
     return
   }
 
   try {
-    debugLog('Converting file to base64...')
-    // 转换为 base64
-    const base64 = normalizeImageDataUrl(await fileToBase64(file), file)
-    debugLog('Base64 conversion complete, length:', base64.length)
-
-    // 保存为文件并获取 diary-image:// URL
-    debugLog('Saving image...')
-    const result = await window.api.saveImage(base64)
-    debugLog('Save result:', result)
+    const result = await saveImageFile(file)
 
     if (result.success && result.path) {
       // 插入使用 diary-image:// 协议的 URL
-      debugLog('Inserting image with path:', result.path)
       editorInstance.value.image.insert(result.path, false, null, editorInstance.value.image.get())
-      debugLog('Image inserted successfully')
     } else {
       console.error('保存图片失败:', result.error)
     }
@@ -391,7 +429,7 @@ const insertImage = async (file: File): Promise<void> => {
 // Froala 配置
 const editorConfig = {
   height: '100%',
-  placeholderText: '输入内容...',
+  placeholderText: '写点什么呢?',
   charCounterCount: false,
   shortcutsEnabled: ['bold', 'italic', 'underline', 'undo', 'redo'],
   multiLine: true,
@@ -537,7 +575,6 @@ const editorConfig = {
   events: {
     initialized: function (this: FroalaEditorInstance): void {
       editorInstance.value = this
-      debugLog('Froala Editor initialized')
     },
     // Some Froala actions (e.g. remove image) don't reliably trigger v-model updates in the wrapper.
     // Sync from editor HTML to keep parent state (and autosave) correct.
@@ -548,46 +585,36 @@ const editorConfig = {
       syncContentFromEditor(this)
     },
     'image.beforeUpload': function (files: FileList | File[]): boolean {
-      debugLog('image.beforeUpload triggered, files:', files)
       // 处理通过按钮选择的图片
       if (files && files.length > 0) {
-        Array.from(files).forEach((file) => {
-          debugLog('Processing file:', file.name, file.type)
-          insertImage(file)
-        })
+        void insertImagesWithLimit(Array.from(files))
       }
       return false // 阻止默认上传行为
     },
     'image.error': function (error: unknown, response: unknown): void {
       console.error('Froala image error:', error, response)
     },
-    'image.inserted': function ($img: unknown): void {
-      debugLog('Image inserted:', $img)
-    },
     'paste.afterCleanup': async function (clipboardHtml: string): Promise<string> {
-      // 处理粘贴的图片（base64）
-      const imgRegex = /<img[^>]+src="(data:image\/[^;]+;base64,[^"]+)"[^>]*>/g
-      let match
-      const promises: Promise<void>[] = []
+      // 处理粘贴的图片（base64），限制并发避免峰值内存抖动。
+      const imgRegex = /<img[^>]+src=(['"])(data:image\/[^;]+;base64,[^'"]+)\1[^>]*>/gi
+      const dataUrls = [...clipboardHtml.matchAll(imgRegex)].map((match) => match[2])
+      const uniqueDataUrls = [...new Set(dataUrls)]
+      const replacements = new Map<string, string>()
 
-      while ((match = imgRegex.exec(clipboardHtml)) !== null) {
-        const base64Data = match[1]
-        promises.push(
-          (async () => {
-            try {
-              const result = await window.api.saveImage(base64Data)
-              if (result.success && result.path) {
-                // 替换 base64 为 diary-image:// URL
-                clipboardHtml = clipboardHtml.replace(base64Data, result.path)
-              }
-            } catch (error) {
-              console.error('保存粘贴的图片失败:', error)
-            }
-          })()
-        )
+      await runWithConcurrency(uniqueDataUrls, IMAGE_SAVE_CONCURRENCY, async (dataUrl) => {
+        try {
+          const imagePath = await saveImageDataUrl(dataUrl)
+          if (imagePath) {
+            replacements.set(dataUrl, imagePath)
+          }
+        } catch (error) {
+          console.error('保存粘贴的图片失败:', error)
+        }
+      })
+
+      for (const [dataUrl, imagePath] of replacements) {
+        clipboardHtml = clipboardHtml.split(dataUrl).join(imagePath)
       }
-
-      await Promise.all(promises)
       return clipboardHtml
     },
     dragover: function (dragEvent: FroalaDragEventLike): boolean {
@@ -607,11 +634,7 @@ const editorConfig = {
 
       const files = getDroppedFiles(dropEvent)
       if (files.length > 0) {
-        files.forEach((file) => {
-          if (isSupportedImageFile(file)) {
-            insertImage(file)
-          }
-        })
+        void insertImagesWithLimit(files)
         return false
       }
       return true

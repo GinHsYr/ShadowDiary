@@ -27,7 +27,7 @@
               <div class="setting-info">
                 <label class="setting-label">导出数据</label>
                 <span class="setting-description">
-                  导出数据库和图片/附件到备份目录，建议定期备份
+                  导出数据库和图片/附件为 ZIP 备份文件，建议定期备份
                 </span>
               </div>
               <n-button
@@ -42,7 +42,7 @@
             <div class="setting-item">
               <div class="setting-info">
                 <label class="setting-label">导入数据</label>
-                <span class="setting-description">从备份目录恢复数据，会覆盖当前本地数据</span>
+                <span class="setting-description">从 ZIP 备份文件恢复数据，会覆盖当前本地数据</span>
               </div>
               <n-button
                 type="warning"
@@ -67,12 +67,19 @@
               <span class="about-label">版本</span>
               <span class="about-value">{{ appInfo.version }}</span>
             </div>
-          </n-space>
-
-          <n-space vertical :size="16">
+            <div class="about-item">
+              <span class="about-label">开源地址</span>
+              <a
+                class="about-link"
+                href="https://github.com/GinHsYr/ShadowDiary"
+                target="_blank"
+                rel="noopener noreferrer"
+                >https://github.com/GinHsYr/ShadowDiary
+              </a>
+            </div>
             <div class="setting-item">
               <div class="setting-info">
-                <span class="setting-description">检查是否有新版本可用</span>
+                <span class="about-label">检查是否有新版本可用</span>
               </div>
               <n-button
                 :loading="checkingUpdate"
@@ -98,23 +105,6 @@
             </div>
           </n-space>
         </n-card>
-
-        <!-- 通用设置 -->
-        <!--        <n-card title="通用设置" :bordered="false" class="settings-card">-->
-        <!--          <n-space vertical :size="20">-->
-        <!--            <div class="setting-item">-->
-        <!--              <div class="setting-info">-->
-        <!--                <label class="setting-label">语言</label>-->
-        <!--                <span class="setting-description">选择应用显示语言</span>-->
-        <!--              </div>-->
-        <!--              <n-select-->
-        <!--                v-model:value="settings.language"-->
-        <!--                :options="languageOptions"-->
-        <!--                style="width: 120px"-->
-        <!--              />-->
-        <!--            </div>-->
-        <!--          </n-space>-->
-        <!--        </n-card>-->
       </n-space>
     </div>
   </div>
@@ -307,7 +297,7 @@ const runImportData = async (): Promise<void> => {
 const handleImportData = (): void => {
   dialog.warning({
     title: '导入确认',
-    content: '导入会覆盖当前本地数据，建议先执行一次导出备份。确认继续吗？',
+    content: '导入 ZIP 会覆盖当前本地数据，建议先执行一次导出备份。确认继续吗？',
     positiveText: '继续导入',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -406,6 +396,17 @@ const handleImportData = (): void => {
   font-size: 14px;
   font-weight: 500;
   color: var(--n-text-color);
+}
+
+.about-link {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--n-primary-color);
+  text-decoration: none;
+}
+
+.about-link:hover {
+  text-decoration: underline;
 }
 
 .update-message {

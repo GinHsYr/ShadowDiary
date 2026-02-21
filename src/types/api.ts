@@ -118,8 +118,10 @@ export interface DiaryAPI {
     params?: { limit?: number; offset?: number }
   ): Promise<PersonMentionDetailResult>
 
-  // 图片保存（将 base64 转换为文件）
+  // 图片保存（兼容 data URL）
   saveImage(base64Data: string): Promise<ImageSaveResult>
+  saveImageFromFile(filePath: string): Promise<ImageSaveResult>
+  saveImageFromBytes(bytes: Uint8Array, mimeType: string): Promise<ImageSaveResult>
 
   // 清理未使用的图片
   cleanupImages(): Promise<{ success: boolean; error?: string }>
@@ -133,7 +135,7 @@ export interface DiaryAPI {
   saveImageAs(dataUrl: string): Promise<{ success: boolean }>
 
   // 头像
-  selectAvatar(): Promise<{ canceled: boolean; dataUrl?: string }>
+  selectAvatar(): Promise<ImageSelectResult>
 
   // 窗口控制
   windowMinimize(): Promise<void>

@@ -21,6 +21,22 @@ export function stripHtmlToPlain(html: string): string {
     .trim()
 }
 
+const DIARY_IMAGE_ID_RE = /diary-image:\/\/([a-f0-9-]+)(?:_thumb)?\.[a-z0-9]+/gi
+
+function extractImageIdsForMigration(value: string | null | undefined): Set<string> {
+  const imageIds = new Set<string>()
+  if (!value) return imageIds
+
+  let match: RegExpExecArray | null
+  DIARY_IMAGE_ID_RE.lastIndex = 0
+  while ((match = DIARY_IMAGE_ID_RE.exec(value)) !== null) {
+    imageIds.add(match[1])
+  }
+  DIARY_IMAGE_ID_RE.lastIndex = 0
+
+  return imageIds
+}
+
 const migrations: Migration[] = [
   // Version 1: Initial schema
   (db) => {
@@ -202,6 +218,73 @@ const migrations: Migration[] = [
         VALUES ('delete', OLD.rowid, OLD.title, OLD.plain_content);
       END;
     `)
+  },
+
+  // Version 7: Track image reference counts for incremental cleanup
+  (db) => {
+    db.exec(`
+      CREATE TABLE image_refs (
+        image_id   TEXT PRIMARY KEY,
+        ref_count  INTEGER NOT NULL DEFAULT 0 CHECK (ref_count >= 0),
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX idx_image_refs_updated_at ON image_refs(updated_at);
+    `)
+
+    const imageRefCounts = new Map<string, number>()
+    const addImageRefs = (ids: Iterable<string>): void => {
+      for (const id of ids) {
+        imageRefCounts.set(id, (imageRefCounts.get(id) ?? 0) + 1)
+      }
+    }
+
+    const diaryRows = db.prepare('SELECT content FROM diary_entries').iterate() as Iterable<{
+      content: string
+    }>
+    for (const row of diaryRows) {
+      addImageRefs(extractImageIdsForMigration(row.content))
+    }
+
+    const archiveRows = db
+      .prepare('SELECT main_image, images FROM archives')
+      .iterate() as Iterable<{
+      main_image: string | null
+      images: string | null
+    }>
+    for (const row of archiveRows) {
+      addImageRefs(extractImageIdsForMigration(row.main_image))
+
+      if (!row.images) continue
+      try {
+        const images = JSON.parse(row.images) as unknown
+        if (!Array.isArray(images)) continue
+
+        for (const image of images) {
+          if (typeof image === 'string') {
+            addImageRefs(extractImageIdsForMigration(image))
+          }
+        }
+      } catch {
+        // Ignore malformed archive image JSON during backfill.
+      }
+    }
+
+    const avatarRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('user.avatar') as
+      | { value: string }
+      | undefined
+    if (avatarRow?.value) {
+      addImageRefs(extractImageIdsForMigration(avatarRow.value))
+    }
+
+    const insertRef = db.prepare(
+      'INSERT INTO image_refs (image_id, ref_count, updated_at) VALUES (?, ?, ?)'
+    )
+    const now = Date.now()
+
+    for (const [imageId, refCount] of imageRefCounts) {
+      insertRef.run(imageId, refCount, now)
+    }
   }
 ]
 

@@ -81,7 +81,6 @@ const userAvatar = computed(() => userStore.avatar)
 // 编辑表单的临时数据
 const newName = ref('')
 const newAvatar = ref('')
-const avatarType = ref<'upload'>('upload')
 
 function notify(type: 'success' | 'error', message: string): void {
   const api = window.$message
@@ -117,12 +116,11 @@ const selectAvatar = async (): Promise<void> => {
   try {
     const result = await window.api.selectAvatar()
 
-    if (result.canceled || !result.dataUrl) {
+    if (result.canceled || !result.path) {
       return
     }
 
-    newAvatar.value = result.dataUrl
-    avatarType.value = 'upload'
+    newAvatar.value = result.path
   } catch (error) {
     console.error('选择头像失败:', error)
     alert('选择头像失败，请重试')
@@ -137,7 +135,6 @@ const openModal = (): void => {
 
 const resetAvatar = (): void => {
   newAvatar.value = ''
-  avatarType.value = 'upload'
 }
 
 // 处理菜单点击，进行路由跳转
@@ -175,7 +172,7 @@ const handleTodayClick = (): void => {
       <n-avatar
         size="large"
         style="cursor: pointer"
-        :src="avatarType === 'upload' ? userAvatar : undefined"
+        :src="userAvatar || undefined"
         @click="openModal"
       >
         <span v-if="!userAvatar">{{ userName.charAt(0) }}</span>
@@ -224,12 +221,7 @@ const handleTodayClick = (): void => {
           }"
         >
           <div class="avatar-preview">
-            <n-avatar
-              :size="96"
-              round
-              :src="avatarType === 'upload' ? newAvatar : undefined"
-              class="preview-avatar"
-            >
+            <n-avatar :size="96" round :src="newAvatar || undefined" class="preview-avatar">
               <span v-if="!newAvatar" class="avatar-placeholder">{{
                 newName.charAt(0) || '?'
               }}</span>

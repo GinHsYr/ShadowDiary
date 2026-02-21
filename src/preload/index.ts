@@ -46,8 +46,10 @@ const api: DiaryAPI = {
   getPersonMentionDetails: (personName, params) =>
     invoke('stats:personMentionDetails', personName, params),
 
-  // 图片保存（将 base64 转换为文件）
+  // 图片保存（兼容 data URL）
   saveImage: (base64Data) => invoke('image:save', base64Data),
+  saveImageFromFile: (filePath) => invoke('image:save-file', filePath),
+  saveImageFromBytes: (bytes, mimeType) => invoke('image:save-bytes', { bytes, mimeType }),
 
   // 清理未使用的图片
   cleanupImages: () => invoke('image:cleanup'),

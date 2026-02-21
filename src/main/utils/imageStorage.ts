@@ -16,6 +16,7 @@ const getThumbnailDir = (): string => {
 }
 
 const UUID_PATTERN = '[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'
+const IMAGE_ID_RE = new RegExp(`^${UUID_PATTERN}$`)
 const IMAGE_FILENAME_RE = new RegExp(`^${UUID_PATTERN}\\.(jpg|jpeg|png|gif|webp|bmp|svg)$`)
 const THUMBNAIL_FILENAME_RE = new RegExp(`^${UUID_PATTERN}_thumb\\.webp$`)
 const IMAGE_DATA_URL_RE = /^data:image\/([a-z0-9.+-]+);base64,([\s\S]+)$/i
@@ -31,6 +32,10 @@ const IMAGE_MIME_BY_EXT = {
 } as const
 
 type SupportedImageExtension = keyof typeof IMAGE_MIME_BY_EXT
+
+const STORAGE_IMAGE_MAX_EDGE = 2560
+const STORAGE_JPEG_QUALITY = 82
+const STORAGE_WEBP_QUALITY = 82
 
 const SUBTYPE_TO_EXTENSION: Record<string, SupportedImageExtension> = {
   jpg: 'jpg',
@@ -65,6 +70,15 @@ function resolveImageExtensionFromSubtype(subtype: string): SupportedImageExtens
   return normalizeImageExtension(stripped)
 }
 
+export function resolveImageExtensionFromMimeType(
+  mimeType: string
+): SupportedImageExtension | null {
+  const normalized = mimeType.trim().toLowerCase()
+  if (!normalized.startsWith('image/')) return null
+  const subtype = normalized.slice('image/'.length).split(';')[0].trim()
+  return resolveImageExtensionFromSubtype(subtype)
+}
+
 export function parseImageDataUrl(dataUrl: string): ParsedImageDataUrl | null {
   const matches = IMAGE_DATA_URL_RE.exec(dataUrl)
   if (!matches) return null
@@ -95,26 +109,76 @@ export async function ensureImageDirs(): Promise<void> {
   ])
 }
 
+function shouldOptimizeBeforeStore(ext: SupportedImageExtension): boolean {
+  return ext !== 'gif' && ext !== 'svg'
+}
+
+async function optimizeImageBeforeStore(
+  imageBuffer: Buffer,
+  ext: SupportedImageExtension
+): Promise<{ buffer: Buffer; ext: SupportedImageExtension }> {
+  if (!shouldOptimizeBeforeStore(ext)) {
+    return { buffer: imageBuffer, ext }
+  }
+
+  try {
+    let outputExt: SupportedImageExtension = ext
+    const pipeline = sharp(imageBuffer).rotate().resize({
+      width: STORAGE_IMAGE_MAX_EDGE,
+      height: STORAGE_IMAGE_MAX_EDGE,
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+        pipeline.jpeg({ quality: STORAGE_JPEG_QUALITY, mozjpeg: true })
+        break
+      case 'png':
+        pipeline.png({ compressionLevel: 9, adaptiveFiltering: true })
+        break
+      case 'webp':
+        pipeline.webp({ quality: STORAGE_WEBP_QUALITY })
+        break
+      case 'bmp':
+        pipeline.png({ compressionLevel: 9, adaptiveFiltering: true })
+        outputExt = 'png'
+        break
+    }
+
+    const optimizedBuffer = await pipeline.toBuffer()
+    if (outputExt === ext && optimizedBuffer.length >= imageBuffer.length) {
+      return { buffer: imageBuffer, ext }
+    }
+    return { buffer: optimizedBuffer, ext: outputExt }
+  } catch (error) {
+    console.warn('优化图片失败，回退原图保存:', error)
+    return { buffer: imageBuffer, ext }
+  }
+}
+
 async function saveImageBuffer(
   imageBuffer: Buffer,
   ext: SupportedImageExtension
 ): Promise<{ id: string; path: string; thumbnailPath: string }> {
   await ensureImageDirs()
+  const optimized = await optimizeImageBeforeStore(imageBuffer, ext)
 
   // 生成唯一 ID
   const id = randomUUID()
-  const filename = `${id}.${ext}`
+  const filename = `${id}.${optimized.ext}`
   const thumbnailFilename = `${id}_thumb.webp`
 
   const imagePath = join(getImageDir(), filename)
   const thumbnailPath = join(getThumbnailDir(), thumbnailFilename)
 
   // 保存原图
-  await writeFile(imagePath, imageBuffer)
+  await writeFile(imagePath, optimized.buffer)
 
   // 生成缩略图 (最大宽度 400px，使用 webp 格式)
   try {
-    await sharp(imageBuffer)
+    await sharp(optimized.buffer)
       .resize(400, null, {
         withoutEnlargement: true,
         fit: 'inside'
@@ -131,6 +195,24 @@ async function saveImageBuffer(
     path: `diary-image://${filename}`,
     thumbnailPath: `diary-image://${thumbnailFilename}`
   }
+}
+
+export async function saveImageFromBuffer(
+  imageBuffer: Buffer,
+  ext: SupportedImageExtension
+): Promise<{ id: string; path: string; thumbnailPath: string }> {
+  return await saveImageBuffer(imageBuffer, ext)
+}
+
+export async function saveImageFromBytes(
+  imageBytes: Uint8Array,
+  mimeType: string
+): Promise<{ id: string; path: string; thumbnailPath: string }> {
+  const ext = resolveImageExtensionFromMimeType(mimeType)
+  if (!ext) {
+    throw new Error('Unsupported image mime type')
+  }
+  return await saveImageBuffer(Buffer.from(imageBytes), ext)
 }
 
 // 保存图片并生成缩略图
@@ -221,6 +303,42 @@ export async function deleteImage(filename: string): Promise<void> {
     }
   } catch (error) {
     console.error('删除图片失败:', error)
+  }
+}
+
+export async function deleteImageById(imageId: string): Promise<void> {
+  const normalizedId = imageId.trim().toLowerCase()
+  if (!IMAGE_ID_RE.test(normalizedId)) return
+
+  await ensureImageDirs()
+
+  const [imageFiles, thumbnailFiles] = await Promise.all([
+    readdir(getImageDir()),
+    readdir(getThumbnailDir())
+  ])
+
+  const imageDeletes = imageFiles
+    .filter((file) => file.startsWith(`${normalizedId}.`))
+    .map(async (file) => {
+      const path = join(getImageDir(), file)
+      if (existsSync(path)) {
+        await unlink(path)
+      }
+    })
+
+  const thumbnailDeletes = thumbnailFiles
+    .filter((file) => file === `${normalizedId}_thumb.webp`)
+    .map(async (file) => {
+      const path = join(getThumbnailDir(), file)
+      if (existsSync(path)) {
+        await unlink(path)
+      }
+    })
+
+  try {
+    await Promise.all([...imageDeletes, ...thumbnailDeletes])
+  } catch (error) {
+    console.error('按 ID 删除图片失败:', error)
   }
 }
 

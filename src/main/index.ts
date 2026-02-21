@@ -26,7 +26,6 @@ import {
   getDiaryDates,
   searchDiaries,
   getStats,
-  getAllDiaryContents,
   getPersonMentionStats,
   getPersonMentionDetails,
   invalidatePersonMentionCache
@@ -41,13 +40,21 @@ import {
 } from './database/attachments'
 import { getSetting, setSetting, getAllSettings } from './database/settings'
 import {
+  collectImageIdsFromText,
+  collectImageIdsFromTexts,
+  getAllReferencedImageIds,
+  syncImageRefs
+} from './database/imageRefs'
+import {
   saveImage,
+  saveImageFromBuffer,
+  saveImageFromBytes,
   saveImageFromFile,
   saveArchiveAvatarFromFile,
   getImage,
   ensureImageDirs,
   cleanupUnusedImages,
-  extractImageIds,
+  deleteImageById,
   parseImageDataUrl
 } from './utils/imageStorage'
 import { exportAppData, importAppData } from './utils/dataTransfer'
@@ -119,6 +126,35 @@ async function resolveImagePayload(imageSource: string): Promise<ResolvedImagePa
   const buffer = await getImage(fileName)
   const ext = fileName.split('.').pop()?.toLowerCase() || 'png'
   return { buffer, ext }
+}
+
+function collectArchiveImageIds(archive: { mainImage?: string; images?: string[] }): Set<string> {
+  return collectImageIdsFromTexts([archive.mainImage, ...(archive.images ?? [])])
+}
+
+async function cleanupReleasedImages(imageIds: Iterable<string>): Promise<void> {
+  const uniqueIds = new Set<string>()
+  for (const id of imageIds) {
+    const normalized = id.trim()
+    if (normalized) uniqueIds.add(normalized)
+  }
+
+  if (uniqueIds.size === 0) return
+
+  await Promise.allSettled([...uniqueIds].map((imageId) => deleteImageById(imageId)))
+}
+
+async function migrateLegacyAvatarSetting(): Promise<void> {
+  try {
+    const currentAvatar = getSetting('user.avatar')
+    if (!currentAvatar || !parseImageDataUrl(currentAvatar)) return
+
+    const saved = await saveImage(currentAvatar)
+    const releasedIds = setSetting('user.avatar', saved.path)
+    await cleanupReleasedImages(releasedIds)
+  } catch (error) {
+    console.error('迁移历史头像失败:', error)
+  }
 }
 
 function registerDiaryImageProtocol(): void {
@@ -258,6 +294,8 @@ app.whenReady().then(() => {
   // Register custom protocol for images
   registerDiaryImageProtocol()
 
+  void migrateLegacyAvatarSetting()
+
   // Register IPC handlers
   registerIpcHandlers()
 
@@ -281,33 +319,6 @@ app.on('before-quit', () => {
 
 // ========== IPC Handlers ==========
 
-function collectAllUsedImageIds(): Set<string> {
-  const contents = getAllDiaryContents()
-  const usedIds = new Set<string>()
-
-  for (const content of contents) {
-    const ids = extractImageIds(content)
-    for (const id of ids) {
-      usedIds.add(id)
-    }
-  }
-
-  const archiveEntries = archives.list()
-  for (const archive of archiveEntries) {
-    const archiveImageRefs = [archive.mainImage, ...archive.images].filter(
-      (value): value is string => Boolean(value)
-    )
-    for (const imageRef of archiveImageRefs) {
-      const ids = extractImageIds(imageRef)
-      for (const id of ids) {
-        usedIds.add(id)
-      }
-    }
-  }
-
-  return usedIds
-}
-
 function registerIpcHandlers(): void {
   // 日记 CRUD
   ipcMain.handle('diary:list', (_event, params) => {
@@ -318,20 +329,27 @@ function registerIpcHandlers(): void {
     return getDiaryEntry(id)
   })
 
-  ipcMain.handle('diary:save', (_event, entry) => {
+  ipcMain.handle('diary:save', async (_event, entry) => {
+    const previous = entry.id ? getDiaryEntry(entry.id) : null
     const saved = saveDiaryEntry(entry)
+    const releasedIds = syncImageRefs(
+      collectImageIdsFromText(previous?.content),
+      collectImageIdsFromText(saved.content)
+    )
+    await cleanupReleasedImages(releasedIds)
     invalidatePersonMentionCache()
     return saved
   })
 
   ipcMain.handle('diary:delete', async (_event, id: string) => {
+    const previous = getDiaryEntry(id)
     const attachments = getAttachments(id)
     const result = deleteDiaryEntry(id)
     if (result) {
+      const releasedIds = syncImageRefs(collectImageIdsFromText(previous?.content), [])
+      await cleanupReleasedImages(releasedIds)
       invalidatePersonMentionCache()
       await deleteAttachmentFiles(attachments.map((attachment) => attachment.filePath))
-      const usedIds = collectAllUsedImageIds()
-      await cleanupUnusedImages(usedIds)
     }
     return result
   })
@@ -359,16 +377,23 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('archives:save', async (_event, archive) => {
+    const previous = archive.id ? archives.get(archive.id) : null
     const saved = await archives.save(archive)
+    const releasedIds = syncImageRefs(
+      collectArchiveImageIds(previous ?? {}),
+      collectArchiveImageIds(saved)
+    )
+    await cleanupReleasedImages(releasedIds)
     invalidatePersonMentionCache()
     return saved
   })
 
   ipcMain.handle('archives:delete', async (_event, id: string) => {
+    const previous = archives.get(id)
     archives.delete(id)
+    const releasedIds = syncImageRefs(collectArchiveImageIds(previous ?? {}), [])
+    await cleanupReleasedImages(releasedIds)
     invalidatePersonMentionCache()
-    const usedIds = collectAllUsedImageIds()
-    await cleanupUnusedImages(usedIds)
   })
 
   // 标签
@@ -394,8 +419,9 @@ function registerIpcHandlers(): void {
     return getSetting(key)
   })
 
-  ipcMain.handle('settings:set', (_event, key: string, value: string) => {
-    setSetting(key, value)
+  ipcMain.handle('settings:set', async (_event, key: string, value: string) => {
+    const releasedIds = setSetting(key, value)
+    await cleanupReleasedImages(releasedIds)
     return true
   })
 
@@ -434,7 +460,7 @@ function registerIpcHandlers(): void {
     }
   )
 
-  // 保存图片（将 base64 转换为文件）
+  // 保存图片（兼容 data URL）
   ipcMain.handle('image:save', async (_event, base64Data: string) => {
     try {
       const result = await saveImage(base64Data)
@@ -445,11 +471,44 @@ function registerIpcHandlers(): void {
     }
   })
 
+  // 保存图片（文件路径）
+  ipcMain.handle('image:save-file', async (_event, filePath: string) => {
+    try {
+      const result = await saveImageFromFile(filePath)
+      return { success: true, ...result }
+    } catch (error) {
+      console.error('通过文件路径保存图片失败:', error)
+      return { success: false, error: String(error) }
+    }
+  })
+
+  // 保存图片（二进制）
+  ipcMain.handle(
+    'image:save-bytes',
+    async (_event, payload: { bytes: Uint8Array; mimeType: string }) => {
+      try {
+        if (
+          !payload ||
+          !(payload.bytes instanceof Uint8Array) ||
+          typeof payload.mimeType !== 'string' ||
+          !payload.mimeType.trim()
+        ) {
+          return { success: false, error: 'Invalid image bytes payload' }
+        }
+
+        const result = await saveImageFromBytes(payload.bytes, payload.mimeType)
+        return { success: true, ...result }
+      } catch (error) {
+        console.error('通过二进制保存图片失败:', error)
+        return { success: false, error: String(error) }
+      }
+    }
+  )
+
   // 清理未使用的图片
   ipcMain.handle('image:cleanup', async () => {
     try {
-      const usedIds = collectAllUsedImageIds()
-      await cleanupUnusedImages(usedIds)
+      await cleanupUnusedImages(getAllReferencedImageIds())
       return { success: true }
     } catch (error) {
       console.error('清理图片失败:', error)
@@ -575,9 +634,9 @@ function registerIpcHandlers(): void {
       }
 
       const cropped = cropImageToSquare(image)
-      const dataUrl = `data:image/png;base64,${cropped.toPNG().toString('base64')}`
+      const saved = await saveImageFromBuffer(cropped.toPNG(), 'png')
 
-      return { canceled: false, dataUrl }
+      return { canceled: false, path: saved.path, thumbnailPath: saved.thumbnailPath }
     } catch (error) {
       console.error('处理头像失败:', error)
       return { canceled: true }

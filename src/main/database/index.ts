@@ -5,6 +5,8 @@ import { runMigrations } from './migrations'
 
 let db: Database.Database | null = null
 
+export type WalCheckpointMode = 'PASSIVE' | 'FULL' | 'RESTART' | 'TRUNCATE'
+
 export function getDatabase(): Database.Database {
   if (!db) {
     throw new Error('Database not initialized. Call initDatabase() first.')
@@ -30,4 +32,9 @@ export function closeDatabase(): void {
     db.close()
     db = null
   }
+}
+
+export function checkpointDatabase(mode: WalCheckpointMode = 'TRUNCATE'): void {
+  const currentDb = getDatabase()
+  currentDb.pragma(`wal_checkpoint(${mode})`)
 }

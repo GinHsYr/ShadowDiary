@@ -69,11 +69,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { NButton, NSpin, NPopover, NDatePicker, NDropdown } from 'naive-ui'
 import type { DiaryEntry } from '../../../types/model'
 
-defineProps<{
+const props = defineProps<{
   selectedId: string | null
 }>()
 
@@ -126,7 +126,10 @@ const entries = ref<DiaryEntry[]>([])
 const loading = ref(false)
 const hasMore = ref(true)
 const PAGE_SIZE = 10 // 减少每页加载数量，从 20 降到 10
+const MAX_WINDOW_SIZE = 200
+const TRIM_BATCH_SIZE = 40
 const listRef = ref<HTMLElement | null>(null)
+const loadedCount = ref(0)
 
 function stripHtml(html: string): string {
   if (!html) return ''
@@ -150,19 +153,52 @@ async function loadEntries(reset = false): Promise<void> {
 
   loading.value = true
   try {
-    const offset = reset ? 0 : entries.value.length
+    const offset = reset ? 0 : loadedCount.value
     // 使用 lightweight 模式：只加载元数据和纯文本，不加载图片
     const result = await window.api.getDiaryEntries({ limit: PAGE_SIZE, offset, lightweight: true })
     if (reset) {
       entries.value = result.entries
+      loadedCount.value = result.entries.length
     } else {
       entries.value.push(...result.entries)
+      loadedCount.value += result.entries.length
+      await trimEntriesWindow()
     }
-    hasMore.value = entries.value.length < result.total
+    hasMore.value = loadedCount.value < result.total
   } catch (error) {
     console.error('加载日记列表失败:', error)
   } finally {
     loading.value = false
+  }
+}
+
+async function trimEntriesWindow(): Promise<void> {
+  const overflow = entries.value.length - MAX_WINDOW_SIZE
+  if (overflow <= 0) return
+
+  let removeCount = Math.min(overflow, TRIM_BATCH_SIZE)
+  if (props.selectedId) {
+    const selectedIndex = entries.value.findIndex((entry) => entry.id === props.selectedId)
+    if (selectedIndex >= 0 && selectedIndex < removeCount) {
+      removeCount = selectedIndex
+    }
+  }
+  if (removeCount <= 0) return
+
+  const el = listRef.value
+  let removedHeight = 0
+  if (el) {
+    const itemNodes = el.querySelectorAll<HTMLElement>('.diary-item')
+    for (let i = 0; i < removeCount && i < itemNodes.length; i += 1) {
+      removedHeight += itemNodes[i].offsetHeight
+    }
+  }
+
+  entries.value.splice(0, removeCount)
+  await nextTick()
+
+  if (el && removedHeight > 0) {
+    el.scrollTop = Math.max(0, el.scrollTop - removedHeight)
   }
 }
 
@@ -183,11 +219,19 @@ function handleScroll(): void {
 
 async function refresh(): Promise<void> {
   hasMore.value = true
+  loadedCount.value = 0
   await loadEntries(true)
 }
 
 onMounted(() => {
   loadEntries(true)
+})
+
+onBeforeUnmount(() => {
+  if (scrollTimer) {
+    clearTimeout(scrollTimer)
+    scrollTimer = null
+  }
 })
 
 function updateEntry(id: string, patch: Partial<DiaryEntry>): boolean {
@@ -203,6 +247,7 @@ function removeEntry(id: string): void {
   const idx = entries.value.findIndex((e) => e.id === id)
   if (idx !== -1) {
     entries.value.splice(idx, 1)
+    loadedCount.value = Math.max(loadedCount.value - 1, 0)
   }
 }
 

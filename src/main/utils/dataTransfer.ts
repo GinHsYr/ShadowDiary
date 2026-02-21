@@ -1,14 +1,27 @@
-import { app, BrowserWindow, dialog, type OpenDialogOptions } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  type OpenDialogOptions,
+  type SaveDialogOptions
+} from 'electron'
 import { join } from 'path'
+import { execFile } from 'child_process'
 import { promises as fs } from 'fs'
-import { closeDatabase, initDatabase } from '../database'
+import { promisify } from 'util'
+import { checkpointDatabase, closeDatabase, initDatabase } from '../database'
 import { invalidatePersonMentionCache } from '../database/diary'
 import { ensureImageDirs } from './imageStorage'
 
-const BACKUP_FOLDER_PREFIX = 'shadow-diary-backup'
-const DATA_FILE_NAMES = ['diary.db', 'diary.db-wal', 'diary.db-shm'] as const
+const BACKUP_FILE_PREFIX = 'shadow-diary-backup'
+const ZIP_FILE_EXTENSION = '.zip'
+const EXPORT_DATA_FILE_NAMES = ['diary.db'] as const
+const IMPORT_DATA_FILE_NAMES = ['diary.db', 'diary.db-wal', 'diary.db-shm'] as const
 const DATA_DIR_NAMES = ['images', 'thumbnails', 'attachments'] as const
-const DATA_ITEMS = [...DATA_FILE_NAMES, ...DATA_DIR_NAMES] as const
+const EXPORT_DATA_ITEMS = [...EXPORT_DATA_FILE_NAMES, ...DATA_DIR_NAMES] as const
+const IMPORT_DATA_ITEMS = [...IMPORT_DATA_FILE_NAMES, ...DATA_DIR_NAMES] as const
+
+const execFileAsync = promisify(execFile)
 
 let transferInProgress = false
 
@@ -49,13 +62,41 @@ async function removePathIfExists(path: string): Promise<void> {
   await fs.rm(path, { recursive: true, force: true })
 }
 
-async function showDirectoryPicker(
+function ensureZipExtension(filePath: string): string {
+  if (filePath.toLowerCase().endsWith(ZIP_FILE_EXTENSION)) return filePath
+  return `${filePath}${ZIP_FILE_EXTENSION}`
+}
+
+function escapePowerShellSingleQuoted(path: string): string {
+  return path.replace(/'/g, "''")
+}
+
+async function showZipSavePicker(
+  window: BrowserWindow | null | undefined,
+  title: string,
+  defaultPath: string
+): Promise<string | null> {
+  const options: SaveDialogOptions = {
+    title,
+    defaultPath,
+    filters: [{ name: 'ZIP 备份', extensions: ['zip'] }]
+  }
+
+  const result = window
+    ? await dialog.showSaveDialog(window, options)
+    : await dialog.showSaveDialog(options)
+  if (result.canceled || !result.filePath) return null
+  return ensureZipExtension(result.filePath)
+}
+
+async function showZipOpenPicker(
   window: BrowserWindow | null | undefined,
   title: string
 ): Promise<string | null> {
   const options: OpenDialogOptions = {
     title,
-    properties: ['openDirectory', 'createDirectory']
+    properties: ['openFile'],
+    filters: [{ name: 'ZIP 备份', extensions: ['zip'] }]
   }
 
   const result = window
@@ -63,6 +104,100 @@ async function showDirectoryPicker(
     : await dialog.showOpenDialog(options)
   if (result.canceled || result.filePaths.length === 0) return null
   return result.filePaths[0]
+}
+
+async function collectExistingRelativePaths(
+  baseDir: string,
+  names: readonly string[]
+): Promise<string[]> {
+  const existing: string[] = []
+  for (const name of names) {
+    if (await pathExists(join(baseDir, name))) {
+      existing.push(name)
+    }
+  }
+  return existing
+}
+
+async function createZipArchiveFromPaths(
+  sourceDir: string,
+  relativePaths: readonly string[],
+  zipFilePath: string
+): Promise<void> {
+  if (relativePaths.length === 0) {
+    throw new Error('没有可导出的数据文件')
+  }
+
+  await removePathIfExists(zipFilePath)
+
+  if (process.platform === 'win32') {
+    const escapedSource = escapePowerShellSingleQuoted(sourceDir)
+    const escapedTarget = escapePowerShellSingleQuoted(zipFilePath)
+    const escapedPaths = relativePaths
+      .map((relativePath) => `'${escapePowerShellSingleQuoted(relativePath)}'`)
+      .join(', ')
+    const command = [
+      "$ErrorActionPreference='Stop'",
+      `Set-Location -LiteralPath '${escapedSource}'`,
+      `Compress-Archive -Path @(${escapedPaths}) -DestinationPath '${escapedTarget}' -Force`
+    ].join('; ')
+    await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-Command', command])
+    return
+  }
+
+  await execFileAsync('zip', ['-r', '-q', zipFilePath, ...relativePaths], { cwd: sourceDir })
+}
+
+async function appendMetadataToZip(zipFilePath: string, metadataPath: string): Promise<void> {
+  if (!(await pathExists(metadataPath))) return
+
+  if (process.platform === 'win32') {
+    const escapedSource = escapePowerShellSingleQuoted(metadataPath)
+    const escapedTarget = escapePowerShellSingleQuoted(zipFilePath)
+    const command = `Compress-Archive -Path '${escapedSource}' -DestinationPath '${escapedTarget}' -Update`
+    await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-Command', command])
+    return
+  }
+
+  await execFileAsync('zip', ['-q', '-j', zipFilePath, metadataPath])
+}
+
+async function extractZipArchive(zipFilePath: string, targetDir: string): Promise<void> {
+  if (process.platform === 'win32') {
+    const escapedSource = escapePowerShellSingleQuoted(zipFilePath)
+    const escapedTarget = escapePowerShellSingleQuoted(targetDir)
+    const command = `Expand-Archive -Path '${escapedSource}' -DestinationPath '${escapedTarget}' -Force`
+    await execFileAsync('powershell', ['-NoProfile', '-NonInteractive', '-Command', command])
+    return
+  }
+
+  await execFileAsync('unzip', ['-o', '-q', zipFilePath, '-d', targetDir])
+}
+
+async function locateBackupRoot(extractDir: string): Promise<string | null> {
+  const pending: Array<{ path: string; depth: number }> = [{ path: extractDir, depth: 0 }]
+
+  while (pending.length > 0) {
+    const current = pending.shift()
+    if (!current) continue
+
+    if (await pathExists(join(current.path, 'diary.db'))) {
+      return current.path
+    }
+
+    if (current.depth >= 2) continue
+
+    const entries = await fs.readdir(current.path, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      pending.push({
+        path: join(current.path, entry.name),
+        depth: current.depth + 1
+      })
+    }
+  }
+
+  return null
 }
 
 async function withTransferLock(
@@ -89,7 +224,7 @@ async function moveCurrentDataToRollback(
 ): Promise<string[]> {
   const movedItems: string[] = []
 
-  for (const itemName of DATA_ITEMS) {
+  for (const itemName of IMPORT_DATA_ITEMS) {
     const sourcePath = join(userDataDir, itemName)
     if (!(await pathExists(sourcePath))) continue
 
@@ -113,7 +248,7 @@ async function restoreRollbackData(
 }
 
 async function cleanupCurrentData(userDataDir: string): Promise<void> {
-  for (const itemName of DATA_ITEMS) {
+  for (const itemName of IMPORT_DATA_ITEMS) {
     await removePathIfExists(join(userDataDir, itemName))
   }
 }
@@ -128,56 +263,52 @@ export async function exportAppData(
   window: BrowserWindow | null | undefined
 ): Promise<DataTransferResult> {
   return withTransferLock(async () => {
-    const selectedDir = await showDirectoryPicker(window, '选择导出目录')
-    if (!selectedDir) {
+    const defaultBackupName = `${BACKUP_FILE_PREFIX}-${formatTimestamp(new Date())}${ZIP_FILE_EXTENSION}`
+    const selectedZipPath = await showZipSavePicker(window, '选择导出 ZIP 文件', defaultBackupName)
+    if (!selectedZipPath) {
       return { success: false, canceled: true }
     }
 
-    const backupDirName = `${BACKUP_FOLDER_PREFIX}-${formatTimestamp(new Date())}`
-    const backupDirPath = join(selectedDir, backupDirName)
+    const tempExportRoot = await fs.mkdtemp(
+      join(app.getPath('temp'), `${BACKUP_FILE_PREFIX}-metadata-`)
+    )
+    const metadataPath = join(tempExportRoot, 'metadata.json')
+    const userDataDir = app.getPath('userData')
+    let databaseClosed = false
 
     try {
+      checkpointDatabase('TRUNCATE')
       closeDatabase()
-
-      await fs.mkdir(backupDirPath, { recursive: true })
-
-      for (const fileName of DATA_FILE_NAMES) {
-        const sourcePath = join(app.getPath('userData'), fileName)
-        const targetPath = join(backupDirPath, fileName)
-        await copyPathIfExists(sourcePath, targetPath)
-      }
-
-      for (const dirName of DATA_DIR_NAMES) {
-        const sourcePath = join(app.getPath('userData'), dirName)
-        const targetPath = join(backupDirPath, dirName)
-        await copyPathIfExists(sourcePath, targetPath)
-      }
+      databaseClosed = true
+      const exportPaths = await collectExistingRelativePaths(userDataDir, EXPORT_DATA_ITEMS)
 
       const metadata = {
         appName: app.getName(),
         appVersion: app.getVersion(),
         exportedAt: new Date().toISOString(),
-        backupFormatVersion: 1
+        backupFormatVersion: 2,
+        compression: 'zip'
       }
-      await fs.writeFile(
-        join(backupDirPath, 'metadata.json'),
-        JSON.stringify(metadata, null, 2),
-        'utf-8'
-      )
+      await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8')
 
+      await createZipArchiveFromPaths(userDataDir, exportPaths, selectedZipPath)
+      await appendMetadataToZip(selectedZipPath, metadataPath)
       await reopenDatabase()
+      databaseClosed = false
 
       return {
         success: true,
-        path: backupDirPath
+        path: selectedZipPath
       }
     } catch (error) {
-      try {
-        await reopenDatabase()
-      } catch (reopenError) {
-        return {
-          success: false,
-          error: `导出失败：${String(error)}；数据库重连失败：${String(reopenError)}`
+      if (databaseClosed) {
+        try {
+          await reopenDatabase()
+        } catch (reopenError) {
+          return {
+            success: false,
+            error: `导出失败：${String(error)}；数据库重连失败：${String(reopenError)}`
+          }
         }
       }
 
@@ -185,6 +316,8 @@ export async function exportAppData(
         success: false,
         error: String(error)
       }
+    } finally {
+      await removePathIfExists(tempExportRoot)
     }
   })
 }
@@ -193,16 +326,42 @@ export async function importAppData(
   window: BrowserWindow | null | undefined
 ): Promise<DataTransferResult> {
   return withTransferLock(async () => {
-    const selectedDir = await showDirectoryPicker(window, '选择备份目录')
-    if (!selectedDir) {
+    const selectedZipPath = await showZipOpenPicker(window, '选择备份 ZIP 文件')
+    if (!selectedZipPath) {
       return { success: false, canceled: true }
     }
 
-    const backupDatabasePath = join(selectedDir, 'diary.db')
-    if (!(await pathExists(backupDatabasePath))) {
+    const tempImportRoot = await fs.mkdtemp(
+      join(app.getPath('temp'), `${BACKUP_FILE_PREFIX}-import-`)
+    )
+    const extractedDir = join(tempImportRoot, 'extracted')
+    let backupRoot: string | null = null
+    try {
+      await fs.mkdir(extractedDir, { recursive: true })
+      await extractZipArchive(selectedZipPath, extractedDir)
+      backupRoot = await locateBackupRoot(extractedDir)
+    } catch (error) {
+      await removePathIfExists(tempImportRoot)
       return {
         success: false,
-        error: '所选目录缺少 diary.db，无法导入'
+        error: `ZIP 解压失败：${String(error)}`
+      }
+    }
+
+    if (!backupRoot) {
+      await removePathIfExists(tempImportRoot)
+      return {
+        success: false,
+        error: 'ZIP 内未找到 diary.db，无法导入'
+      }
+    }
+
+    const backupDatabasePath = join(backupRoot, 'diary.db')
+    if (!(await pathExists(backupDatabasePath))) {
+      await removePathIfExists(tempImportRoot)
+      return {
+        success: false,
+        error: 'ZIP 内缺少 diary.db，无法导入'
       }
     }
 
@@ -216,8 +375,8 @@ export async function importAppData(
       await fs.mkdir(rollbackDir, { recursive: true })
       movedItems = await moveCurrentDataToRollback(userDataDir, rollbackDir)
 
-      for (const itemName of DATA_ITEMS) {
-        await copyPathIfExists(join(selectedDir, itemName), join(userDataDir, itemName))
+      for (const itemName of IMPORT_DATA_ITEMS) {
+        await copyPathIfExists(join(backupRoot, itemName), join(userDataDir, itemName))
       }
 
       try {
@@ -245,7 +404,7 @@ export async function importAppData(
 
       return {
         success: true,
-        path: selectedDir
+        path: selectedZipPath
       }
     } catch (error) {
       try {
@@ -265,6 +424,8 @@ export async function importAppData(
         success: false,
         error: String(error)
       }
+    } finally {
+      await removePathIfExists(tempImportRoot)
     }
   })
 }
