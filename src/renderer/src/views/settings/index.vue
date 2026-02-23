@@ -20,6 +20,52 @@
           </n-space>
         </n-card>
 
+        <!-- 隐私保护 -->
+        <n-card title="隐私保护" :bordered="false" class="settings-card">
+          <n-space vertical :size="16">
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">隐私保护开关</label>
+                <span class="setting-description">
+                  开启后，重启并重新进入应用时需要输入 6 位数字密码
+                </span>
+              </div>
+              <n-switch
+                :value="privacy.isEnabled"
+                :loading="privacyLoading"
+                @update:value="handlePrivacyToggle"
+              />
+            </div>
+
+            <div v-if="privacy.isEnabled" class="setting-item setting-item-top">
+              <div class="setting-info">
+                <label class="setting-label">密码设置</label>
+                <span class="setting-description">
+                  {{
+                    privacy.hasPassword
+                      ? '点击后在弹窗中重设密码，需先输入原密码'
+                      : '当前未设置密码，请先设置6位数字密码'
+                  }}
+                </span>
+              </div>
+
+              <div class="privacy-actions privacy-actions--end">
+                <n-button
+                  :loading="privacyLoading"
+                  :disabled="privacyLoading"
+                  @click="handleOpenPasswordModal"
+                >
+                  {{ privacy.hasPassword ? '重设密码' : '设置密码' }}
+                </n-button>
+              </div>
+            </div>
+
+            <div v-if="privacyMessage" class="update-message" :class="privacyMessageType">
+              <span class="message-text">{{ privacyMessage }}</span>
+            </div>
+          </n-space>
+        </n-card>
+
         <!-- 数据管理 -->
         <n-card title="数据管理" :bordered="false" class="settings-card">
           <n-space vertical :size="16">
@@ -107,13 +153,80 @@
         </n-card>
       </n-space>
     </div>
+
+    <n-modal
+      v-model:show="showPasswordModal"
+      preset="card"
+      :title="passwordModalTitle"
+      :bordered="false"
+      style="width: 440px; border-radius: 12px"
+      @close="handleClosePasswordModal"
+    >
+      <n-space vertical :size="12">
+        <p class="privacy-modal-desc">
+          {{ passwordModalDescription }}
+        </p>
+
+        <div
+          v-if="passwordModalMode === 'reset' || passwordModalMode === 'disable'"
+          class="setting-info"
+        >
+          <label class="setting-label">原密码</label>
+          <n-input-otp
+            :value="currentPassword"
+            :length="OTP_LENGTH"
+            block
+            mask
+            :status="currentPasswordStatus"
+            :allow-input="allowDigitInput"
+            @update:value="handleCurrentPasswordInput"
+          />
+        </div>
+
+        <div v-if="passwordModalMode !== 'disable'" class="setting-info">
+          <label class="setting-label">新密码</label>
+          <n-input-otp
+            :value="newPassword"
+            :length="OTP_LENGTH"
+            block
+            mask
+            :status="newPasswordStatus"
+            :allow-input="allowDigitInput"
+            @update:value="handleNewPasswordInput"
+          />
+        </div>
+
+        <div v-if="passwordModalMode !== 'disable'" class="setting-info">
+          <label class="setting-label">确认新密码</label>
+          <n-input-otp
+            :value="confirmPassword"
+            :length="OTP_LENGTH"
+            block
+            mask
+            :status="confirmPasswordStatus"
+            :allow-input="allowDigitInput"
+            @update:value="handleConfirmPasswordInput"
+          />
+        </div>
+      </n-space>
+
+      <template #footer>
+        <n-space justify="end">
+          <n-button :disabled="privacyLoading" @click="handleClosePasswordModal">取消</n-button>
+          <n-button type="primary" :loading="privacyLoading" @click="handleSubmitPasswordModal">
+            {{ passwordModalMode === 'disable' ? '确认关闭' : '保存' }}
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { NButton, NCard, NSpace, NSwitch, NProgress, useDialog } from 'naive-ui'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { NButton, NCard, NSpace, NSwitch, NProgress, NInputOtp, NModal, useDialog } from 'naive-ui'
 import { ThemeMode, useThemeStore } from '@renderer/stores/themes'
+import { isValidPrivacyPassword, usePrivacyStore } from '@renderer/stores/privacy'
 
 interface AppInfo {
   name: string
@@ -124,6 +237,8 @@ interface AppInfo {
 }
 
 const theme = useThemeStore()
+const privacy = usePrivacyStore()
+const OTP_LENGTH = 6
 const checkingUpdate = ref(false)
 const updateMessage = ref('')
 const updateMessageType = ref<'success' | 'error' | 'info'>('info')
@@ -135,8 +250,23 @@ const exportingData = ref(false)
 const importingData = ref(false)
 const dataMessage = ref('')
 const dataMessageType = ref<'success' | 'error' | 'info'>('info')
+const privacyLoading = ref(false)
+const privacyMessage = ref('')
+const privacyMessageType = ref<'success' | 'error' | 'info'>('info')
+const showPasswordModal = ref(false)
+const passwordModalMode = ref<'setup' | 'reset' | 'disable'>('setup')
+const currentPassword = ref<string[]>([])
+const newPassword = ref<string[]>([])
+const confirmPassword = ref<string[]>([])
+const currentPasswordStatus = ref<'error' | undefined>(undefined)
+const newPasswordStatus = ref<'error' | undefined>(undefined)
+const confirmPasswordStatus = ref<'error' | undefined>(undefined)
+const pendingEnableAfterSet = ref(false)
 const removeUpdateListeners: Array<() => void> = []
 const dialog = useDialog()
+const currentPasswordValue = computed(() => currentPassword.value.join(''))
+const newPasswordValue = computed(() => newPassword.value.join(''))
+const confirmPasswordValue = computed(() => confirmPassword.value.join(''))
 
 const appInfo = ref<AppInfo>({
   name: '',
@@ -185,6 +315,173 @@ onBeforeUnmount(() => {
 
 const handleThemeChange = (value: boolean): void => {
   theme.setMode(value ? ThemeMode.Dark : ThemeMode.Light)
+}
+
+const passwordModalTitle = computed(() => {
+  if (passwordModalMode.value === 'setup') return '设置隐私密码'
+  if (passwordModalMode.value === 'disable') return '关闭隐私保护'
+  return '重设隐私密码'
+})
+
+const passwordModalDescription = computed(() => {
+  if (passwordModalMode.value === 'setup') return '请设置6位数字密码'
+  if (passwordModalMode.value === 'disable') return '请输入当前密码以关闭隐私保护'
+  return '请先验证原密码，再设置新密码'
+})
+
+function allowDigitInput(char: string): boolean {
+  return /^\d$/.test(char)
+}
+
+const handleCurrentPasswordInput = (value: string[]): void => {
+  currentPassword.value = value
+  currentPasswordStatus.value = undefined
+}
+
+const handleNewPasswordInput = (value: string[]): void => {
+  newPassword.value = value
+  newPasswordStatus.value = undefined
+}
+
+const handleConfirmPasswordInput = (value: string[]): void => {
+  confirmPassword.value = value
+  confirmPasswordStatus.value = undefined
+}
+
+const resetPasswordStatuses = (): void => {
+  currentPasswordStatus.value = undefined
+  newPasswordStatus.value = undefined
+  confirmPasswordStatus.value = undefined
+}
+
+const resetPasswordModalForm = (): void => {
+  currentPassword.value = []
+  newPassword.value = []
+  confirmPassword.value = []
+  resetPasswordStatuses()
+}
+
+const openPasswordModal = (mode: 'setup' | 'reset' | 'disable', pendingEnable = false): void => {
+  passwordModalMode.value = mode
+  pendingEnableAfterSet.value = pendingEnable
+  resetPasswordModalForm()
+  showPasswordModal.value = true
+}
+
+const handleClosePasswordModal = (): void => {
+  showPasswordModal.value = false
+  pendingEnableAfterSet.value = false
+  resetPasswordModalForm()
+}
+
+const enablePrivacy = async (): Promise<void> => {
+  if (privacyLoading.value) return
+
+  privacyLoading.value = true
+  try {
+    await privacy.enablePrivacy()
+    privacyMessage.value = '隐私保护已开启'
+    privacyMessageType.value = 'success'
+  } catch (error) {
+    console.error('开启隐私保护失败:', error)
+    privacyMessage.value = `开启失败：${String(error)}`
+    privacyMessageType.value = 'error'
+  } finally {
+    privacyLoading.value = false
+  }
+}
+
+const handlePrivacyToggle = (value: boolean): void => {
+  if (value) {
+    if (!privacy.hasPassword) {
+      openPasswordModal('setup', true)
+      return
+    }
+    void enablePrivacy()
+    return
+  }
+  openPasswordModal('disable')
+}
+
+const handleOpenPasswordModal = (): void => {
+  openPasswordModal(privacy.hasPassword ? 'reset' : 'setup')
+}
+
+const handleSubmitPasswordModal = async (): Promise<void> => {
+  if (privacyLoading.value) return
+
+  resetPasswordStatuses()
+
+  if (passwordModalMode.value === 'disable') {
+    if (!isValidPrivacyPassword(currentPasswordValue.value)) {
+      currentPasswordStatus.value = 'error'
+      return
+    }
+
+    privacyLoading.value = true
+    try {
+      await privacy.disablePrivacyWithPassword(currentPasswordValue.value)
+      privacyMessage.value = '隐私保护已关闭'
+      privacyMessageType.value = 'success'
+      handleClosePasswordModal()
+    } catch (error) {
+      console.error('关闭隐私保护失败:', error)
+      if (String(error).includes('原密码错误')) {
+        currentPasswordStatus.value = 'error'
+      } else {
+        privacyMessage.value = `关闭失败：${String(error)}`
+        privacyMessageType.value = 'error'
+      }
+    } finally {
+      privacyLoading.value = false
+    }
+    return
+  }
+
+  if (passwordModalMode.value === 'reset' && !isValidPrivacyPassword(currentPasswordValue.value)) {
+    currentPasswordStatus.value = 'error'
+    return
+  }
+
+  if (!isValidPrivacyPassword(newPasswordValue.value)) {
+    newPasswordStatus.value = 'error'
+    return
+  }
+
+  if (newPasswordValue.value !== confirmPasswordValue.value) {
+    newPasswordStatus.value = 'error'
+    confirmPasswordStatus.value = 'error'
+    return
+  }
+
+  privacyLoading.value = true
+  try {
+    if (passwordModalMode.value === 'reset') {
+      await privacy.updatePasswordWithCurrent(currentPasswordValue.value, newPasswordValue.value)
+      privacyMessage.value = '密码重设成功'
+    } else {
+      await privacy.setPassword(newPasswordValue.value)
+      if (pendingEnableAfterSet.value) {
+        await privacy.enablePrivacy()
+        privacyMessage.value = '密码设置成功，隐私保护已开启'
+      } else {
+        privacyMessage.value = '密码设置成功'
+      }
+    }
+
+    privacyMessageType.value = 'success'
+    handleClosePasswordModal()
+  } catch (error) {
+    console.error('保存隐私密码失败:', error)
+    if (String(error).includes('原密码错误')) {
+      currentPasswordStatus.value = 'error'
+    } else {
+      privacyMessage.value = `保存失败：${String(error)}`
+      privacyMessageType.value = 'error'
+    }
+  } finally {
+    privacyLoading.value = false
+  }
 }
 
 const handleCheckUpdate = async (): Promise<void> => {
@@ -362,6 +659,10 @@ const handleImportData = (): void => {
   padding: 8px 0;
 }
 
+.setting-item-top {
+  align-items: flex-start;
+}
+
 .setting-info {
   display: flex;
   flex-direction: column;
@@ -376,6 +677,22 @@ const handleImportData = (): void => {
 }
 
 .setting-description {
+  font-size: 13px;
+  color: var(--n-text-color-3);
+}
+
+.privacy-actions {
+  width: min(240px, 100%);
+  display: flex;
+  gap: 10px;
+}
+
+.privacy-actions--end {
+  justify-content: flex-end;
+}
+
+.privacy-modal-desc {
+  margin: 0;
   font-size: 13px;
   color: var(--n-text-color-3);
 }
@@ -447,6 +764,15 @@ const handleImportData = (): void => {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+  }
+
+  .privacy-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .privacy-actions--end {
+    justify-content: flex-start;
   }
 }
 </style>

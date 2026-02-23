@@ -1,8 +1,9 @@
-import { createApp } from 'vue'
+import { createApp, watch } from 'vue'
 import App from './App.vue'
 import { createPinia } from 'pinia'
 import { useUserStore } from './stores/user'
 import { useThemeStore } from './stores/themes'
+import { usePrivacyStore } from './stores/privacy'
 import router from './router'
 
 // Prevent browser default file-drop navigation; editor components handle file drop explicitly.
@@ -21,13 +22,18 @@ const app = createApp(App)
 const pinia = createPinia()
 app.use(pinia)
 
-// 初始化用户信息（异步从数据库加载）
 const userStore = useUserStore()
-userStore.initFromStorage()
-
-// 初始化主题设置（异步从数据库加载）
 const themeStore = useThemeStore()
-themeStore.initFromStorage()
+const privacyStore = usePrivacyStore()
+
+let appDataInitialized = false
+
+async function initUnlockedAppData(): Promise<void> {
+  if (appDataInitialized) return
+  appDataInitialized = true
+
+  await Promise.all([userStore.initFromStorage(), themeStore.initFromStorage()])
+}
 
 let froalaLoader: Promise<void> | null = null
 
@@ -49,16 +55,33 @@ async function ensureFroalaLoaded(): Promise<void> {
 }
 
 router.beforeEach(async (to) => {
-  if (to.path === '/today') {
+  if (to.path === '/today' && !privacyStore.isLocked) {
     await ensureFroalaLoaded()
   }
 })
 
 async function bootstrap(): Promise<void> {
+  await privacyStore.initFromStorage()
+  if (!privacyStore.isLocked) {
+    await initUnlockedAppData()
+  }
+
+  watch(
+    () => [privacyStore.isInitialized, privacyStore.isLocked] as const,
+    async ([isInitialized, isLocked]) => {
+      if (!isInitialized || isLocked) return
+      await initUnlockedAppData()
+      if (router.currentRoute.value.path === '/today') {
+        await ensureFroalaLoaded()
+      }
+    },
+    { immediate: true }
+  )
+
   app.use(router)
   await router.isReady()
 
-  if (router.currentRoute.value.path === '/today') {
+  if (router.currentRoute.value.path === '/today' && !privacyStore.isLocked) {
     await ensureFroalaLoaded()
   }
 

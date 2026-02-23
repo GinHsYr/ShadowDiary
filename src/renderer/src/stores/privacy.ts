@@ -1,0 +1,131 @@
+import { defineStore } from 'pinia'
+
+const PRIVACY_ENABLED_KEY = 'privacy.enabled'
+const PRIVACY_PASSWORD_HASH_KEY = 'privacy.passwordHash'
+
+export function isValidPrivacyPassword(password: string): boolean {
+  return /^\d{6}$/.test(password)
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value)
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+export const usePrivacyStore = defineStore('privacy', {
+  state: () => ({
+    isEnabled: false,
+    isLocked: false,
+    isInitialized: false,
+    passwordHash: ''
+  }),
+
+  getters: {
+    isUnlocked(state): boolean {
+      return !state.isLocked
+    },
+    hasPassword(state): boolean {
+      return state.passwordHash.length > 0
+    }
+  },
+
+  actions: {
+    async initFromStorage(): Promise<void> {
+      try {
+        const [enabledSetting, passwordHash] = await Promise.all([
+          window.api.getSetting(PRIVACY_ENABLED_KEY),
+          window.api.getSetting(PRIVACY_PASSWORD_HASH_KEY)
+        ])
+
+        const enabled = enabledSetting === '1'
+        const normalizedHash = passwordHash?.trim() || ''
+        this.isEnabled = enabled
+        this.passwordHash = normalizedHash
+        this.isLocked = enabled && normalizedHash.length > 0
+      } catch (error) {
+        console.error('加载隐私设置失败:', error)
+        this.isEnabled = false
+        this.isLocked = false
+        this.passwordHash = ''
+      } finally {
+        this.isInitialized = true
+      }
+    },
+
+    async unlockWithPassword(password: string): Promise<boolean> {
+      if (!this.isEnabled) {
+        this.isLocked = false
+        return true
+      }
+
+      if (!isValidPrivacyPassword(password)) {
+        return false
+      }
+
+      const matches = await this.verifyPassword(password)
+      if (!matches) {
+        return false
+      }
+
+      this.isLocked = false
+      return true
+    },
+
+    async enablePrivacy(): Promise<void> {
+      await window.api.setSetting(PRIVACY_ENABLED_KEY, '1')
+      this.isEnabled = true
+      this.isLocked = false
+    },
+
+    async disablePrivacy(): Promise<void> {
+      await window.api.setSetting(PRIVACY_ENABLED_KEY, '0')
+      await window.api.setSetting(PRIVACY_PASSWORD_HASH_KEY, '')
+      this.isEnabled = false
+      this.isLocked = false
+      this.passwordHash = ''
+    },
+
+    async disablePrivacyWithPassword(password: string): Promise<void> {
+      const matched = await this.verifyPassword(password)
+      if (!matched) {
+        throw new Error('原密码错误')
+      }
+
+      await this.disablePrivacy()
+    },
+
+    async setPassword(password: string): Promise<void> {
+      if (!isValidPrivacyPassword(password)) {
+        throw new Error('密码必须是6位数字')
+      }
+
+      const hash = await sha256Hex(password)
+      await window.api.setSetting(PRIVACY_PASSWORD_HASH_KEY, hash)
+      this.passwordHash = hash
+      if (this.isEnabled) {
+        this.isLocked = false
+      }
+    },
+
+    async verifyPassword(password: string): Promise<boolean> {
+      if (!isValidPrivacyPassword(password) || !this.passwordHash) {
+        return false
+      }
+
+      const hashed = await sha256Hex(password)
+      return hashed === this.passwordHash
+    },
+
+    async updatePasswordWithCurrent(currentPassword: string, newPassword: string): Promise<void> {
+      const currentValid = await this.verifyPassword(currentPassword)
+      if (!currentValid) {
+        throw new Error('原密码错误')
+      }
+
+      await this.setPassword(newPassword)
+    }
+  }
+})
