@@ -49,7 +49,7 @@ jobs:
 
       - name: Build Linux package
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npm run build:linux
 
       - name: Upload Linux artifacts
@@ -81,7 +81,7 @@ jobs:
 
       - name: Build macOS package
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npm run build:mac
 
       - name: Upload macOS artifacts
