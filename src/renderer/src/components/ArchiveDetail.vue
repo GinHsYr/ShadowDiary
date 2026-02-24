@@ -7,7 +7,7 @@
           <n-avatar v-if="form.mainImage" :src="form.mainImage" :size="120" round />
           <div v-else class="image-placeholder">
             <n-icon :component="CameraOutline" :size="32" />
-            <span>点击上传头像</span>
+            <span>{{ t('archiveDetail.uploadAvatar') }}</span>
           </div>
         </div>
       </div>
@@ -15,35 +15,37 @@
       <!-- 表单区域 -->
       <div class="form-section">
         <div class="form-item">
-          <label class="form-label">名称 <span class="required">*</span></label>
+          <label class="form-label"
+            >{{ t('archiveDetail.name') }} <span class="required">*</span></label
+          >
           <n-input
             v-model:value="form.name"
-            placeholder="请输入名称"
+            :placeholder="t('archiveDetail.namePlaceholder')"
             @update:value="scheduleSave"
           />
         </div>
 
         <div class="form-item">
-          <label class="form-label">别名</label>
+          <label class="form-label">{{ t('archiveDetail.aliases') }}</label>
           <n-dynamic-tags v-model:value="form.aliases" @update:value="scheduleSave" />
-          <div class="form-hint">按回车添加多个别名</div>
+          <div class="form-hint">{{ t('archiveDetail.aliasesHint') }}</div>
         </div>
 
         <div class="form-item">
-          <label class="form-label">类型</label>
+          <label class="form-label">{{ t('archiveDetail.type') }}</label>
           <n-radio-group v-model:value="form.type" @update:value="scheduleSave">
-            <n-radio-button value="person">人物</n-radio-button>
-            <n-radio-button value="object">物品</n-radio-button>
-            <n-radio-button value="other">其他</n-radio-button>
+            <n-radio-button value="person">{{ t('archiveDetail.person') }}</n-radio-button>
+            <n-radio-button value="object">{{ t('archiveDetail.object') }}</n-radio-button>
+            <n-radio-button value="other">{{ t('archiveDetail.other') }}</n-radio-button>
           </n-radio-group>
         </div>
 
         <div class="form-item">
-          <label class="form-label">具体内容</label>
+          <label class="form-label">{{ t('archiveDetail.description') }}</label>
           <n-input
             v-model:value="form.description"
             type="textarea"
-            placeholder="请输入具体内容..."
+            :placeholder="t('archiveDetail.descriptionPlaceholder')"
             :autosize="{ minRows: 6, maxRows: 20 }"
             @update:value="scheduleSave"
           />
@@ -51,7 +53,7 @@
 
         <!-- 其他图片 -->
         <div class="form-item">
-          <label class="form-label">其他图片</label>
+          <label class="form-label">{{ t('archiveDetail.images') }}</label>
           <div class="images-grid">
             <n-image-group>
               <div v-for="(img, idx) in form.images" :key="idx" class="image-item">
@@ -79,17 +81,21 @@
 
     <!-- 底部操作栏 -->
     <div class="detail-footer">
-      <n-button v-if="isCreating" size="small" @click="$emit('cancelCreate')"> 取消 </n-button>
+      <n-button v-if="isCreating" size="small" @click="$emit('cancelCreate')">
+        {{ t('common.cancel') }}
+      </n-button>
       <n-popconfirm v-if="!isCreating && archiveId" @positive-click="handleDelete">
         <template #trigger>
-          <n-button type="error" size="small" ghost> 删除档案 </n-button>
+          <n-button type="error" size="small" ghost>
+            {{ t('archiveDetail.deleteArchive') }}
+          </n-button>
         </template>
-        确定要删除这个档案吗？
+        {{ t('archiveDetail.deleteConfirm') }}
       </n-popconfirm>
       <div class="save-status">
-        <span v-if="saving" class="status-text">保存中...</span>
-        <span v-else-if="isDirty" class="status-text">未保存</span>
-        <span v-else-if="archiveId" class="status-text saved">已保存</span>
+        <span v-if="saving" class="status-text">{{ t('archiveDetail.saving') }}</span>
+        <span v-else-if="isDirty" class="status-text">{{ t('archiveDetail.unsaved') }}</span>
+        <span v-else-if="archiveId" class="status-text saved">{{ t('archiveDetail.saved') }}</span>
       </div>
     </div>
   </div>
@@ -110,7 +116,9 @@ import {
   NImageGroup
 } from 'naive-ui'
 import { CameraOutline, CloseOutline, AddOutline } from '@vicons/ionicons5'
+import { useI18n } from 'vue-i18n'
 import type { Archive, ArchiveType } from '../../../types/model'
+const { t } = useI18n()
 
 const props = defineProps<{
   archiveId: string | null

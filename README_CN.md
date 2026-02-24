@@ -1,11 +1,13 @@
-# 影迹 Shadow Diary
+<h1 align="center">影迹</h1>
+<h6 align="center">Shadow Diary</h6>
 
 <p align="center">
   <img src="resources/icon.png" width="120" alt="Shadow Diary Logo" />
 </p>
 
 一个基于 Electron + Vue 3 + TypeScript 的本地轻量级日记应用。
-[中文](README_CN.md)|[English](README.md)
+
+中文|[English](README.md)
 ## 功能特性
 
 - 日记编辑
@@ -29,6 +31,7 @@
   - 备份口令保护
 - 自动更新
   - 检查、下载、安装更新（基于 `electron-updater`）
+- i18n支持
 
 ## 技术栈
 

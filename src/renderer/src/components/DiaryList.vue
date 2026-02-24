@@ -14,12 +14,12 @@
           <span class="item-date">{{ formatDate(entry.createdAt) }}</span>
           <span class="item-mood">{{ moodEmoji[entry.mood] || '' }}</span>
         </div>
-        <div class="item-title">{{ entry.title || '无标题' }}</div>
+        <div class="item-title">{{ entry.title || t('common.noTitle') }}</div>
         <div class="item-preview">{{ stripHtml(entry.content) }}</div>
       </div>
 
       <div v-if="entries.length === 0 && !loading" class="list-empty">
-        <p>还没有日记</p>
+        <p>{{ t('diaryList.empty') }}</p>
       </div>
 
       <div v-if="loading" class="list-loading">
@@ -48,10 +48,12 @@
         @update:show="showDatePicker = $event"
       >
         <template #trigger>
-          <n-button block type="primary" ghost size="small"> + 新建日记 </n-button>
+          <n-button block type="primary" ghost size="small">
+            {{ t('diaryList.create') }}
+          </n-button>
         </template>
         <div class="date-picker-popup">
-          <p class="date-picker-label">选择日期</p>
+          <p class="date-picker-label">{{ t('diaryList.selectDate') }}</p>
           <n-date-picker v-model:value="newDiaryDate" type="date" :actions="[]" panel />
           <n-button
             type="primary"
@@ -60,7 +62,7 @@
             style="margin-top: 8px"
             @click="confirmCreate"
           >
-            确定
+            {{ t('diaryList.confirm') }}
           </n-button>
         </div>
       </n-popover>
@@ -71,7 +73,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { NButton, NSpin, NPopover, NDatePicker, NDropdown } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
 import type { DiaryEntry } from '../../../types/model'
+const { t, tm } = useI18n()
 
 const props = defineProps<{
   selectedId: string | null
@@ -91,7 +95,7 @@ const showContextMenu = ref(false)
 const contextMenuX = ref(0)
 const contextMenuY = ref(0)
 const contextMenuEntry = ref<DiaryEntry | null>(null)
-const contextMenuOptions = [{ label: '删除', key: 'delete' }]
+const contextMenuOptions = [{ label: t('diaryList.delete'), key: 'delete' }]
 
 function handleContextMenu(e: MouseEvent, entry: DiaryEntry): void {
   contextMenuX.value = e.clientX
@@ -143,8 +147,8 @@ function formatDate(ts: number): string {
   const d = new Date(ts)
   const month = d.getMonth() + 1
   const day = d.getDate()
-  const weekdays = ['日', '一', '二', '三', '四', '五', '六']
-  return `${month}月${day}日 周${weekdays[d.getDay()]}`
+  const weekdays = tm('diaryList.weekdayShort') as string[]
+  return t('diaryList.dateFormat', { month, day, weekday: weekdays[d.getDay()] })
 }
 
 async function loadEntries(reset = false): Promise<void> {

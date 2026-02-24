@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   NAvatar,
   NButton,
@@ -35,6 +36,7 @@ import SafeHighlightedText from './SafeHighlightedText.vue'
 
 const theme = useThemeStore()
 const router = useRouter()
+const { t } = useI18n()
 
 // --- Search state ---
 const searchKeyword = ref('')
@@ -55,19 +57,19 @@ const filterDateRange = ref<[number, number] | null>(null)
 const allTags = ref<{ label: string; value: string }[]>([])
 
 const moodLabels: Record<string, string> = {
-  happy: '😊 开心',
-  calm: '😌 平静',
-  sad: '😢 难过',
-  excited: '🤩 兴奋',
-  tired: '😴 疲惫'
+  happy: t('header.moodOptions.happy'),
+  calm: t('header.moodOptions.calm'),
+  sad: t('header.moodOptions.sad'),
+  excited: t('header.moodOptions.excited'),
+  tired: t('header.moodOptions.tired')
 }
 
 const moodOptions = [
-  { label: '😊 开心', value: 'happy' },
-  { label: '😌 平静', value: 'calm' },
-  { label: '😢 难过', value: 'sad' },
-  { label: '🤩 兴奋', value: 'excited' },
-  { label: '😴 疲惫', value: 'tired' }
+  { label: t('header.moodOptions.happy'), value: 'happy' },
+  { label: t('header.moodOptions.calm'), value: 'calm' },
+  { label: t('header.moodOptions.sad'), value: 'sad' },
+  { label: t('header.moodOptions.excited'), value: 'excited' },
+  { label: t('header.moodOptions.tired'), value: 'tired' }
 ]
 
 const accentTagColor = {
@@ -416,7 +418,7 @@ onBeforeUnmount(() => {
               ref="searchInputRef"
               :value="searchKeyword"
               round
-              placeholder="搜索记忆... (Ctrl+K)"
+              :placeholder="t('header.searchPlaceholder')"
               size="small"
               :class="['search-input', { 'search-input--focused': isFocused }]"
               :loading="searching"
@@ -470,27 +472,29 @@ onBeforeUnmount(() => {
           <!-- 筛选面板 -->
           <div v-if="showFilter" class="filter-panel">
             <div class="filter-header">
-              <span class="filter-title">高级筛选</span>
-              <n-button text size="tiny" type="primary" @click="clearFilters">重置</n-button>
+              <span class="filter-title">{{ t('header.advancedFilter') }}</span>
+              <n-button text size="tiny" type="primary" @click="clearFilters">{{
+                t('common.reset')
+              }}</n-button>
             </div>
             <div class="filter-body">
               <div class="filter-row">
-                <span class="filter-label">心情</span>
+                <span class="filter-label">{{ t('header.mood') }}</span>
                 <n-select
                   v-model:value="filterMood"
                   :options="moodOptions"
-                  placeholder="选择心情"
+                  :placeholder="t('header.selectMood')"
                   size="small"
                   clearable
                   style="flex: 1"
                 />
               </div>
               <div class="filter-row">
-                <span class="filter-label">标签</span>
+                <span class="filter-label">{{ t('header.tags') }}</span>
                 <n-select
                   v-model:value="filterTags"
                   :options="allTags"
-                  placeholder="选择标签"
+                  :placeholder="t('header.selectTags')"
                   size="small"
                   multiple
                   clearable
@@ -498,7 +502,7 @@ onBeforeUnmount(() => {
                 />
               </div>
               <div class="filter-row">
-                <span class="filter-label">日期</span>
+                <span class="filter-label">{{ t('header.date') }}</span>
                 <n-date-picker
                   v-model:value="filterDateRange"
                   type="daterange"
@@ -514,7 +518,7 @@ onBeforeUnmount(() => {
           <!-- 搜索中 loading -->
           <div v-if="searching" class="search-loading">
             <n-spin size="small" />
-            <span>搜索中...</span>
+            <span>{{ t('header.searching') }}</span>
           </div>
 
           <!-- 搜索历史 -->
@@ -522,9 +526,11 @@ onBeforeUnmount(() => {
             <div class="history-header">
               <span class="history-title">
                 <n-icon :component="TimeOutline" style="vertical-align: -2px" />
-                搜索历史
+                {{ t('header.history') }}
               </span>
-              <n-button text size="tiny" type="warning" @click="clearHistory">清除</n-button>
+              <n-button text size="tiny" type="warning" @click="clearHistory">{{
+                t('header.clear')
+              }}</n-button>
             </div>
             <div class="history-list">
               <div
@@ -548,7 +554,7 @@ onBeforeUnmount(() => {
           <div v-else class="search-results">
             <!-- 档案结果 -->
             <template v-if="archiveResults.length > 0">
-              <div class="result-section-title">档案</div>
+              <div class="result-section-title">{{ t('header.archives') }}</div>
               <n-list hoverable clickable size="small" class="archive-result-list">
                 <n-list-item
                   v-for="archive in archiveResults.slice(0, 5)"
@@ -585,10 +591,10 @@ onBeforeUnmount(() => {
                         >
                           {{
                             archive.type === 'person'
-                              ? '人物'
+                              ? t('header.person')
                               : archive.type === 'object'
-                                ? '物品'
-                                : '其他'
+                                ? t('header.object')
+                                : t('header.other')
                           }}
                         </n-tag>
                         <SafeHighlightedText
@@ -603,17 +609,19 @@ onBeforeUnmount(() => {
                 </n-list-item>
               </n-list>
               <div v-if="archiveResults.length > 5" class="result-more">
-                还有 {{ archiveResults.length - 5 }} 个档案
+                {{ t('header.moreArchives', { count: archiveResults.length - 5 }) }}
               </div>
             </template>
 
             <!-- 日记结果 -->
             <template v-if="searchResults.length > 0 || activeFilterCount > 0">
-              <div v-if="archiveResults.length > 0" class="result-section-title">日记</div>
+              <div v-if="archiveResults.length > 0" class="result-section-title">
+                {{ t('header.diary') }}
+              </div>
               <div v-if="searchResults.length > 0" class="result-count">
-                找到 {{ searchTotal }} 条相关日记
+                {{ t('header.foundDiaryCount', { count: searchTotal }) }}
                 <span v-if="searchTotal > searchResults.length" class="result-hint">
-                  （显示前 {{ searchResults.length }} 条）
+                  {{ t('header.showTopCount', { count: searchResults.length }) }}
                 </span>
               </div>
 
@@ -627,7 +635,7 @@ onBeforeUnmount(() => {
                   <n-thing>
                     <template #header>
                       <SafeHighlightedText
-                        :text="entry.title || '无标题'"
+                        :text="entry.title || t('common.noTitle')"
                         :keyword="searchKeyword"
                         :extra-keywords="expandedKeywords"
                       />
@@ -673,7 +681,7 @@ onBeforeUnmount(() => {
                 archiveResults.length === 0 &&
                 (searchKeyword.trim() || activeFilterCount > 0)
               "
-              description="没有找到相关内容，换个关键词试试？"
+              :description="t('header.emptyResult')"
               size="small"
               style="padding: 24px 0"
             />
@@ -688,7 +696,8 @@ onBeforeUnmount(() => {
             class="search-footer"
           >
             <span class="shortcut-hint">
-              <kbd>↑</kbd><kbd>↓</kbd> 导航 <kbd>Enter</kbd> 选择 <kbd>Esc</kbd> 关闭
+              <kbd>↑</kbd><kbd>↓</kbd> {{ t('header.shortcutNavigate') }} <kbd>Enter</kbd>
+              {{ t('header.shortcutSelect') }} <kbd>Esc</kbd> {{ t('header.shortcutClose') }}
             </span>
           </div>
         </div>

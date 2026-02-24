@@ -1,11 +1,13 @@
-# Shadow Diary
+<h1 align="center">影迹</h1>
+<h6 align="center">Shadow Diary</h6>
 
 <p align="center">
   <img src="resources/icon.png" width="120" alt="Shadow Diary Logo" />
 </p>
 
 A lightweight local diary application built with Electron + Vue 3 + TypeScript.
-[中文](README_CN.md) | [English](README.md)
+
+[中文](README_CN.md) | English
 
 ## Features
 
@@ -37,6 +39,7 @@ A lightweight local diary application built with Electron + Vue 3 + TypeScript.
 * **Auto Update**
 
   * Check, download, and install updates (based on `electron-updater`)
+* **i18n Support**
 
 ## Tech Stack
 

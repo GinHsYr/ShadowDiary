@@ -3,7 +3,7 @@ import type { UserInfo } from '../../../types/model'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
-    name: '用户名',
+    name: '',
     avatar: ''
   }),
 
@@ -24,7 +24,7 @@ export const useUserStore = defineStore('user', {
     async initFromStorage() {
       try {
         const settings = await window.api.getAllSettings()
-        this.name = settings['user.name'] || '用户名'
+        this.name = settings['user.name'] || ''
         this.avatar = settings['user.avatar'] || ''
       } catch (error) {
         console.error('加载用户信息失败:', error)
@@ -45,7 +45,7 @@ export const useUserStore = defineStore('user', {
 
     // 清除用户信息
     async clearUserInfo() {
-      this.name = '用户名'
+      this.name = ''
       this.avatar = ''
       await window.api.setSetting('user.name', '')
       await window.api.setSetting('user.avatar', '')

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { h, onBeforeUnmount, onMounted, ref, computed } from 'vue'
 import { NLayoutSider, NMenu, NButton, NAvatar, NIcon, NModal, NInput, NSpace } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
 import {
   BookOutline,
   SettingsOutline,
@@ -13,6 +14,7 @@ import { useUserStore } from '../stores/user'
 import { useRouter, useRoute } from 'vue-router'
 
 const COLLAPSE_WIDTH = 900
+const { t } = useI18n()
 
 // 使用用户信息 store
 const userStore = useUserStore()
@@ -36,28 +38,28 @@ onBeforeUnmount(() => {
 })
 
 // 定义菜单项
-const menuOptions = [
+const menuOptions = computed(() => [
   {
-    label: '概览',
+    label: t('sidebar.menu.dashboard'),
     key: 'dashboard',
     icon: () => h(NIcon, null, () => h(BookOutline))
   },
   {
-    label: '今日',
+    label: t('sidebar.menu.today'),
     key: 'today',
     icon: () => h(NIcon, null, () => h(PencilOutline))
   },
   {
-    label: '档案',
+    label: t('sidebar.menu.archives'),
     key: 'archives',
     icon: () => h(NIcon, null, () => h(FolderOpenOutline))
   },
   {
-    label: '设置',
+    label: t('sidebar.menu.settings'),
     key: 'settings',
     icon: () => h(NIcon, null, () => h(SettingsOutline))
   }
-]
+])
 
 // 根据当前路由计算 activeKey
 const activeKey = computed(() => {
@@ -75,7 +77,8 @@ const menuKey = ref(0)
 const savingProfile = ref(false)
 
 // 从 store 获取用户信息
-const userName = computed(() => userStore.name)
+const userName = computed(() => userStore.name.trim())
+const displayUserName = computed(() => userName.value || t('sidebar.defaultNickname'))
 const userAvatar = computed(() => userStore.avatar)
 
 // 编辑表单的临时数据
@@ -98,15 +101,16 @@ const handleSave = async (): Promise<void> => {
   savingProfile.value = true
 
   try {
+    const nextName = newName.value.trim() || userName.value
     await userStore.updateUserInfo({
-      name: newName.value || userName.value,
+      name: nextName,
       avatar: newAvatar.value
     })
     showModal.value = false
-    notify('success', '保存成功')
+    notify('success', t('sidebar.saveSuccess'))
   } catch (error) {
     console.error('保存个人信息失败:', error)
-    notify('error', '保存失败，请重试')
+    notify('error', t('sidebar.saveFailed'))
   } finally {
     savingProfile.value = false
   }
@@ -123,7 +127,7 @@ const selectAvatar = async (): Promise<void> => {
     newAvatar.value = result.path
   } catch (error) {
     console.error('选择头像失败:', error)
-    alert('选择头像失败，请重试')
+    alert(t('sidebar.selectAvatarFailed'))
   }
 }
 
@@ -175,9 +179,9 @@ const handleTodayClick = (): void => {
         :src="userAvatar || undefined"
         @click="openModal"
       >
-        <span v-if="!userAvatar">{{ userName.charAt(0) }}</span>
+        <span v-if="!userAvatar">{{ displayUserName.charAt(0) }}</span>
       </n-avatar>
-      <span v-if="!collapsed" class="app-name">影迹</span>
+      <span v-if="!collapsed" class="app-name">{{ t('common.appName') }}</span>
     </div>
 
     <!-- 写日记按钮 -->
@@ -186,7 +190,7 @@ const handleTodayClick = (): void => {
         <template #icon>
           <n-icon><Add /></n-icon>
         </template>
-        <span v-if="!collapsed">今日日记</span>
+        <span v-if="!collapsed">{{ t('sidebar.todayDiary') }}</span>
       </n-button>
     </div>
 
@@ -204,7 +208,7 @@ const handleTodayClick = (): void => {
     <n-modal
       v-model:show="showModal"
       preset="card"
-      title="编辑个人资料"
+      :title="t('sidebar.editProfile')"
       :bordered="false"
       :segmented="{
         content: 'soft',
@@ -231,7 +235,7 @@ const handleTodayClick = (): void => {
                 <template #icon>
                   <n-icon><CloudUploadOutline /></n-icon>
                 </template>
-                上传图片
+                {{ t('sidebar.uploadImage') }}
               </n-button>
               <n-button
                 v-if="newAvatar"
@@ -240,17 +244,17 @@ const handleTodayClick = (): void => {
                 secondary
                 @click="resetAvatar"
               >
-                重置
+                {{ t('sidebar.resetAvatar') }}
               </n-button>
             </div>
           </div>
         </div>
 
         <div class="form-item">
-          <label class="form-label">昵称</label>
+          <label class="form-label">{{ t('sidebar.nickname') }}</label>
           <n-input
             v-model:value="newName"
-            placeholder="请输入昵称"
+            :placeholder="t('sidebar.nicknamePlaceholder')"
             maxlength="20"
             show-count
             clearable
@@ -262,8 +266,10 @@ const handleTodayClick = (): void => {
       <!-- footer -->
       <template #footer>
         <n-space justify="end" :size="12">
-          <n-button @click="showModal = false"> 取消 </n-button>
-          <n-button type="primary" :loading="savingProfile" @click="handleSave"> 保存 </n-button>
+          <n-button @click="showModal = false"> {{ t('common.cancel') }} </n-button>
+          <n-button type="primary" :loading="savingProfile" @click="handleSave">
+            {{ t('common.save') }}
+          </n-button>
         </n-space>
       </template>
     </n-modal>

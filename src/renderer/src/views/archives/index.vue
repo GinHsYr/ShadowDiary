@@ -25,7 +25,7 @@
         @cancel-create="handleCancelCreate"
       />
       <div v-else class="empty-state">
-        <n-empty description="选择或新建一个档案" />
+        <n-empty :description="t('archivesPage.empty')" />
       </div>
     </div>
   </div>
@@ -35,10 +35,12 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { NEmpty } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
 import type { Archive } from '../../../../types/model'
 import ArchiveList from '../../components/ArchiveList.vue'
 import ArchiveDetail from '../../components/ArchiveDetail.vue'
 
+const { t } = useI18n()
 const route = useRoute()
 
 const archiveListRef = ref<InstanceType<typeof ArchiveList> | null>(null)

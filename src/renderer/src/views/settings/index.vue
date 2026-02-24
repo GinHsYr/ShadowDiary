@@ -1,28 +1,30 @@
 <template>
   <div class="settings-page">
     <div class="page-header">
-      <h1 class="page-title">设置</h1>
-      <p class="page-subtitle">个性化你的日记应用</p>
+      <h1 class="page-title">{{ t('settings.title') }}</h1>
+      <p class="page-subtitle">{{ t('settings.subtitle') }}</p>
     </div>
 
     <div class="settings-container">
       <n-space vertical :size="24">
         <!-- 外观设置 -->
-        <n-card title="外观设置" :bordered="false" class="settings-card">
+        <n-card :title="t('settings.appearance')" :bordered="false" class="settings-card">
           <n-space vertical :size="20">
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">深色模式</label>
-                <span class="setting-description">深色模式切换</span>
+                <label class="setting-label">{{ t('settings.darkMode') }}</label>
+                <span class="setting-description">{{ t('settings.darkModeDescription') }}</span>
               </div>
               <n-switch :value="theme.isDark" @update:value="handleThemeChange" />
             </div>
 
             <div class="setting-item setting-item-top">
               <div class="setting-info">
-                <label class="setting-label">主题色</label>
+                <label class="setting-label">{{ t('settings.themeAccent') }}</label>
                 <span class="setting-description">
-                  {{ theme.isDark ? '暗色模式下固定使用默认暗色主题色' : '选择你喜欢的颜色' }}
+                  {{
+                    theme.isDark ? t('settings.themeAccentDarkHint') : t('settings.themeAccentHint')
+                  }}
                 </span>
               </div>
 
@@ -43,16 +45,35 @@
                 </button>
               </div>
             </div>
+
+            <div class="setting-item setting-item-top">
+              <div class="setting-info">
+                <label class="setting-label">{{ t('settings.language') }}</label>
+                <span class="setting-description">{{ t('settings.languageDescription') }}</span>
+              </div>
+
+              <div class="privacy-actions privacy-actions--end">
+                <n-select
+                  :value="localeStore.preference"
+                  :options="localePreferenceOptions"
+                  :disabled="localeSaving"
+                  style="width: 210px"
+                  @update:value="handleLocalePreferenceChange"
+                />
+              </div>
+            </div>
           </n-space>
         </n-card>
 
         <!-- 隐私保护 -->
-        <n-card title="隐私保护" :bordered="false" class="settings-card">
+        <n-card :title="t('settings.privacy.card')" :bordered="false" class="settings-card">
           <n-space vertical :size="16">
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">隐私保护开关</label>
-                <span class="setting-description"> 开启后，重新进入应用需要提供解锁凭证 </span>
+                <label class="setting-label">{{ t('settings.privacy.enabled') }}</label>
+                <span class="setting-description">
+                  {{ t('settings.privacy.enabledDescription') }}
+                </span>
               </div>
               <n-switch
                 :value="privacy.isEnabled"
@@ -63,12 +84,12 @@
 
             <div class="setting-item setting-item-top">
               <div class="setting-info">
-                <label class="setting-label">解锁方式</label>
+                <label class="setting-label">{{ t('settings.privacy.authMethod') }}</label>
                 <span class="setting-description">
                   {{
                     privacy.isWindowsPasswordSupported
-                      ? '可选择 6 位数字密码或 Windows 登录密码'
-                      : '当前系统仅支持 6 位数字密码'
+                      ? t('settings.privacy.authMethodSupported')
+                      : t('settings.privacy.authMethodPinOnly')
                   }}
                 </span>
               </div>
@@ -86,9 +107,9 @@
 
             <div v-if="privacy.isEnabled" class="setting-item setting-item-top">
               <div class="setting-info">
-                <label class="setting-label">空闲自动锁定</label>
+                <label class="setting-label">{{ t('settings.privacy.idleLock') }}</label>
                 <span class="setting-description">
-                  无操作达到设定时长后，自动进入隐私保护锁定
+                  {{ t('settings.privacy.idleLockDescription') }}
                 </span>
               </div>
 
@@ -108,12 +129,12 @@
               class="setting-item setting-item-top"
             >
               <div class="setting-info">
-                <label class="setting-label">密码设置</label>
+                <label class="setting-label">{{ t('settings.privacy.passwordSetup') }}</label>
                 <span class="setting-description">
                   {{
                     privacy.hasPassword
-                      ? '点击后在弹窗中重设密码，需先输入原密码'
-                      : '当前未设置密码，请先设置6位数字密码'
+                      ? t('settings.privacy.passwordSetupHint')
+                      : t('settings.privacy.passwordMissingHint')
                   }}
                 </span>
               </div>
@@ -124,7 +145,11 @@
                   :disabled="privacyLoading"
                   @click="handleOpenPasswordModal"
                 >
-                  {{ privacy.hasPassword ? '重设密码' : '设置密码' }}
+                  {{
+                    privacy.hasPassword
+                      ? t('settings.privacy.resetPassword')
+                      : t('settings.privacy.setPassword')
+                  }}
                 </n-button>
               </div>
             </div>
@@ -134,9 +159,9 @@
               class="setting-item setting-item-top"
             >
               <div class="setting-info">
-                <label class="setting-label">Windows 登录密码</label>
+                <label class="setting-label">{{ t('settings.privacy.windowsPassword') }}</label>
                 <span class="setting-description">
-                  当前使用系统账户密码进行解锁，无需额外设置本地隐私密码
+                  {{ t('settings.privacy.windowsPasswordDescription') }}
                 </span>
               </div>
             </div>
@@ -152,13 +177,13 @@
         </n-card>
 
         <!-- 数据管理 -->
-        <n-card title="数据管理" :bordered="false" class="settings-card">
+        <n-card :title="t('settings.data.card')" :bordered="false" class="settings-card">
           <n-space vertical :size="16">
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">导出数据</label>
+                <label class="setting-label">{{ t('settings.data.export') }}</label>
                 <span class="setting-description">
-                  导出数据库与附件为 ZIP 备份，图片目录会另打包为口令加密 ZIP
+                  {{ t('settings.data.exportDescription') }}
                 </span>
               </div>
               <n-button
@@ -166,15 +191,15 @@
                 :disabled="importingData"
                 @click="handleExportData"
               >
-                导出数据
+                {{ t('settings.data.export') }}
               </n-button>
             </div>
 
             <div class="setting-item">
               <div class="setting-info">
-                <label class="setting-label">导入数据</label>
+                <label class="setting-label">{{ t('settings.data.import') }}</label>
                 <span class="setting-description">
-                  从 ZIP 备份文件恢复数据，会覆盖当前本地数据，需输入备份口令
+                  {{ t('settings.data.importDescription') }}
                 </span>
               </div>
               <n-button
@@ -183,7 +208,7 @@
                 :disabled="exportingData"
                 @click="handleImportData"
               >
-                导入数据
+                {{ t('settings.data.import') }}
               </n-button>
             </div>
 
@@ -194,14 +219,14 @@
         </n-card>
 
         <!-- 关于 -->
-        <n-card title="关于" :bordered="false" class="settings-card">
+        <n-card :title="t('settings.about.card')" :bordered="false" class="settings-card">
           <n-space vertical :size="16">
             <div class="about-item">
-              <span class="about-label">版本</span>
+              <span class="about-label">{{ t('settings.about.version') }}</span>
               <span class="about-value">{{ appInfo.version }}</span>
             </div>
             <div class="about-item">
-              <span class="about-label">开源地址</span>
+              <span class="about-label">{{ t('settings.about.source') }}</span>
               <a
                 class="about-link"
                 href="https://github.com/GinHsYr/ShadowDiary"
@@ -212,24 +237,26 @@
             </div>
             <div class="setting-item">
               <div class="setting-info">
-                <span class="about-label">检查是否有新版本可用</span>
+                <span class="about-label">{{ t('settings.about.checkUpdate') }}</span>
               </div>
               <n-button
                 :loading="checkingUpdate"
                 :disabled="downloading"
                 @click="handleCheckUpdate"
               >
-                检查更新
+                {{ t('settings.about.checkUpdateButton') }}
               </n-button>
             </div>
             <div v-if="updateMessage" class="update-message" :class="updateMessageType">
               <span>{{ updateMessage }}</span>
               <template v-if="hasUpdate && !downloading && !downloaded">
-                <n-button class="update-btn" @click="handleDownloadUpdate"> 下载更新 </n-button>
+                <n-button class="update-btn" @click="handleDownloadUpdate">
+                  {{ t('settings.about.downloadUpdate') }}
+                </n-button>
               </template>
               <template v-if="downloaded">
                 <n-button type="primary" class="update-btn" @click="handleInstallUpdate">
-                  立即安装
+                  {{ t('settings.about.installNow') }}
                 </n-button>
               </template>
             </div>
@@ -258,7 +285,7 @@
           v-if="passwordModalMode === 'reset' || passwordModalMode === 'disable'"
           class="setting-info"
         >
-          <label class="setting-label">原密码</label>
+          <label class="setting-label">{{ t('settings.privacy.modal.currentPassword') }}</label>
           <n-input-otp
             :value="currentPassword"
             :length="OTP_LENGTH"
@@ -271,7 +298,7 @@
         </div>
 
         <div v-if="passwordModalMode !== 'disable'" class="setting-info">
-          <label class="setting-label">新密码</label>
+          <label class="setting-label">{{ t('settings.privacy.modal.newPassword') }}</label>
           <n-input-otp
             :value="newPassword"
             :length="OTP_LENGTH"
@@ -284,7 +311,7 @@
         </div>
 
         <div v-if="passwordModalMode !== 'disable'" class="setting-info">
-          <label class="setting-label">确认新密码</label>
+          <label class="setting-label">{{ t('settings.privacy.modal.confirmPassword') }}</label>
           <n-input-otp
             :value="confirmPassword"
             :length="OTP_LENGTH"
@@ -299,9 +326,15 @@
 
       <template #footer>
         <n-space justify="end">
-          <n-button :disabled="privacyLoading" @click="handleClosePasswordModal">取消</n-button>
+          <n-button :disabled="privacyLoading" @click="handleClosePasswordModal">
+            {{ t('common.cancel') }}
+          </n-button>
           <n-button type="primary" :loading="privacyLoading" @click="handleSubmitPasswordModal">
-            {{ passwordModalMode === 'disable' ? '确认关闭' : '保存' }}
+            {{
+              passwordModalMode === 'disable'
+                ? t('settings.privacy.modal.confirmDisable')
+                : t('common.save')
+            }}
           </n-button>
         </n-space>
       </template>
@@ -319,13 +352,15 @@
         <p class="privacy-modal-desc">{{ windowsPasswordModalDescription }}</p>
 
         <div class="setting-info">
-          <label class="setting-label">Windows 登录密码</label>
+          <label class="setting-label">{{
+            t('settings.privacy.modal.windowsPasswordLabel')
+          }}</label>
           <n-input
             :value="windowsPasswordForDisable"
             type="password"
             show-password-on="mousedown"
             :status="windowsPasswordStatus"
-            placeholder="请输入 Windows 登录密码"
+            :placeholder="t('settings.privacy.modal.windowsPasswordPlaceholder')"
             @update:value="handleWindowsPasswordInput"
           />
         </div>
@@ -333,15 +368,19 @@
 
       <template #footer>
         <n-space justify="end">
-          <n-button :disabled="privacyLoading" @click="handleCloseWindowsPasswordModal"
-            >取消</n-button
-          >
+          <n-button :disabled="privacyLoading" @click="handleCloseWindowsPasswordModal">{{
+            t('common.cancel')
+          }}</n-button>
           <n-button
             type="primary"
             :loading="privacyLoading"
             @click="handleSubmitWindowsPasswordModal"
           >
-            {{ windowsPasswordModalMode === 'enable' ? '验证并开启' : '确认关闭' }}
+            {{
+              windowsPasswordModalMode === 'enable'
+                ? t('settings.privacy.modal.verifyAndEnable')
+                : t('settings.privacy.modal.confirmDisable')
+            }}
           </n-button>
         </n-space>
       </template>
@@ -360,24 +399,24 @@
           {{ backupPasswordModalDescription }}
         </p>
         <div class="setting-info">
-          <label class="setting-label">备份口令</label>
+          <label class="setting-label">{{ t('settings.data.backupPassword') }}</label>
           <n-input
             v-model:value="backupPassword"
             type="password"
             show-password-on="mousedown"
             :status="backupPasswordStatus"
-            :placeholder="`至少 ${MIN_BACKUP_PASSWORD_LENGTH} 位`"
+            :placeholder="t('settings.data.minLength', { count: MIN_BACKUP_PASSWORD_LENGTH })"
           />
         </div>
 
         <div v-if="backupPasswordMode === 'export'" class="setting-info">
-          <label class="setting-label">确认口令</label>
+          <label class="setting-label">{{ t('settings.data.confirmPassword') }}</label>
           <n-input
             v-model:value="confirmBackupPassword"
             type="password"
             show-password-on="mousedown"
             :status="confirmBackupPasswordStatus"
-            :placeholder="`再次输入口令`"
+            :placeholder="t('settings.data.reenterPassword')"
           />
         </div>
       </n-space>
@@ -388,14 +427,18 @@
             :disabled="exportingData || importingData || backupPasswordSubmitting"
             @click="handleCloseBackupPasswordModal"
           >
-            取消
+            {{ t('common.cancel') }}
           </n-button>
           <n-button
             type="primary"
             :loading="backupPasswordSubmitting"
             @click="handleConfirmBackupPassword"
           >
-            {{ backupPasswordMode === 'export' ? '确认导出' : '确认导入' }}
+            {{
+              backupPasswordMode === 'export'
+                ? t('settings.data.confirmExport')
+                : t('settings.data.confirmImport')
+            }}
           </n-button>
         </n-space>
       </template>
@@ -404,7 +447,7 @@
     <n-modal
       v-model:show="showExportProgressDialog"
       preset="dialog"
-      title="导出备份中"
+      :title="t('settings.data.exportInProgress')"
       :mask-closable="false"
       :closable="false"
       :close-on-esc="false"
@@ -420,16 +463,18 @@
           :disabled="exportCanceling"
           @click="handleCancelExportTransfer"
         >
-          取消
+          {{ t('common.cancel') }}
         </n-button>
-        <n-button v-else type="primary" @click="handleCloseExportProgressDialog">完成</n-button>
+        <n-button v-else type="primary" @click="handleCloseExportProgressDialog">{{
+          t('common.done')
+        }}</n-button>
       </template>
     </n-modal>
 
     <n-modal
       v-model:show="showImportProgressDialog"
       preset="dialog"
-      title="导入备份中"
+      :title="t('settings.data.importInProgress')"
       :mask-closable="false"
       :closable="false"
       :close-on-esc="false"
@@ -445,9 +490,11 @@
           :disabled="importCanceling"
           @click="handleCancelImportTransfer"
         >
-          取消
+          {{ t('common.cancel') }}
         </n-button>
-        <n-button v-else type="primary" @click="handleCloseImportProgressDialog">完成</n-button>
+        <n-button v-else type="primary" @click="handleCloseImportProgressDialog">{{
+          t('common.done')
+        }}</n-button>
       </template>
     </n-modal>
   </div>
@@ -455,6 +502,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   NButton,
   NCard,
@@ -479,6 +527,8 @@ import {
   PRIVACY_IDLE_LOCK_MINUTE_OPTIONS,
   usePrivacyStore
 } from '@renderer/stores/privacy'
+import { useLocaleStore } from '@renderer/stores/locale'
+import type { LocalePreference } from '@renderer/i18n'
 import type { DataTransferProgress, DataTransferResult } from '../../../../types/api'
 
 interface AppInfo {
@@ -497,43 +547,53 @@ interface AccentOption {
 
 const theme = useThemeStore()
 const privacy = usePrivacyStore()
+const localeStore = useLocaleStore()
+const { t } = useI18n()
 const OTP_LENGTH = 6
 const privacyIdleMinuteOptions = PRIVACY_IDLE_LOCK_MINUTE_OPTIONS.map((minutes) => ({
-  label: `${minutes} 分钟`,
+  label: t('common.minutes', { count: minutes }),
   value: minutes
 }))
 const accentOptions: AccentOption[] = [
   {
     value: ThemeAccent.Green,
-    label: '翡翠绿',
+    label: t('settings.accents.green'),
     color: THEME_ACCENT_PALETTES[ThemeAccent.Green].primaryColor
   },
   {
     value: ThemeAccent.Blue,
-    label: '天空蓝',
+    label: t('settings.accents.blue'),
     color: THEME_ACCENT_PALETTES[ThemeAccent.Blue].primaryColor
   },
   {
     value: ThemeAccent.Orange,
-    label: '琥珀橙',
+    label: t('settings.accents.orange'),
     color: THEME_ACCENT_PALETTES[ThemeAccent.Orange].primaryColor
   },
   {
     value: ThemeAccent.Red,
-    label: '珊瑚红',
+    label: t('settings.accents.red'),
     color: THEME_ACCENT_PALETTES[ThemeAccent.Red].primaryColor
   },
   {
     value: ThemeAccent.Purple,
-    label: '霓虹紫',
+    label: t('settings.accents.purple'),
     color: THEME_ACCENT_PALETTES[ThemeAccent.Purple].primaryColor
   },
   {
     value: ThemeAccent.Teal,
-    label: '青绿色',
+    label: t('settings.accents.teal'),
     color: THEME_ACCENT_PALETTES[ThemeAccent.Teal].primaryColor
   }
 ]
+const localePreferenceOptions = computed(() => [
+  { label: t('settings.followSystem'), value: 'system' as LocalePreference },
+  { label: '中文', value: 'zh-CN' as LocalePreference },
+  { label: 'English', value: 'en-US' as LocalePreference },
+  { label: '日本語', value: 'ja-JP' as LocalePreference },
+  { label: '한국어', value: 'ko-KR' as LocalePreference }
+])
+const localeSaving = ref(false)
 const checkingUpdate = ref(false)
 const updateMessage = ref('')
 const updateMessageType = ref<'success' | 'error' | 'info'>('info')
@@ -547,12 +607,12 @@ const dataMessage = ref('')
 const dataMessageType = ref<'success' | 'error' | 'info'>('info')
 const showExportProgressDialog = ref(false)
 const exportProgress = ref(0)
-const exportProgressMessage = ref('正在准备导出任务...')
+const exportProgressMessage = ref(t('settings.data.preparingExport'))
 const exportTransferDone = ref(false)
 const exportCanceling = ref(false)
 const showImportProgressDialog = ref(false)
 const importProgress = ref(0)
-const importProgressMessage = ref('正在准备导入任务...')
+const importProgressMessage = ref(t('settings.data.preparingImport'))
 const importTransferDone = ref(false)
 const importCanceling = ref(false)
 const reloadAfterImportComplete = ref(false)
@@ -587,20 +647,22 @@ const currentPasswordValue = computed(() => currentPassword.value.join(''))
 const newPasswordValue = computed(() => newPassword.value.join(''))
 const confirmPasswordValue = computed(() => confirmPassword.value.join(''))
 const backupPasswordModalTitle = computed(() =>
-  backupPasswordMode.value === 'export' ? '导出备份口令' : '导入备份口令'
+  backupPasswordMode.value === 'export'
+    ? t('settings.data.exportPasswordTitle')
+    : t('settings.data.importPasswordTitle')
 )
 const backupPasswordModalDescription = computed(() =>
   backupPasswordMode.value === 'export'
-    ? '请设置本次备份口令，导入此备份时需要该口令'
-    : '请输入导出时设置的备份口令'
+    ? t('settings.data.exportPasswordDesc')
+    : t('settings.data.importPasswordDesc')
 )
 const privacyAuthMethodOptions = computed(() => {
   const options: Array<{ label: string; value: PrivacyAuthMethod }> = [
-    { label: '6 位数字密码', value: 'pin' }
+    { label: t('settings.privacy.pinOption'), value: 'pin' }
   ]
 
   if (privacy.isWindowsPasswordSupported) {
-    options.push({ label: 'Windows 登录密码', value: 'windows' })
+    options.push({ label: t('settings.privacy.windowsOption'), value: 'windows' })
   }
 
   return options
@@ -638,7 +700,7 @@ onMounted(() => {
     window.api.onUpdateDownloaded(() => {
       downloading.value = false
       downloaded.value = true
-      updateMessage.value = '更新已下载完成，点击安装后将重启应用'
+      updateMessage.value = t('settings.about.downloaded')
       updateMessageType.value = 'success'
     })
   )
@@ -648,7 +710,7 @@ onMounted(() => {
       if (!exportingData.value) return
       showExportProgressDialog.value = true
       exportProgress.value = Math.max(0, Math.min(100, Math.round(progress.percent)))
-      exportProgressMessage.value = progress.message || '正在导出数据...'
+      exportProgressMessage.value = progress.message || t('settings.data.exporting')
     })
   )
 
@@ -657,7 +719,7 @@ onMounted(() => {
       if (!importingData.value) return
       showImportProgressDialog.value = true
       importProgress.value = Math.max(0, Math.min(100, Math.round(progress.percent)))
-      importProgressMessage.value = progress.message || '正在导入数据...'
+      importProgressMessage.value = progress.message || t('settings.data.importing')
     })
   )
 })
@@ -678,31 +740,55 @@ const handleAccentChange = (accent: ThemeAccent): void => {
   theme.setAccent(accent)
 }
 
+const handleLocalePreferenceChange = async (value: string | number | null): Promise<void> => {
+  if (
+    value !== 'system' &&
+    value !== 'zh-CN' &&
+    value !== 'en-US' &&
+    value !== 'ja-JP' &&
+    value !== 'ko-KR'
+  ) {
+    return
+  }
+  if (localeSaving.value || value === localeStore.preference) return
+
+  localeSaving.value = true
+  try {
+    await localeStore.setPreference(value)
+  } catch (error) {
+    console.error('更新语言设置失败:', error)
+  } finally {
+    localeSaving.value = false
+  }
+}
+
 const passwordModalTitle = computed(() => {
-  if (passwordModalMode.value === 'setup') return '设置隐私密码'
-  if (passwordModalMode.value === 'disable') return '关闭隐私保护'
-  return '重设隐私密码'
+  if (passwordModalMode.value === 'setup') return t('settings.privacy.modal.setupTitle')
+  if (passwordModalMode.value === 'disable') return t('settings.privacy.modal.disableTitle')
+  return t('settings.privacy.modal.resetTitle')
 })
 
 const passwordModalDescription = computed(() => {
   if (passwordModalMode.value === 'setup') {
     if (pendingAuthMethodAfterSet.value === 'pin' && privacy.authMethod !== 'pin') {
-      return '请先设置6位数字密码，保存后将切换为数字密码解锁'
+      return t('settings.privacy.modal.setupSwitchDesc')
     }
-    return '请设置6位数字密码'
+    return t('settings.privacy.modal.setupDesc')
   }
-  if (passwordModalMode.value === 'disable') return '请输入当前密码以关闭隐私保护'
-  return '请先验证原密码，再设置新密码'
+  if (passwordModalMode.value === 'disable') return t('settings.privacy.modal.disableDesc')
+  return t('settings.privacy.modal.resetDesc')
 })
 
 const windowsPasswordModalTitle = computed(() =>
-  windowsPasswordModalMode.value === 'enable' ? '开启隐私保护' : '关闭隐私保护'
+  windowsPasswordModalMode.value === 'enable'
+    ? t('settings.privacy.modal.windowsEnableTitle')
+    : t('settings.privacy.modal.windowsDisableTitle')
 )
 
 const windowsPasswordModalDescription = computed(() =>
   windowsPasswordModalMode.value === 'enable'
-    ? '请输入 Windows 登录密码，验证通过后开启隐私保护'
-    : '请输入 Windows 登录密码以关闭隐私保护'
+    ? t('settings.privacy.modal.windowsEnableDesc')
+    : t('settings.privacy.modal.windowsDisableDesc')
 )
 
 function allowDigitInput(char: string): boolean {
@@ -784,11 +870,11 @@ const enablePrivacy = async (): Promise<void> => {
   privacyLoading.value = true
   try {
     await privacy.enablePrivacy()
-    privacyMessage.value = '隐私保护已开启'
+    privacyMessage.value = t('settings.privacy.enabledSuccess')
     privacyMessageType.value = 'success'
   } catch (error) {
     console.error('开启隐私保护失败:', error)
-    privacyMessage.value = `开启失败：${String(error)}`
+    privacyMessage.value = t('settings.data.openFailedWithReason', { reason: String(error) })
     privacyMessageType.value = 'error'
   } finally {
     privacyLoading.value = false
@@ -832,11 +918,13 @@ const handlePrivacyAuthMethodChange = async (value: string | number | null): Pro
   try {
     await privacy.setAuthMethod(value)
     privacyMessage.value =
-      value === 'windows' ? '已切换为 Windows 登录密码解锁' : '已切换为数字密码解锁'
+      value === 'windows'
+        ? t('settings.privacy.switchToWindows')
+        : t('settings.privacy.switchToPin')
     privacyMessageType.value = 'success'
   } catch (error) {
     console.error('更新隐私解锁方式失败:', error)
-    privacyMessage.value = `更新失败：${String(error)}`
+    privacyMessage.value = t('settings.data.updateFailedWithReason', { reason: String(error) })
     privacyMessageType.value = 'error'
   } finally {
     privacyLoading.value = false
@@ -849,11 +937,11 @@ const handlePrivacyIdleMinuteChange = async (value: number | null): Promise<void
   privacyLoading.value = true
   try {
     await privacy.setIdleLockMinutes(value)
-    privacyMessage.value = '空闲自动锁定时长已更新'
+    privacyMessage.value = t('settings.privacy.idleLockUpdated')
     privacyMessageType.value = 'success'
   } catch (error) {
     console.error('更新自动锁定时长失败:', error)
-    privacyMessage.value = `更新失败：${String(error)}`
+    privacyMessage.value = t('settings.data.updateFailedWithReason', { reason: String(error) })
     privacyMessageType.value = 'error'
   } finally {
     privacyLoading.value = false
@@ -874,7 +962,7 @@ const handleSubmitPasswordModal = async (): Promise<void> => {
     privacyLoading.value = true
     try {
       await privacy.disablePrivacyWithPassword(currentPasswordValue.value)
-      privacyMessage.value = '隐私保护已关闭'
+      privacyMessage.value = t('settings.privacy.disabledSuccess')
       privacyMessageType.value = 'success'
       handleClosePasswordModal()
     } catch (error) {
@@ -882,7 +970,7 @@ const handleSubmitPasswordModal = async (): Promise<void> => {
       if (String(error).includes('原密码错误')) {
         currentPasswordStatus.value = 'error'
       } else {
-        privacyMessage.value = `关闭失败：${String(error)}`
+        privacyMessage.value = t('settings.data.closeFailedWithReason', { reason: String(error) })
         privacyMessageType.value = 'error'
       }
     } finally {
@@ -911,7 +999,7 @@ const handleSubmitPasswordModal = async (): Promise<void> => {
   try {
     if (passwordModalMode.value === 'reset') {
       await privacy.updatePasswordWithCurrent(currentPasswordValue.value, newPasswordValue.value)
-      privacyMessage.value = '密码重设成功'
+      privacyMessage.value = t('settings.privacy.passwordResetSuccess')
     } else {
       await privacy.setPassword(newPasswordValue.value)
       if (
@@ -922,11 +1010,11 @@ const handleSubmitPasswordModal = async (): Promise<void> => {
       }
       if (pendingEnableAfterSet.value && !privacy.isEnabled) {
         await privacy.enablePrivacy()
-        privacyMessage.value = '密码设置成功，隐私保护已开启'
+        privacyMessage.value = t('settings.privacy.passwordSetAndEnabled')
       } else if (pendingAuthMethodAfterSet.value === 'pin') {
-        privacyMessage.value = '密码设置成功，已切换为数字密码解锁'
+        privacyMessage.value = t('settings.privacy.passwordSetAndSwitched')
       } else {
-        privacyMessage.value = '密码设置成功'
+        privacyMessage.value = t('settings.privacy.passwordSetSuccess')
       }
     }
 
@@ -937,7 +1025,7 @@ const handleSubmitPasswordModal = async (): Promise<void> => {
     if (String(error).includes('原密码错误')) {
       currentPasswordStatus.value = 'error'
     } else {
-      privacyMessage.value = `保存失败：${String(error)}`
+      privacyMessage.value = t('settings.data.saveFailedWithReason', { reason: String(error) })
       privacyMessageType.value = 'error'
     }
   } finally {
@@ -964,16 +1052,22 @@ const handleSubmitWindowsPasswordModal = async (): Promise<void> => {
 
     if (windowsPasswordModalMode.value === 'enable') {
       await privacy.enablePrivacy()
-      privacyMessage.value = '隐私保护已开启'
+      privacyMessage.value = t('settings.privacy.enabledSuccess')
     } else {
       await privacy.disablePrivacy()
-      privacyMessage.value = '隐私保护已关闭'
+      privacyMessage.value = t('settings.privacy.disabledSuccess')
     }
     privacyMessageType.value = 'success'
     handleCloseWindowsPasswordModal()
   } catch (error) {
     console.error('处理隐私保护失败:', error)
-    privacyMessage.value = `${windowsPasswordModalMode.value === 'enable' ? '开启' : '关闭'}失败：${String(error)}`
+    privacyMessage.value = t('settings.data.failedWithReason', {
+      action:
+        windowsPasswordModalMode.value === 'enable'
+          ? t('settings.privacy.modal.windowsEnableTitle')
+          : t('settings.privacy.modal.windowsDisableTitle'),
+      reason: String(error)
+    })
     privacyMessageType.value = 'error'
   } finally {
     privacyLoading.value = false
@@ -989,19 +1083,25 @@ const handleCheckUpdate = async (): Promise<void> => {
     const result = await window.api.checkForUpdates()
     if (result.success) {
       if (result.updateInfo) {
-        updateMessage.value = `发现新版本 ${result.updateInfo.version}`
+        updateMessage.value = t('settings.about.updateFound', {
+          version: result.updateInfo.version
+        })
         updateMessageType.value = 'success'
         hasUpdate.value = true
       } else {
-        updateMessage.value = '当前已是最新版本'
+        updateMessage.value = t('settings.about.latest')
         updateMessageType.value = 'info'
       }
     } else {
-      updateMessage.value = `检查更新失败: ${result.error || '未知错误'}`
+      updateMessage.value = t('settings.data.checkUpdateFailedWithReason', {
+        reason: result.error || t('settings.data.unknownError')
+      })
       updateMessageType.value = 'error'
     }
   } catch (error) {
-    updateMessage.value = `检查更新失败: ${unwrapIpcErrorMessage(error)}`
+    updateMessage.value = t('settings.data.checkUpdateFailedWithReason', {
+      reason: unwrapIpcErrorMessage(error)
+    })
     updateMessageType.value = 'error'
   } finally {
     checkingUpdate.value = false
@@ -1020,13 +1120,15 @@ function unwrapIpcErrorMessage(error: unknown): string {
 const handleDownloadUpdate = async (): Promise<void> => {
   downloading.value = true
   downloadProgress.value = 0
-  updateMessage.value = '正在下载更新...'
+  updateMessage.value = t('settings.about.downloading')
   updateMessageType.value = 'info'
   try {
     await window.api.downloadUpdate()
   } catch (error) {
     downloading.value = false
-    updateMessage.value = `下载更新失败: ${unwrapIpcErrorMessage(error)}`
+    updateMessage.value = t('settings.data.downloadUpdateFailedWithReason', {
+      reason: unwrapIpcErrorMessage(error)
+    })
     updateMessageType.value = 'error'
   }
 }
@@ -1067,25 +1169,42 @@ function isValidBackupPassword(value: string): boolean {
   return value.trim().length >= MIN_BACKUP_PASSWORD_LENGTH
 }
 
-function resolveTransferErrorMessage(action: '导出' | '导入', result: DataTransferResult): string {
-  if (!result.errorCode) return `${action}失败：${result.error || '未知错误'}`
+function resolveTransferErrorMessage(
+  action: 'export' | 'import',
+  result: DataTransferResult
+): string {
+  const actionLabel =
+    action === 'export' ? t('settings.data.exportAction') : t('settings.data.importAction')
+
+  if (!result.errorCode) {
+    return t('settings.data.failedWithReason', {
+      action: actionLabel,
+      reason: result.error || t('settings.data.unknownError')
+    })
+  }
 
   if (result.errorCode === 'VALIDATION_FAILED') {
-    return result.error || `备份口令长度至少 ${MIN_BACKUP_PASSWORD_LENGTH} 位`
+    return (
+      result.error ||
+      t('settings.data.backupPasswordTooShort', { count: MIN_BACKUP_PASSWORD_LENGTH })
+    )
   }
   if (result.errorCode === 'UNSUPPORTED_BACKUP_FORMAT') {
-    return result.error || '备份格式不受支持，仅可导入当前版本生成的备份'
+    return result.error || t('settings.data.unsupportedBackup')
   }
   if (result.errorCode === 'MISSING_KEY_ENVELOPE') {
-    return result.error || '备份缺少密钥文件，无法导入'
+    return result.error || t('settings.data.missingEnvelope')
   }
   if (result.errorCode === 'WRONG_BACKUP_PASSWORD') {
-    return '备份口令错误，请重试'
+    return t('settings.data.wrongBackupPassword')
   }
   if (result.errorCode === 'TRANSFER_IN_PROGRESS') {
-    return result.error || '已有导入/导出任务进行中'
+    return result.error || t('settings.data.transferInProgress')
   }
-  return `${action}失败：${result.error || '未知错误'}`
+  return t('settings.data.failedWithReason', {
+    action: actionLabel,
+    reason: result.error || t('settings.data.unknownError')
+  })
 }
 
 const handleCloseExportProgressDialog = (): void => {
@@ -1103,7 +1222,7 @@ const handleCloseImportProgressDialog = (): void => {
 const handleCancelExportTransfer = async (): Promise<void> => {
   if (!exportingData.value || exportTransferDone.value || exportCanceling.value) return
   exportCanceling.value = true
-  exportProgressMessage.value = '正在取消导出...'
+  exportProgressMessage.value = t('settings.data.cancelingExport')
   try {
     await window.api.cancelDataTransfer()
   } finally {
@@ -1114,7 +1233,7 @@ const handleCancelExportTransfer = async (): Promise<void> => {
 const handleCancelImportTransfer = async (): Promise<void> => {
   if (!importingData.value || importTransferDone.value || importCanceling.value) return
   importCanceling.value = true
-  importProgressMessage.value = '正在取消导入...'
+  importProgressMessage.value = t('settings.data.cancelingImport')
   try {
     await window.api.cancelDataTransfer()
   } finally {
@@ -1128,36 +1247,39 @@ const runExportData = async (backupPasswordValue: string): Promise<void> => {
   exportCanceling.value = false
   showExportProgressDialog.value = false
   exportProgress.value = 0
-  exportProgressMessage.value = '正在准备导出任务...'
-  dataMessage.value = '正在导出数据...'
+  exportProgressMessage.value = t('settings.data.preparingExport')
+  dataMessage.value = t('settings.data.exporting')
   dataMessageType.value = 'info'
 
   try {
     const result = await window.api.exportData({ backupPassword: backupPasswordValue })
     if (result.canceled) {
       exportProgress.value = 100
-      exportProgressMessage.value = '导出已取消'
-      dataMessage.value = '已取消导出'
+      exportProgressMessage.value = t('settings.data.exportCanceled')
+      dataMessage.value = t('settings.data.canceledExportMessage')
       dataMessageType.value = 'info'
       return
     }
 
     if (result.success) {
       exportProgress.value = 100
-      exportProgressMessage.value = '导出完成'
-      dataMessage.value = `导出成功：${result.path}`
+      exportProgressMessage.value = t('settings.data.exportCompleted')
+      dataMessage.value = t('settings.data.exportSuccessWithPath', { path: result.path })
       dataMessageType.value = 'success'
       return
     }
 
     exportProgress.value = 100
-    exportProgressMessage.value = '导出失败'
-    dataMessage.value = resolveTransferErrorMessage('导出', result)
+    exportProgressMessage.value = t('settings.data.exportFailed')
+    dataMessage.value = resolveTransferErrorMessage('export', result)
     dataMessageType.value = 'error'
   } catch (error) {
     exportProgress.value = 100
-    exportProgressMessage.value = '导出失败'
-    dataMessage.value = `导出失败：${String(error)}`
+    exportProgressMessage.value = t('settings.data.exportFailed')
+    dataMessage.value = t('settings.data.failedWithReason', {
+      action: t('settings.data.exportAction'),
+      reason: String(error)
+    })
     dataMessageType.value = 'error'
   } finally {
     exportingData.value = false
@@ -1172,37 +1294,40 @@ const runImportData = async (backupPasswordValue: string): Promise<void> => {
   reloadAfterImportComplete.value = false
   showImportProgressDialog.value = false
   importProgress.value = 0
-  importProgressMessage.value = '正在准备导入任务...'
-  dataMessage.value = '正在导入数据...'
+  importProgressMessage.value = t('settings.data.preparingImport')
+  dataMessage.value = t('settings.data.importing')
   dataMessageType.value = 'info'
 
   try {
     const result = await window.api.importData({ backupPassword: backupPasswordValue })
     if (result.canceled) {
       importProgress.value = 100
-      importProgressMessage.value = '导入已取消'
-      dataMessage.value = '已取消导入'
+      importProgressMessage.value = t('settings.data.importCanceled')
+      dataMessage.value = t('settings.data.canceledImportMessage')
       dataMessageType.value = 'info'
       return
     }
 
     if (result.success) {
       importProgress.value = 100
-      importProgressMessage.value = '导入完成'
-      dataMessage.value = '导入成功，点击完成后刷新页面'
+      importProgressMessage.value = t('settings.data.importCompleted')
+      dataMessage.value = t('settings.data.importSuccessAndReload')
       dataMessageType.value = 'success'
       reloadAfterImportComplete.value = true
       return
     }
 
     importProgress.value = 100
-    importProgressMessage.value = '导入失败'
-    dataMessage.value = resolveTransferErrorMessage('导入', result)
+    importProgressMessage.value = t('settings.data.importFailed')
+    dataMessage.value = resolveTransferErrorMessage('import', result)
     dataMessageType.value = 'error'
   } catch (error) {
     importProgress.value = 100
-    importProgressMessage.value = '导入失败'
-    dataMessage.value = `导入失败：${String(error)}`
+    importProgressMessage.value = t('settings.data.importFailed')
+    dataMessage.value = t('settings.data.failedWithReason', {
+      action: t('settings.data.importAction'),
+      reason: String(error)
+    })
     dataMessageType.value = 'error'
   } finally {
     importingData.value = false
@@ -1247,10 +1372,10 @@ const handleConfirmBackupPassword = async (): Promise<void> => {
 
 const handleImportData = (): void => {
   dialog.warning({
-    title: '导入确认',
-    content: '导入 ZIP 会覆盖当前本地数据，建议先执行一次导出备份。确认继续吗？',
-    positiveText: '继续导入',
-    negativeText: '取消',
+    title: t('settings.data.importConfirmTitle'),
+    content: t('settings.data.importConfirmContent'),
+    positiveText: t('settings.data.continueImport'),
+    negativeText: t('common.cancel'),
     onPositiveClick: () => {
       openBackupPasswordModal('import')
     }

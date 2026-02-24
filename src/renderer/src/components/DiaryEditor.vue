@@ -17,6 +17,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, h, onMounted, onBeforeUnmount, type Component } from 'vue'
 import { NDropdown, NIcon, useDialog } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
 import {
   CopyOutline,
   CutOutline,
@@ -30,6 +31,13 @@ const themeStore = useThemeStore()
 const isDark = computed(() => themeStore.isDark)
 const isEditorDebugEnabled = import.meta.env.DEV
 const dialog = useDialog()
+const { t, locale } = useI18n()
+const froalaLanguage = computed(() => {
+  if (locale.value === 'zh-CN') return 'zh_cn'
+  if (locale.value === 'ja-JP') return 'ja'
+  if (locale.value === 'ko-KR') return 'ko'
+  return 'en_us'
+})
 
 const debugLog = (...args: unknown[]): void => {
   if (isEditorDebugEnabled) {
@@ -87,6 +95,7 @@ interface FroalaEditorInstance {
   }
   opts: {
     theme: string
+    language: string
   }
   toolbar: {
     hide(): void
@@ -241,44 +250,44 @@ const renderIcon = (icon: Component) => {
 // 右键菜单选项
 const contextMenuOptions = computed(() => [
   {
-    label: '剪切',
+    label: t('diaryEditor.cut'),
     key: 'cut',
     icon: renderIcon(CutOutline)
   },
   {
-    label: '复制',
+    label: t('diaryEditor.copy'),
     key: 'copy',
     icon: renderIcon(CopyOutline)
   },
   {
-    label: '粘贴',
+    label: t('diaryEditor.paste'),
     key: 'paste',
     icon: renderIcon(ClipboardOutline)
   },
   { type: 'divider', key: 'd1' },
   {
-    label: '加粗',
+    label: t('diaryEditor.bold'),
     key: 'bold',
     icon: renderIcon(TextOutline)
   },
   {
-    label: '斜体',
+    label: t('diaryEditor.italic'),
     key: 'italic',
     icon: renderIcon(TextOutline)
   },
   {
-    label: '下划线',
+    label: t('diaryEditor.underline'),
     key: 'underline',
     icon: renderIcon(TextOutline)
   },
   {
-    label: '删除线',
+    label: t('diaryEditor.strikethrough'),
     key: 'strikethrough',
     icon: renderIcon(TextOutline)
   },
   { type: 'divider', key: 'd2' },
   {
-    label: '清除格式',
+    label: t('diaryEditor.clearFormatting'),
     key: 'clearFormatting',
     icon: renderIcon(RemoveCircleOutline)
   }
@@ -405,9 +414,9 @@ const insertImage = async (file: File): Promise<void> => {
   // 检查文件大小 (10MB)
   if (file.size > IMAGE_MAX_SIZE) {
     dialog.warning({
-      title: '图片过大',
-      content: `图片「${file.name}」超过 10MB 限制，请压缩后再插入。`,
-      positiveText: '知道了'
+      title: t('diaryEditor.imageTooLargeTitle'),
+      content: t('diaryEditor.imageTooLargeContent', { name: file.name }),
+      positiveText: t('diaryEditor.acknowledge')
     })
     return
   }
@@ -429,7 +438,7 @@ const insertImage = async (file: File): Promise<void> => {
 // Froala 配置
 const editorConfig = {
   height: '100%',
-  placeholderText: '写点什么呢?',
+  placeholderText: t('diaryEditor.placeholder'),
   charCounterCount: false,
   shortcutsEnabled: ['bold', 'italic', 'underline', 'undo', 'redo'],
   multiLine: true,
@@ -481,14 +490,14 @@ const editorConfig = {
   linkAutoPrefix: 'https://',
   // 段落格式
   paragraphFormat: {
-    N: '正文',
-    H1: '标题 1',
-    H2: '标题 2',
-    H3: '标题 3',
-    H4: '标题 4'
+    N: t('diaryEditor.paragraph'),
+    H1: t('diaryEditor.heading1'),
+    H2: t('diaryEditor.heading2'),
+    H3: t('diaryEditor.heading3'),
+    H4: t('diaryEditor.heading4')
   },
   // 语言设置
-  language: 'zh_cn',
+  language: froalaLanguage.value,
   // 主题 - 根据当前主题动态设置
   theme: isDark.value ? 'dark' : 'gray',
   // 隐藏底部水印
@@ -655,11 +664,11 @@ watch(content, (val) => {
   emit('update:modelValue', val)
 })
 
-// 监听主题变化,重新初始化编辑器
-watch(isDark, () => {
+watch([isDark, froalaLanguage], () => {
   if (editorInstance.value) {
-    // 更新编辑器主题
+    // 更新编辑器主题与语言
     editorInstance.value.opts.theme = isDark.value ? 'dark' : 'gray'
+    editorInstance.value.opts.language = froalaLanguage.value
     // 重新渲染工具栏
     editorInstance.value.toolbar.hide()
     editorInstance.value.toolbar.show()

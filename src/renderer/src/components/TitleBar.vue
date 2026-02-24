@@ -4,14 +4,14 @@
       <div class="title-bar-title"></div>
     </div>
     <div class="title-bar-controls">
-      <button class="title-bar-button minimize" title="最小化" @click="minimize">
+      <button class="title-bar-button minimize" :title="t('titleBar.minimize')" @click="minimize">
         <svg width="12" height="12" viewBox="0 0 12 12">
           <rect x="0" y="5" width="12" height="1" fill="currentColor" />
         </svg>
       </button>
       <button
         class="title-bar-button maximize"
-        :title="isMaximized ? '还原' : '最大化'"
+        :title="isMaximized ? t('titleBar.restore') : t('titleBar.maximize')"
         @click="toggleMaximize"
       >
         <svg v-if="!isMaximized" width="12" height="12" viewBox="0 0 12 12">
@@ -46,7 +46,7 @@
           />
         </svg>
       </button>
-      <button class="title-bar-button close" title="关闭" @click="close">
+      <button class="title-bar-button close" :title="t('titleBar.close')" @click="close">
         <svg width="12" height="12" viewBox="0 0 12 12">
           <line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1" />
           <line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1" />
@@ -58,7 +58,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const isMaximized = ref(false)
 
 onMounted(async () => {

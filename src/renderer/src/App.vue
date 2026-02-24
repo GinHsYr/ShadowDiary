@@ -10,12 +10,14 @@ import {
   NLayoutContent
 } from 'naive-ui'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import TitleBar from './components/TitleBar.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import AppHeader from './components/AppHeader.vue'
 import { useThemeStore } from './stores/themes'
 import { isValidPrivacyPassword, usePrivacyStore } from './stores/privacy'
 
+const { t } = useI18n()
 const theme = useThemeStore()
 const privacy = usePrivacyStore()
 const OTP_LENGTH = 6
@@ -157,12 +159,12 @@ async function handleUnlock(): Promise<void> {
   if (unlocking.value) return
 
   if (privacy.usesWindowsPassword && !passwordValue.value) {
-    unlockError.value = '请输入 Windows 登录密码'
+    unlockError.value = t('app.privacy.requireWindowsPassword')
     return
   }
 
   if (!privacy.usesWindowsPassword && !isValidPrivacyPassword(passwordValue.value)) {
-    unlockError.value = '请输入6位数字密码'
+    unlockError.value = t('app.privacy.requirePin')
     return
   }
 
@@ -171,8 +173,8 @@ async function handleUnlock(): Promise<void> {
     const ok = await privacy.unlockWithPassword(passwordValue.value)
     if (!ok) {
       unlockError.value = privacy.usesWindowsPassword
-        ? 'Windows 登录密码错误，请重试'
-        : '密码错误，请重试'
+        ? t('app.privacy.windowsPasswordIncorrect')
+        : t('app.privacy.pinIncorrect')
       password.value = []
       windowsPassword.value = ''
       return
@@ -182,7 +184,7 @@ async function handleUnlock(): Promise<void> {
     unlockError.value = ''
   } catch (error) {
     console.error('解锁失败:', error)
-    unlockError.value = '解锁失败，请稍后重试'
+    unlockError.value = t('app.privacy.unlockFailed')
   } finally {
     unlocking.value = false
   }
@@ -292,12 +294,12 @@ onBeforeUnmount(() => {
 
         <div v-if="showLockOverlay" class="privacy-lock-overlay">
           <n-card class="privacy-lock-card" :bordered="false">
-            <h2 class="privacy-lock-title">隐私保护</h2>
+            <h2 class="privacy-lock-title">{{ t('app.privacy.title') }}</h2>
             <p class="privacy-lock-description">
               {{
                 privacy.usesWindowsPassword
-                  ? '请输入 Windows 登录密码以解锁应用'
-                  : '请输入 6 位数字密码以解锁应用'
+                  ? t('app.privacy.unlockWithWindowsPassword')
+                  : t('app.privacy.unlockWithPin')
               }}
             </p>
 
@@ -324,11 +326,13 @@ onBeforeUnmount(() => {
                   clearable
                   :disabled="unlocking"
                   :status="unlockStatus"
-                  placeholder="Windows 登录密码"
+                  :placeholder="t('app.privacy.windowsPasswordPlaceholder')"
                   @update:value="handleWindowsPasswordInput"
                   @keyup.enter="handleUnlock"
                 />
-                <n-button type="primary" :loading="unlocking" @click="handleUnlock">解锁</n-button>
+                <n-button type="primary" :loading="unlocking" @click="handleUnlock">{{
+                  t('app.privacy.unlock')
+                }}</n-button>
               </template>
             </div>
           </n-card>

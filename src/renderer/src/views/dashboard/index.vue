@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   NGrid,
   NGi,
@@ -28,6 +29,7 @@ import VChart from 'vue-echarts'
 use([PieChart, TitleComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const router = useRouter()
+const { t, tm } = useI18n()
 
 // 真实数据
 const totalEntries = ref(0)
@@ -109,12 +111,12 @@ const pieChartOption = computed(() => {
   }))
 
   if (restCount > 0) {
-    chartData.push({ name: '其他', value: restCount })
+    chartData.push({ name: t('dashboard.other'), value: restCount })
   }
 
   return {
     title: {
-      text: '人物提及次数',
+      text: t('dashboard.mentionChartTitle'),
       left: 'center',
       top: 8,
       textStyle: {
@@ -124,7 +126,12 @@ const pieChartOption = computed(() => {
     },
     tooltip: {
       trigger: 'item',
-      formatter: '{b}: {c}次 ({d}%)'
+      formatter: (params: { name: string; value: number; percent: number }) =>
+        t('dashboard.mentionTooltip', {
+          name: params.name,
+          count: params.value,
+          percent: params.percent
+        })
     },
     legend: {
       type: 'scroll',
@@ -280,7 +287,7 @@ async function handleMentionPageChange(page: number): Promise<void> {
 async function handlePieClick(params: PieClickParams): Promise<void> {
   if (params.componentType !== 'series' || params.seriesType !== 'pie') return
   const personName = params.name?.trim()
-  if (!personName || personName === '其他') return
+  if (!personName || personName === t('dashboard.other')) return
   await loadMentionDetails(personName)
 }
 
@@ -312,10 +319,10 @@ const selectedMonthWrittenPercent = computed(() => {
 const monthLabel = computed(() => {
   const y = currentMonth.value.getFullYear()
   const m = currentMonth.value.getMonth() + 1
-  return `${y}年${m}月`
+  return t('dashboard.monthLabel', { year: y, month: m })
 })
 
-const weekDays = ['日', '一', '二', '三', '四', '五', '六']
+const weekDays = computed(() => tm('dashboard.weekDays') as string[])
 
 interface CalendarDay {
   date: number
@@ -405,20 +412,7 @@ const goToToday = (): void => {
 const showYearMonthPicker = ref(false)
 const pickerYear = ref(new Date().getFullYear())
 
-const months = [
-  '1月',
-  '2月',
-  '3月',
-  '4月',
-  '5月',
-  '6月',
-  '7月',
-  '8月',
-  '9月',
-  '10月',
-  '11月',
-  '12月'
-]
+const months = computed(() => tm('dashboard.months') as string[])
 
 const pickerPrevYear = (): void => {
   pickerYear.value--
@@ -496,7 +490,7 @@ const jumpToLastMonth = (): void => {
 <template>
   <div class="home-view">
     <div class="welcome-box">
-      <h2>👋 你好，准备写点什么？</h2>
+      <h2>{{ t('dashboard.welcome') }}</h2>
     </div>
 
     <!-- 日历卡片 -->
@@ -530,7 +524,9 @@ const jumpToLastMonth = (): void => {
                     <n-icon size="14"><ChevronBackOutline /></n-icon>
                   </template>
                 </n-button>
-                <span class="ym-year-label">{{ pickerYear }}年</span>
+                <span class="ym-year-label">{{
+                  t('dashboard.yearLabel', { year: pickerYear })
+                }}</span>
                 <n-button quaternary circle size="tiny" @click="pickerNextYear">
                   <template #icon>
                     <n-icon size="14"><ChevronForwardOutline /></n-icon>
@@ -563,14 +559,22 @@ const jumpToLastMonth = (): void => {
             <template #icon>
               <n-icon size="14"><TodayOutline /></n-icon>
             </template>
-            回到今天
+            {{ t('dashboard.backToToday') }}
           </n-button>
         </div>
         <n-space :size="8" class="quick-jump">
-          <n-button size="tiny" secondary @click="jumpToToday">今天</n-button>
-          <n-button size="tiny" secondary @click="jumpToYesterday">昨天</n-button>
-          <n-button size="tiny" secondary @click="jumpToLastWeek">上周今日</n-button>
-          <n-button size="tiny" secondary @click="jumpToLastMonth">上月今日</n-button>
+          <n-button size="tiny" secondary @click="jumpToToday">{{
+            t('dashboard.quickJump.today')
+          }}</n-button>
+          <n-button size="tiny" secondary @click="jumpToYesterday">{{
+            t('dashboard.quickJump.yesterday')
+          }}</n-button>
+          <n-button size="tiny" secondary @click="jumpToLastWeek">{{
+            t('dashboard.quickJump.lastWeek')
+          }}</n-button>
+          <n-button size="tiny" secondary @click="jumpToLastMonth">{{
+            t('dashboard.quickJump.lastMonth')
+          }}</n-button>
         </n-space>
       </div>
 
@@ -601,11 +605,11 @@ const jumpToLastMonth = (): void => {
       <div class="calendar-legend">
         <div class="legend-item">
           <span class="legend-dot"></span>
-          <span>有日记</span>
+          <span>{{ t('dashboard.legend.hasDiary') }}</span>
         </div>
         <div class="legend-item">
           <span class="legend-today-box"></span>
-          <span>今天</span>
+          <span>{{ t('dashboard.legend.today') }}</span>
         </div>
       </div>
     </n-card>
@@ -614,25 +618,25 @@ const jumpToLastMonth = (): void => {
     <n-grid :x-gap="24" :cols="3" class="stats-grid">
       <n-gi>
         <n-card embedded :bordered="false" class="stat-card">
-          <n-statistic label="你一共写了" tabular-nums>
+          <n-statistic :label="t('dashboard.stats.totalEntriesLabel')" tabular-nums>
             <n-number-animation :from="0" :to="totalEntries" />
-            <template #suffix> 篇日记 </template>
+            <template #suffix> {{ t('dashboard.stats.totalEntriesSuffix') }} </template>
           </n-statistic>
         </n-card>
       </n-gi>
       <n-gi>
         <n-card embedded :bordered="false" class="stat-card">
-          <n-statistic label="连续记录" tabular-nums>
+          <n-statistic :label="t('dashboard.stats.streakLabel')" tabular-nums>
             <n-number-animation :from="0" :to="currentStreak" />
-            <template #suffix>天</template>
+            <template #suffix>{{ t('dashboard.stats.streakSuffix') }}</template>
           </n-statistic>
         </n-card>
       </n-gi>
       <n-gi>
         <n-card embedded :bordered="false" class="stat-card">
-          <n-statistic label="共写了" tabular-nums>
+          <n-statistic :label="t('dashboard.stats.charsLabel')" tabular-nums>
             <n-number-animation :from="0" :to="totalCharacters" />
-            <template #suffix>字</template>
+            <template #suffix>{{ t('dashboard.stats.charsSuffix') }}</template>
           </n-statistic>
         </n-card>
       </n-gi>
@@ -643,7 +647,7 @@ const jumpToLastMonth = (): void => {
       <div class="chart-content">
         <v-chart :option="pieChartOption" autoresize class="pie-chart" @click="handlePieClick" />
         <div class="month-progress-panel">
-          <div class="month-progress-title">本月写作完成度</div>
+          <div class="month-progress-title">{{ t('dashboard.monthProgressTitle') }}</div>
           <n-progress
             type="circle"
             style="width: 150px"
@@ -653,7 +657,12 @@ const jumpToLastMonth = (): void => {
             :rail-color="'var(--app-accent-12, var(--n-border-color, rgba(0, 0, 0, 0.12)))'"
           />
           <div class="month-progress-meta">
-            已写 {{ selectedMonthWrittenDays }} / {{ selectedMonthTotalDays }} 天
+            {{
+              t('dashboard.monthProgressMeta', {
+                written: selectedMonthWrittenDays,
+                total: selectedMonthTotalDays
+              })
+            }}
           </div>
         </div>
       </div>
@@ -662,27 +671,31 @@ const jumpToLastMonth = (): void => {
     <n-modal
       v-model:show="showMentionModal"
       preset="card"
-      :title="`${selectedPerson} · 提及明细`"
+      :title="t('dashboard.mentionModalTitle', { person: selectedPerson })"
       style="width: min(860px, 92vw); border-radius: 14px"
       class="mention-modal-card"
       :bordered="false"
       :segmented="{ content: 'soft' }"
     >
-      <div class="mention-meta">共 {{ mentionTotal }} 篇日记提及</div>
+      <div class="mention-meta">{{ t('dashboard.mentionMeta', { count: mentionTotal }) }}</div>
 
       <div v-if="mentionLoading" class="mention-loading">
         <n-spin size="small" />
       </div>
 
-      <div v-else-if="mentionEntries.length === 0" class="mention-empty">暂无提及记录</div>
+      <div v-else-if="mentionEntries.length === 0" class="mention-empty">
+        {{ t('dashboard.mentionEmpty') }}
+      </div>
 
       <div v-else class="mention-list">
         <div v-for="entry in mentionEntries" :key="entry.id" class="mention-item">
           <div class="mention-item-head">
             <span class="mention-item-date">{{ formatDate(entry.createdAt) }}</span>
-            <span class="mention-item-count">提及 {{ entry.mentionCount }} 次</span>
+            <span class="mention-item-count">{{
+              t('dashboard.mentionCount', { count: entry.mentionCount })
+            }}</span>
           </div>
-          <div class="mention-item-title">{{ entry.title || '无标题' }}</div>
+          <div class="mention-item-title">{{ entry.title || t('common.noTitle') }}</div>
           <!-- eslint-disable-next-line vue/no-v-html -->
           <div class="mention-item-snippet" v-html="getHighlightedSnippet(entry)" />
           <div class="mention-item-footer">
@@ -699,7 +712,7 @@ const jumpToLastMonth = (): void => {
               </n-tag>
             </div>
             <n-button size="tiny" tertiary type="primary" @click="openMentionDiary(entry)">
-              打开日记
+              {{ t('dashboard.openDiary') }}
             </n-button>
           </div>
         </div>

@@ -4,7 +4,7 @@
     <div class="list-header">
       <n-input
         v-model:value="searchKeyword"
-        placeholder="搜索档案..."
+        :placeholder="t('archiveList.searchPlaceholder')"
         clearable
         size="small"
         @update:value="handleSearch"
@@ -15,16 +15,16 @@
       </n-input>
       <div class="type-filter">
         <n-tag
-          v-for="t in typeOptions"
-          :key="t.value"
-          :type="selectedType === t.value ? 'primary' : 'default'"
-          :bordered="selectedType === t.value"
+          v-for="typeOption in typeOptions"
+          :key="typeOption.value"
+          :type="selectedType === typeOption.value ? 'primary' : 'default'"
+          :bordered="selectedType === typeOption.value"
           size="small"
           round
           clickable
-          @click="handleTypeFilter(t.value)"
+          @click="handleTypeFilter(typeOption.value)"
         >
-          {{ t.label }}
+          {{ typeOption.label }}
         </n-tag>
       </div>
     </div>
@@ -60,7 +60,7 @@
       </div>
 
       <div v-if="archives.length === 0 && !loading" class="list-empty">
-        <n-empty size="small" description="暂无档案" />
+        <n-empty size="small" :description="t('archiveList.empty')" />
       </div>
 
       <div v-if="loading" class="list-loading">
@@ -71,7 +71,7 @@
     <!-- 新建按钮 -->
     <div class="list-footer">
       <n-button block type="primary" ghost size="small" @click="$emit('create')">
-        + 新建档案
+        {{ t('archiveList.create') }}
       </n-button>
     </div>
   </div>
@@ -81,6 +81,7 @@
 import { onMounted, ref } from 'vue'
 import { NAvatar, NButton, NEmpty, NIcon, NInput, NSpin, NTag } from 'naive-ui'
 import { SearchOutline } from '@vicons/ionicons5'
+import { useI18n } from 'vue-i18n'
 import type { Archive, ArchiveType } from '../../../types/model'
 
 defineProps<{
@@ -92,17 +93,19 @@ defineEmits<{
   create: []
 }>()
 
+const { t } = useI18n()
+
 const typeOptions: { value: ArchiveType | 'all'; label: string }[] = [
-  { value: 'all', label: '全部' },
-  { value: 'person', label: '人物' },
-  { value: 'object', label: '物品' },
-  { value: 'other', label: '其他' }
+  { value: 'all', label: t('archiveList.all') },
+  { value: 'person', label: t('archiveList.person') },
+  { value: 'object', label: t('archiveList.object') },
+  { value: 'other', label: t('archiveList.other') }
 ]
 
 const typeLabels: Record<ArchiveType, string> = {
-  person: '人物',
-  object: '物品',
-  other: '其他'
+  person: t('archiveList.person'),
+  object: t('archiveList.object'),
+  other: t('archiveList.other')
 }
 
 const typeTagMap: Record<ArchiveType, 'info' | 'success' | 'warning'> = {

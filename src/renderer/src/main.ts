@@ -4,7 +4,9 @@ import { createPinia } from 'pinia'
 import { useUserStore } from './stores/user'
 import { useThemeStore } from './stores/themes'
 import { usePrivacyStore } from './stores/privacy'
+import { useLocaleStore } from './stores/locale'
 import router from './router'
+import { i18n } from './i18n'
 
 // Prevent browser default file-drop navigation; editor components handle file drop explicitly.
 const preventFileDropDefault = (event: DragEvent): void => {
@@ -21,10 +23,12 @@ const app = createApp(App)
 
 const pinia = createPinia()
 app.use(pinia)
+app.use(i18n)
 
 const userStore = useUserStore()
 const themeStore = useThemeStore()
 const privacyStore = usePrivacyStore()
+const localeStore = useLocaleStore()
 
 let appDataInitialized = false
 
@@ -45,7 +49,10 @@ async function ensureFroalaLoaded(): Promise<void> {
       import('vue-froala-wysiwyg'),
       import('froala-editor/css/froala_editor.pkgd.min.css'),
       import('froala-editor/css/froala_style.min.css'),
-      import('froala-editor/js/plugins.pkgd.min.js')
+      import('froala-editor/js/plugins.pkgd.min.js'),
+      import('froala-editor/js/languages/zh_cn.js'),
+      import('froala-editor/js/languages/ja.js'),
+      import('froala-editor/js/languages/ko.js')
     ]).then(([{ default: VueFroala }]) => {
       app.use(VueFroala)
     })
@@ -61,6 +68,7 @@ router.beforeEach(async (to) => {
 })
 
 async function bootstrap(): Promise<void> {
+  await localeStore.initFromStorage()
   await privacyStore.initFromStorage()
   if (!privacyStore.isLocked) {
     await initUnlockedAppData()

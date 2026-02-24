@@ -22,7 +22,7 @@
           <input
             v-model="diaryTitle"
             class="title-input"
-            placeholder="无标题"
+            :placeholder="t('today.titlePlaceholder')"
             @input="scheduleSave"
           />
           <span class="date-label">{{ currentDate }}</span>
@@ -37,7 +37,7 @@
             :class="{ active: selectedMood === mood.value }"
             @click="switchMood(mood.value)"
           >
-            {{ mood.emoji }} {{ mood.label }}
+            {{ mood.emoji }} {{ t(`today.mood.${mood.value}`) }}
           </button>
         </div>
 
@@ -57,6 +57,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useDialog } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
 import type { DiaryEntry, Mood } from '../../../../types/model'
 import DiaryList from '../../components/DiaryList.vue'
 import DiaryEditor from '../../components/DiaryEditor.vue'
@@ -76,6 +77,7 @@ const moods: MoodOption[] = [
 ]
 
 const dialog = useDialog()
+const { t, tm } = useI18n()
 const diaryListRef = ref<InstanceType<typeof DiaryList> | null>(null)
 const diaryEditorRef = ref<{ scrollToKeyword: (keyword: string) => boolean } | null>(null)
 
@@ -222,8 +224,8 @@ const currentDate = computed((): string => {
   const year = d.getFullYear()
   const month = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
-  const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
-  return `${year}年${month}月${day}日 ${weekdays[d.getDay()]}`
+  const weekdays = tm('today.weekdays') as string[]
+  return t('today.currentDate', { year, month, day, weekday: weekdays[d.getDay()] })
 })
 
 function resetEditorState(date: Date = new Date()): void {
@@ -269,10 +271,10 @@ async function handleCreate(dateStr?: string): Promise<void> {
 
 async function handleDeleteEntry(entry: DiaryEntry): Promise<void> {
   dialog.warning({
-    title: '删除确认',
-    content: `确定要删除「${entry.title || '无标题'}」吗？`,
-    positiveText: '删除',
-    negativeText: '取消',
+    title: t('today.deleteConfirmTitle'),
+    content: t('today.deleteConfirmContent', { title: entry.title || t('common.noTitle') }),
+    positiveText: t('today.deletePositive'),
+    negativeText: t('common.cancel'),
     onPositiveClick: async () => {
       try {
         await window.api.deleteDiaryEntry(entry.id)
@@ -311,9 +313,9 @@ async function loadEntryById(id: string, keyword?: string): Promise<void> {
     } else {
       resetEditorState()
       dialog.warning({
-        title: '提示',
-        content: '日记不存在或已删除',
-        positiveText: '知道了'
+        title: t('today.tipTitle'),
+        content: t('today.missingDiary'),
+        positiveText: t('diaryEditor.acknowledge')
       })
     }
   } catch (error) {
