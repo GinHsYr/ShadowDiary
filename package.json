@@ -1,6 +1,6 @@
 {
   "name": "shadow_diary",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "A simple diary app",
   "main": "./out/main/index.js",
   "author": "HsYr",
