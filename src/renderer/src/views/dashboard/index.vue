@@ -13,7 +13,8 @@ import {
   NModal,
   NTag,
   NSpin,
-  NPagination
+  NPagination,
+  NProgress
 } from 'naive-ui'
 import { ChevronBackOutline, ChevronForwardOutline, TodayOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
@@ -46,6 +47,11 @@ const mentionPageSize = 20
 const mentionPageCount = computed(() =>
   Math.max(1, Math.ceil(mentionTotal.value / mentionPageSize))
 )
+const mentionTagColor = {
+  color: 'var(--app-accent-12, rgba(24, 160, 88, 0.12))',
+  borderColor: 'var(--app-accent-20, rgba(24, 160, 88, 0.2))',
+  textColor: 'var(--app-accent-color, var(--n-color-target, #18a058))'
+}
 
 // 加载统计数据
 async function loadStats(): Promise<void> {
@@ -110,6 +116,7 @@ const pieChartOption = computed(() => {
     title: {
       text: '人物提及次数',
       left: 'center',
+      top: 8,
       textStyle: {
         fontSize: 14,
         fontWeight: 600
@@ -120,15 +127,17 @@ const pieChartOption = computed(() => {
       formatter: '{b}: {c}次 ({d}%)'
     },
     legend: {
-      orient: 'vertical',
-      left: 'left',
-      top: 'middle'
+      type: 'scroll',
+      orient: 'horizontal',
+      left: 12,
+      right: 12,
+      bottom: 0
     },
     series: [
       {
         type: 'pie',
         radius: ['40%', '70%'],
-        center: ['60%', '55%'],
+        center: ['50%', '52%'],
         avoidLabelOverlap: true,
         itemStyle: {
           borderRadius: 6,
@@ -289,6 +298,16 @@ function openMentionDiary(entry: PersonMentionDetailItem): void {
 
 // ========== 日历相关 ==========
 const currentMonth = ref(new Date())
+const selectedMonthTotalDays = computed(() => {
+  const year = currentMonth.value.getFullYear()
+  const month = currentMonth.value.getMonth()
+  return new Date(year, month + 1, 0).getDate()
+})
+const selectedMonthWrittenDays = computed(() => diaryDates.value.size)
+const selectedMonthWrittenPercent = computed(() => {
+  if (selectedMonthTotalDays.value === 0) return 0
+  return Number(((selectedMonthWrittenDays.value / selectedMonthTotalDays.value) * 100).toFixed(1))
+})
 
 const monthLabel = computed(() => {
   const y = currentMonth.value.getFullYear()
@@ -621,7 +640,23 @@ const jumpToLastMonth = (): void => {
 
     <!-- 人物提及饼图 -->
     <n-card v-if="personMentionData.length > 0" :bordered="false" class="chart-card">
-      <v-chart :option="pieChartOption" autoresize class="pie-chart" @click="handlePieClick" />
+      <div class="chart-content">
+        <v-chart :option="pieChartOption" autoresize class="pie-chart" @click="handlePieClick" />
+        <div class="month-progress-panel">
+          <div class="month-progress-title">本月写作完成度</div>
+          <n-progress
+            type="circle"
+            style="width: 150px"
+            :percentage="selectedMonthWrittenPercent"
+            :stroke-width="20"
+            :color="'var(--app-accent-color, var(--n-color-target, #18a058))'"
+            :rail-color="'var(--app-accent-12, var(--n-border-color, rgba(0, 0, 0, 0.12)))'"
+          />
+          <div class="month-progress-meta">
+            已写 {{ selectedMonthWrittenDays }} / {{ selectedMonthTotalDays }} 天
+          </div>
+        </div>
+      </div>
     </n-card>
 
     <n-modal
@@ -657,7 +692,7 @@ const jumpToLastMonth = (): void => {
                 :key="`${entry.id}-${kw}`"
                 size="small"
                 round
-                type="success"
+                :color="mentionTagColor"
                 :bordered="false"
               >
                 {{ kw }}
@@ -927,9 +962,51 @@ const jumpToLastMonth = (): void => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
-.pie-chart {
-  height: 300px;
+.chart-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  align-items: center;
+  gap: 24px;
   width: 100%;
+}
+
+.pie-chart {
+  width: 100%;
+  height: 230px;
+}
+
+.month-progress-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--n-text-color, #333);
+}
+
+.month-progress-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.month-progress-meta {
+  font-size: 13px;
+  color: var(--n-text-color-3, #888);
+  text-align: center;
+}
+
+.month-progress-panel :deep(.n-progress-content) {
+  color: var(--app-accent-color, var(--n-color-target, #18a058));
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .chart-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pie-chart {
   cursor: pointer;
 }
 

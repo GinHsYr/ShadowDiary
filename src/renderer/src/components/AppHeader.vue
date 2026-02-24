@@ -70,6 +70,12 @@ const moodOptions = [
   { label: '😴 疲惫', value: 'tired' }
 ]
 
+const accentTagColor = {
+  color: 'var(--app-accent-12, rgba(24, 160, 88, 0.12))',
+  borderColor: 'var(--app-accent-20, rgba(24, 160, 88, 0.2))',
+  textColor: 'var(--app-accent-color, var(--n-color-target, #18a058))'
+}
+
 const activeFilterCount = computed(() => {
   let count = 0
   if (filterMood.value) count++
@@ -631,7 +637,7 @@ onBeforeUnmount(() => {
                         <n-tag size="tiny" :bordered="false">{{
                           formatDate(entry.createdAt)
                         }}</n-tag>
-                        <n-tag size="tiny" type="success" :bordered="false">{{
+                        <n-tag size="tiny" :color="accentTagColor" :bordered="false">{{
                           moodLabels[entry.mood] || entry.mood
                         }}</n-tag>
                         <n-tag
