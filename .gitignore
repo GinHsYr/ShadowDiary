@@ -6,7 +6,6 @@ out
 *.log*
 .claude
 .vscode
-build
 opencode.json
 CLAUDE.md
 scripts

@@ -3,7 +3,7 @@ productName: 影迹
 directories:
   buildResources: build
 files:
-  - out/**
+  - out/main/**
   - package.json
 asarUnpack:
   - '**/*.node'
@@ -23,7 +23,9 @@ nsis:
 msi:
   artifactName: ShadowDiary-${version}-${os}-${arch}.${ext}
 mac:
-  entitlementsInherit: build/entitlements.mac.plist
+  entitlements: build/entitlements.mac.plist
+  icon: build/icon.icns
+  identity: null
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
