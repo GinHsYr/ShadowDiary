@@ -140,12 +140,18 @@ function handleCancelCreate(): void {
   isCreating.value = false
 }
 
+async function flushSave(): Promise<void> {
+  await archiveDetailRef.value?.flushSave()
+}
+
 onBeforeUnmount(() => {
-  void archiveDetailRef.value?.flushSave().catch((error) => {
+  void flushSave().catch((error) => {
     console.error('页面卸载时保存档案失败:', error)
   })
   cleanupResizeListeners()
 })
+
+defineExpose({ flushSave })
 </script>
 
 <style scoped>

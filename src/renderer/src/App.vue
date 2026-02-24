@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import {
+  NButton,
   NCard,
   NConfigProvider,
   NDialogProvider,
+  NInput,
   NInputOtp,
   NLayout,
   NLayoutContent
@@ -19,13 +21,24 @@ const privacy = usePrivacyStore()
 const OTP_LENGTH = 6
 const USER_ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'] as const
 const password = ref<string[]>([])
+const windowsPassword = ref('')
 const unlockError = ref('')
 const unlocking = ref(false)
-const passwordValue = computed(() => password.value.join(''))
+const passwordValue = computed(() =>
+  privacy.usesWindowsPassword ? windowsPassword.value : password.value.join('')
+)
 const unlockStatus = computed<'error' | undefined>(() => (unlockError.value ? 'error' : undefined))
 let idleTimer: number | null = null
 let lastActivityAt = Date.now()
 let removeSystemLockListener: (() => void) | null = null
+let removeBeforeQuitListener: (() => void) | null = null
+let isHandlingBeforeQuit = false
+
+type FlushableRouteView = {
+  flushSave?: () => Promise<void>
+}
+
+const activeRouteViewRef = ref<FlushableRouteView | null>(null)
 
 const showLockOverlay = computed(() => privacy.isInitialized && privacy.isLocked)
 
@@ -51,8 +64,15 @@ function handlePasswordFinish(value: string[]): void {
   void handleUnlock()
 }
 
+function handleWindowsPasswordInput(value: string): void {
+  windowsPassword.value = value
+  if (unlockError.value) {
+    unlockError.value = ''
+  }
+}
+
 function canAutoLockByPrivacy(): boolean {
-  return privacy.isInitialized && privacy.isEnabled && privacy.hasPassword
+  return privacy.isInitialized && privacy.isEnabled && privacy.hasCredential
 }
 
 function clearIdleTimer(): void {
@@ -120,10 +140,28 @@ function handleVisibilityChange(): void {
   }
 }
 
+async function flushBeforeQuit(): Promise<void> {
+  if (isHandlingBeforeQuit) return
+  isHandlingBeforeQuit = true
+
+  try {
+    await activeRouteViewRef.value?.flushSave?.()
+  } catch (error) {
+    console.error('退出前保存失败:', error)
+  } finally {
+    window.api.notifyAppBeforeQuitDone()
+  }
+}
+
 async function handleUnlock(): Promise<void> {
   if (unlocking.value) return
 
-  if (!isValidPrivacyPassword(passwordValue.value)) {
+  if (privacy.usesWindowsPassword && !passwordValue.value) {
+    unlockError.value = '请输入 Windows 登录密码'
+    return
+  }
+
+  if (!privacy.usesWindowsPassword && !isValidPrivacyPassword(passwordValue.value)) {
     unlockError.value = '请输入6位数字密码'
     return
   }
@@ -132,11 +170,15 @@ async function handleUnlock(): Promise<void> {
   try {
     const ok = await privacy.unlockWithPassword(passwordValue.value)
     if (!ok) {
-      unlockError.value = '密码错误，请重试'
+      unlockError.value = privacy.usesWindowsPassword
+        ? 'Windows 登录密码错误，请重试'
+        : '密码错误，请重试'
       password.value = []
+      windowsPassword.value = ''
       return
     }
     password.value = []
+    windowsPassword.value = ''
     unlockError.value = ''
   } catch (error) {
     console.error('解锁失败:', error)
@@ -172,12 +214,12 @@ watch(
     [
       privacy.isInitialized,
       privacy.isEnabled,
-      privacy.hasPassword,
+      privacy.hasCredential,
       privacy.isLocked,
       privacy.idleLockMs
     ] as const,
-  ([isInitialized, isEnabled, hasPassword, isLocked], previous) => {
-    const shouldMonitor = isInitialized && isEnabled && hasPassword
+  ([isInitialized, isEnabled, hasCredential, isLocked], previous) => {
+    const shouldMonitor = isInitialized && isEnabled && hasCredential
     if (!shouldMonitor || isLocked) {
       clearIdleTimer()
       return
@@ -204,6 +246,9 @@ onMounted(() => {
     privacy.lock()
     clearIdleTimer()
   })
+  removeBeforeQuitListener = window.api.onAppBeforeQuit(() => {
+    void flushBeforeQuit()
+  })
 
   evaluateIdleLock()
 })
@@ -220,6 +265,10 @@ onBeforeUnmount(() => {
     removeSystemLockListener()
     removeSystemLockListener = null
   }
+  if (removeBeforeQuitListener) {
+    removeBeforeQuitListener()
+    removeBeforeQuitListener = null
+  }
 })
 </script>
 
@@ -234,7 +283,9 @@ onBeforeUnmount(() => {
           <n-layout>
             <AppHeader />
             <n-layout-content class="main-content">
-              <router-view v-if="privacy.isUnlocked" />
+              <router-view v-if="privacy.isUnlocked" v-slot="{ Component }">
+                <component :is="Component" ref="activeRouteViewRef" />
+              </router-view>
             </n-layout-content>
           </n-layout>
         </n-layout>
@@ -242,10 +293,20 @@ onBeforeUnmount(() => {
         <div v-if="showLockOverlay" class="privacy-lock-overlay">
           <n-card class="privacy-lock-card" :bordered="false">
             <h2 class="privacy-lock-title">隐私保护</h2>
-            <p class="privacy-lock-description">请输入 6 位数字密码以解锁应用</p>
+            <p class="privacy-lock-description">
+              {{
+                privacy.usesWindowsPassword
+                  ? '请输入 Windows 登录密码以解锁应用'
+                  : '请输入 6 位数字密码以解锁应用'
+              }}
+            </p>
 
-            <div class="privacy-lock-form">
+            <div
+              class="privacy-lock-form"
+              :class="{ 'privacy-lock-form--windows': privacy.usesWindowsPassword }"
+            >
               <n-input-otp
+                v-if="!privacy.usesWindowsPassword"
                 :value="password"
                 :length="OTP_LENGTH"
                 mask
@@ -255,6 +316,20 @@ onBeforeUnmount(() => {
                 @update:value="handlePasswordInput"
                 @finish="handlePasswordFinish"
               />
+              <template v-else>
+                <n-input
+                  :value="windowsPassword"
+                  type="password"
+                  show-password-on="mousedown"
+                  clearable
+                  :disabled="unlocking"
+                  :status="unlockStatus"
+                  placeholder="Windows 登录密码"
+                  @update:value="handleWindowsPasswordInput"
+                  @keyup.enter="handleUnlock"
+                />
+                <n-button type="primary" :loading="unlocking" @click="handleUnlock">解锁</n-button>
+              </template>
             </div>
           </n-card>
         </div>
@@ -342,6 +417,11 @@ body {
   margin-top: 18px;
   display: flex;
   justify-content: center;
+}
+
+.privacy-lock-form--windows {
+  flex-direction: column;
+  gap: 10px;
 }
 
 @media (max-width: 768px) {

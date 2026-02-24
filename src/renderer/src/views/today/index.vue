@@ -381,6 +381,8 @@ onBeforeUnmount(() => {
     console.error('离开页面保存失败:', error)
   })
 })
+
+defineExpose({ flushSave })
 </script>
 
 <style scoped>

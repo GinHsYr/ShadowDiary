@@ -13,7 +13,7 @@
             <div class="setting-item">
               <div class="setting-info">
                 <label class="setting-label">深色模式</label>
-                <span class="setting-description">切换应用主题颜色</span>
+                <span class="setting-description">深色模式切换</span>
               </div>
               <n-switch :value="theme.isDark" @update:value="handleThemeChange" />
             </div>
@@ -52,15 +52,36 @@
             <div class="setting-item">
               <div class="setting-info">
                 <label class="setting-label">隐私保护开关</label>
-                <span class="setting-description">
-                  开启后，重新进入应用需要提供密码
-                </span>
+                <span class="setting-description"> 开启后，重新进入应用需要提供解锁凭证 </span>
               </div>
               <n-switch
                 :value="privacy.isEnabled"
                 :loading="privacyLoading"
                 @update:value="handlePrivacyToggle"
               />
+            </div>
+
+            <div class="setting-item setting-item-top">
+              <div class="setting-info">
+                <label class="setting-label">解锁方式</label>
+                <span class="setting-description">
+                  {{
+                    privacy.isWindowsPasswordSupported
+                      ? '可选择 6 位数字密码或 Windows 登录密码'
+                      : '当前系统仅支持 6 位数字密码'
+                  }}
+                </span>
+              </div>
+
+              <div class="privacy-actions privacy-actions--end">
+                <n-select
+                  :value="privacy.authMethod"
+                  :options="privacyAuthMethodOptions"
+                  :disabled="privacyLoading"
+                  style="width: 210px"
+                  @update:value="handlePrivacyAuthMethodChange"
+                />
+              </div>
             </div>
 
             <div v-if="privacy.isEnabled" class="setting-item setting-item-top">
@@ -82,7 +103,10 @@
               </div>
             </div>
 
-            <div v-if="privacy.isEnabled" class="setting-item setting-item-top">
+            <div
+              v-if="privacy.isEnabled && privacy.authMethod === 'pin'"
+              class="setting-item setting-item-top"
+            >
               <div class="setting-info">
                 <label class="setting-label">密码设置</label>
                 <span class="setting-description">
@@ -105,7 +129,23 @@
               </div>
             </div>
 
-            <div v-if="privacyMessage" class="update-message" :class="privacyMessageType">
+            <div
+              v-if="privacy.isEnabled && privacy.authMethod === 'windows'"
+              class="setting-item setting-item-top"
+            >
+              <div class="setting-info">
+                <label class="setting-label">Windows 登录密码</label>
+                <span class="setting-description">
+                  当前使用系统账户密码进行解锁，无需额外设置本地隐私密码
+                </span>
+              </div>
+            </div>
+
+            <div
+              v-if="privacyMessage"
+              class="update-message privacy-update-message"
+              :class="privacyMessageType"
+            >
               <span class="message-text">{{ privacyMessage }}</span>
             </div>
           </n-space>
@@ -268,6 +308,46 @@
     </n-modal>
 
     <n-modal
+      v-model:show="showWindowsPasswordModal"
+      preset="card"
+      :title="windowsPasswordModalTitle"
+      :bordered="false"
+      style="width: 440px; border-radius: 12px"
+      @close="handleCloseWindowsPasswordModal"
+    >
+      <n-space vertical :size="12">
+        <p class="privacy-modal-desc">{{ windowsPasswordModalDescription }}</p>
+
+        <div class="setting-info">
+          <label class="setting-label">Windows 登录密码</label>
+          <n-input
+            :value="windowsPasswordForDisable"
+            type="password"
+            show-password-on="mousedown"
+            :status="windowsPasswordStatus"
+            placeholder="请输入 Windows 登录密码"
+            @update:value="handleWindowsPasswordInput"
+          />
+        </div>
+      </n-space>
+
+      <template #footer>
+        <n-space justify="end">
+          <n-button :disabled="privacyLoading" @click="handleCloseWindowsPasswordModal"
+            >取消</n-button
+          >
+          <n-button
+            type="primary"
+            :loading="privacyLoading"
+            @click="handleSubmitWindowsPasswordModal"
+          >
+            {{ windowsPasswordModalMode === 'enable' ? '验证并开启' : '确认关闭' }}
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <n-modal
       v-model:show="showBackupPasswordModal"
       preset="card"
       :title="backupPasswordModalTitle"
@@ -395,6 +475,7 @@ import {
 } from '@renderer/stores/themes'
 import {
   isValidPrivacyPassword,
+  type PrivacyAuthMethod,
   PRIVACY_IDLE_LOCK_MINUTE_OPTIONS,
   usePrivacyStore
 } from '@renderer/stores/privacy'
@@ -488,6 +569,10 @@ const privacyMessage = ref('')
 const privacyMessageType = ref<'success' | 'error' | 'info'>('info')
 const showPasswordModal = ref(false)
 const passwordModalMode = ref<'setup' | 'reset' | 'disable'>('setup')
+const showWindowsPasswordModal = ref(false)
+const windowsPasswordModalMode = ref<'enable' | 'disable'>('disable')
+const windowsPasswordForDisable = ref('')
+const windowsPasswordStatus = ref<'error' | undefined>(undefined)
 const currentPassword = ref<string[]>([])
 const newPassword = ref<string[]>([])
 const confirmPassword = ref<string[]>([])
@@ -495,6 +580,7 @@ const currentPasswordStatus = ref<'error' | undefined>(undefined)
 const newPasswordStatus = ref<'error' | undefined>(undefined)
 const confirmPasswordStatus = ref<'error' | undefined>(undefined)
 const pendingEnableAfterSet = ref(false)
+const pendingAuthMethodAfterSet = ref<PrivacyAuthMethod | null>(null)
 const removeUpdateListeners: Array<() => void> = []
 const dialog = useDialog()
 const currentPasswordValue = computed(() => currentPassword.value.join(''))
@@ -508,6 +594,17 @@ const backupPasswordModalDescription = computed(() =>
     ? '请设置本次备份口令，导入此备份时需要该口令'
     : '请输入导出时设置的备份口令'
 )
+const privacyAuthMethodOptions = computed(() => {
+  const options: Array<{ label: string; value: PrivacyAuthMethod }> = [
+    { label: '6 位数字密码', value: 'pin' }
+  ]
+
+  if (privacy.isWindowsPasswordSupported) {
+    options.push({ label: 'Windows 登录密码', value: 'windows' })
+  }
+
+  return options
+})
 
 const appInfo = ref<AppInfo>({
   name: '',
@@ -588,10 +685,25 @@ const passwordModalTitle = computed(() => {
 })
 
 const passwordModalDescription = computed(() => {
-  if (passwordModalMode.value === 'setup') return '请设置6位数字密码'
+  if (passwordModalMode.value === 'setup') {
+    if (pendingAuthMethodAfterSet.value === 'pin' && privacy.authMethod !== 'pin') {
+      return '请先设置6位数字密码，保存后将切换为数字密码解锁'
+    }
+    return '请设置6位数字密码'
+  }
   if (passwordModalMode.value === 'disable') return '请输入当前密码以关闭隐私保护'
   return '请先验证原密码，再设置新密码'
 })
+
+const windowsPasswordModalTitle = computed(() =>
+  windowsPasswordModalMode.value === 'enable' ? '开启隐私保护' : '关闭隐私保护'
+)
+
+const windowsPasswordModalDescription = computed(() =>
+  windowsPasswordModalMode.value === 'enable'
+    ? '请输入 Windows 登录密码，验证通过后开启隐私保护'
+    : '请输入 Windows 登录密码以关闭隐私保护'
+)
 
 function allowDigitInput(char: string): boolean {
   return /^\d$/.test(char)
@@ -612,6 +724,11 @@ const handleConfirmPasswordInput = (value: string[]): void => {
   confirmPasswordStatus.value = undefined
 }
 
+const handleWindowsPasswordInput = (value: string): void => {
+  windowsPasswordForDisable.value = value
+  windowsPasswordStatus.value = undefined
+}
+
 const resetPasswordStatuses = (): void => {
   currentPasswordStatus.value = undefined
   newPasswordStatus.value = undefined
@@ -625,9 +742,19 @@ const resetPasswordModalForm = (): void => {
   resetPasswordStatuses()
 }
 
-const openPasswordModal = (mode: 'setup' | 'reset' | 'disable', pendingEnable = false): void => {
+const resetWindowsPasswordModalForm = (): void => {
+  windowsPasswordForDisable.value = ''
+  windowsPasswordStatus.value = undefined
+}
+
+const openPasswordModal = (
+  mode: 'setup' | 'reset' | 'disable',
+  pendingEnable = false,
+  pendingAuthMethod: PrivacyAuthMethod | null = null
+): void => {
   passwordModalMode.value = mode
   pendingEnableAfterSet.value = pendingEnable
+  pendingAuthMethodAfterSet.value = pendingAuthMethod
   resetPasswordModalForm()
   showPasswordModal.value = true
 }
@@ -635,7 +762,20 @@ const openPasswordModal = (mode: 'setup' | 'reset' | 'disable', pendingEnable = 
 const handleClosePasswordModal = (): void => {
   showPasswordModal.value = false
   pendingEnableAfterSet.value = false
+  pendingAuthMethodAfterSet.value = null
   resetPasswordModalForm()
+}
+
+const openWindowsPasswordModal = (mode: 'enable' | 'disable'): void => {
+  windowsPasswordModalMode.value = mode
+  resetWindowsPasswordModalForm()
+  showWindowsPasswordModal.value = true
+}
+
+const handleCloseWindowsPasswordModal = (): void => {
+  showWindowsPasswordModal.value = false
+  windowsPasswordModalMode.value = 'disable'
+  resetWindowsPasswordModalForm()
 }
 
 const enablePrivacy = async (): Promise<void> => {
@@ -657,11 +797,19 @@ const enablePrivacy = async (): Promise<void> => {
 
 const handlePrivacyToggle = (value: boolean): void => {
   if (value) {
-    if (!privacy.hasPassword) {
+    if (privacy.authMethod === 'pin' && !privacy.hasPassword) {
       openPasswordModal('setup', true)
       return
     }
+    if (privacy.authMethod === 'windows') {
+      openWindowsPasswordModal('enable')
+      return
+    }
     void enablePrivacy()
+    return
+  }
+  if (privacy.usesWindowsPassword) {
+    openWindowsPasswordModal('disable')
     return
   }
   openPasswordModal('disable')
@@ -669,6 +817,30 @@ const handlePrivacyToggle = (value: boolean): void => {
 
 const handleOpenPasswordModal = (): void => {
   openPasswordModal(privacy.hasPassword ? 'reset' : 'setup')
+}
+
+const handlePrivacyAuthMethodChange = async (value: string | number | null): Promise<void> => {
+  if (value !== 'pin' && value !== 'windows') return
+  if (privacyLoading.value || value === privacy.authMethod) return
+
+  if (value === 'pin' && !privacy.hasPassword) {
+    openPasswordModal('setup', privacy.isEnabled, value)
+    return
+  }
+
+  privacyLoading.value = true
+  try {
+    await privacy.setAuthMethod(value)
+    privacyMessage.value =
+      value === 'windows' ? '已切换为 Windows 登录密码解锁' : '已切换为数字密码解锁'
+    privacyMessageType.value = 'success'
+  } catch (error) {
+    console.error('更新隐私解锁方式失败:', error)
+    privacyMessage.value = `更新失败：${String(error)}`
+    privacyMessageType.value = 'error'
+  } finally {
+    privacyLoading.value = false
+  }
 }
 
 const handlePrivacyIdleMinuteChange = async (value: number | null): Promise<void> => {
@@ -742,9 +914,17 @@ const handleSubmitPasswordModal = async (): Promise<void> => {
       privacyMessage.value = '密码重设成功'
     } else {
       await privacy.setPassword(newPasswordValue.value)
-      if (pendingEnableAfterSet.value) {
+      if (
+        pendingAuthMethodAfterSet.value &&
+        pendingAuthMethodAfterSet.value !== privacy.authMethod
+      ) {
+        await privacy.setAuthMethod(pendingAuthMethodAfterSet.value)
+      }
+      if (pendingEnableAfterSet.value && !privacy.isEnabled) {
         await privacy.enablePrivacy()
         privacyMessage.value = '密码设置成功，隐私保护已开启'
+      } else if (pendingAuthMethodAfterSet.value === 'pin') {
+        privacyMessage.value = '密码设置成功，已切换为数字密码解锁'
       } else {
         privacyMessage.value = '密码设置成功'
       }
@@ -760,6 +940,41 @@ const handleSubmitPasswordModal = async (): Promise<void> => {
       privacyMessage.value = `保存失败：${String(error)}`
       privacyMessageType.value = 'error'
     }
+  } finally {
+    privacyLoading.value = false
+  }
+}
+
+const handleSubmitWindowsPasswordModal = async (): Promise<void> => {
+  if (privacyLoading.value) return
+
+  windowsPasswordStatus.value = undefined
+  if (!windowsPasswordForDisable.value) {
+    windowsPasswordStatus.value = 'error'
+    return
+  }
+
+  privacyLoading.value = true
+  try {
+    const verified = await window.api.verifyWindowsPassword(windowsPasswordForDisable.value)
+    if (!verified) {
+      windowsPasswordStatus.value = 'error'
+      return
+    }
+
+    if (windowsPasswordModalMode.value === 'enable') {
+      await privacy.enablePrivacy()
+      privacyMessage.value = '隐私保护已开启'
+    } else {
+      await privacy.disablePrivacy()
+      privacyMessage.value = '隐私保护已关闭'
+    }
+    privacyMessageType.value = 'success'
+    handleCloseWindowsPasswordModal()
+  } catch (error) {
+    console.error('处理隐私保护失败:', error)
+    privacyMessage.value = `${windowsPasswordModalMode.value === 'enable' ? '开启' : '关闭'}失败：${String(error)}`
+    privacyMessageType.value = 'error'
   } finally {
     privacyLoading.value = false
   }
@@ -793,6 +1008,15 @@ const handleCheckUpdate = async (): Promise<void> => {
   }
 }
 
+function unwrapIpcErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error)
+  const prefix = "Error invoking remote method '"
+  if (!raw.startsWith(prefix)) return raw
+  const separator = raw.indexOf(': ')
+  if (separator === -1) return raw
+  return raw.slice(separator + 2)
+}
+
 const handleDownloadUpdate = async (): Promise<void> => {
   downloading.value = true
   downloadProgress.value = 0
@@ -802,7 +1026,7 @@ const handleDownloadUpdate = async (): Promise<void> => {
     await window.api.downloadUpdate()
   } catch (error) {
     downloading.value = false
-    updateMessage.value = `下载更新失败: ${error}`
+    updateMessage.value = `下载更新失败: ${unwrapIpcErrorMessage(error)}`
     updateMessageType.value = 'error'
   }
 }
@@ -1213,8 +1437,14 @@ const handleImportData = (): void => {
 }
 
 .update-message.success {
-  background-color: rgba(24, 160, 88, 0.1);
-  color: #18a058;
+  background-color: var(--app-accent-12, rgba(24, 160, 88, 0.12));
+  color: var(--app-accent-color, #18a058);
+}
+
+.privacy-update-message.success {
+  background-color: var(--app-accent-12, rgba(24, 160, 88, 0.12));
+  border: 1px solid var(--app-accent-20, rgba(24, 160, 88, 0.2));
+  color: var(--app-accent-color, #18a058);
 }
 
 .update-message.error {

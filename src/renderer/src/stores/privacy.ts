@@ -3,8 +3,25 @@ import { defineStore } from 'pinia'
 const PRIVACY_ENABLED_KEY = 'privacy.enabled'
 const PRIVACY_PASSWORD_HASH_KEY = 'privacy.passwordHash'
 const PRIVACY_IDLE_LOCK_MINUTES_KEY = 'privacy.idleLockMinutes'
+const PRIVACY_AUTH_METHOD_KEY = 'privacy.authMethod'
+const DEFAULT_PRIVACY_AUTH_METHOD = 'pin'
 const DEFAULT_PRIVACY_IDLE_LOCK_MINUTES = 5
 export const PRIVACY_IDLE_LOCK_MINUTE_OPTIONS = [1, 5, 10, 15, 30] as const
+export type PrivacyAuthMethod = 'pin' | 'windows'
+
+function isPrivacyAuthMethod(value: string): value is PrivacyAuthMethod {
+  return value === 'pin' || value === 'windows'
+}
+
+function normalizeAuthMethod(
+  value: string | null | undefined,
+  windowsPasswordSupported: boolean
+): PrivacyAuthMethod {
+  const trimmed = value?.trim() || ''
+  if (!isPrivacyAuthMethod(trimmed)) return DEFAULT_PRIVACY_AUTH_METHOD
+  if (trimmed === 'windows' && !windowsPasswordSupported) return DEFAULT_PRIVACY_AUTH_METHOD
+  return trimmed
+}
 
 function normalizeIdleLockMinutes(value: string | null | undefined): number {
   const parsed = Number(value)
@@ -37,14 +54,25 @@ export const usePrivacyStore = defineStore('privacy', {
     isLocked: false,
     isInitialized: false,
     passwordHash: '',
-    idleLockMinutes: DEFAULT_PRIVACY_IDLE_LOCK_MINUTES
+    idleLockMinutes: DEFAULT_PRIVACY_IDLE_LOCK_MINUTES,
+    authMethod: DEFAULT_PRIVACY_AUTH_METHOD as PrivacyAuthMethod,
+    isWindowsPasswordSupported: false
   }),
 
   getters: {
     isUnlocked(state): boolean {
       return !state.isLocked
     },
+    usesWindowsPassword(state): boolean {
+      return state.authMethod === 'windows'
+    },
     hasPassword(state): boolean {
+      return state.passwordHash.length > 0
+    },
+    hasCredential(state): boolean {
+      if (state.authMethod === 'windows') {
+        return state.isWindowsPasswordSupported
+      }
       return state.passwordHash.length > 0
     },
     idleLockMs(state): number {
@@ -55,25 +83,46 @@ export const usePrivacyStore = defineStore('privacy', {
   actions: {
     async initFromStorage(): Promise<void> {
       try {
-        const [enabledSetting, passwordHash, idleLockMinutesSetting] = await Promise.all([
+        const [
+          enabledSetting,
+          passwordHash,
+          idleLockMinutesSetting,
+          authMethodSetting,
+          authSupport
+        ] = await Promise.all([
           window.api.getSetting(PRIVACY_ENABLED_KEY),
           window.api.getSetting(PRIVACY_PASSWORD_HASH_KEY),
-          window.api.getSetting(PRIVACY_IDLE_LOCK_MINUTES_KEY)
+          window.api.getSetting(PRIVACY_IDLE_LOCK_MINUTES_KEY),
+          window.api.getSetting(PRIVACY_AUTH_METHOD_KEY),
+          window.api.getPrivacyAuthSupport()
         ])
 
         const enabled = enabledSetting === '1'
         const normalizedHash = passwordHash?.trim() || ''
         const idleLockMinutes = normalizeIdleLockMinutes(idleLockMinutesSetting)
+        const windowsPasswordSupported = !!authSupport?.windowsPassword
+        const authMethod = normalizeAuthMethod(authMethodSetting, windowsPasswordSupported)
+
         this.isEnabled = enabled
         this.passwordHash = normalizedHash
         this.idleLockMinutes = idleLockMinutes
-        this.isLocked = enabled && normalizedHash.length > 0
+        this.authMethod = authMethod
+        this.isWindowsPasswordSupported = windowsPasswordSupported
+        this.isLocked = enabled && this.hasCredential
+
+        if ((authMethodSetting?.trim() || '') !== authMethod) {
+          void window.api
+            .setSetting(PRIVACY_AUTH_METHOD_KEY, authMethod)
+            .catch((error) => console.error('保存隐私认证方式失败:', error))
+        }
       } catch (error) {
         console.error('加载隐私设置失败:', error)
         this.isEnabled = false
         this.isLocked = false
         this.passwordHash = ''
         this.idleLockMinutes = DEFAULT_PRIVACY_IDLE_LOCK_MINUTES
+        this.authMethod = DEFAULT_PRIVACY_AUTH_METHOD
+        this.isWindowsPasswordSupported = false
       } finally {
         this.isInitialized = true
       }
@@ -85,11 +134,7 @@ export const usePrivacyStore = defineStore('privacy', {
         return true
       }
 
-      if (!isValidPrivacyPassword(password)) {
-        return false
-      }
-
-      const matches = await this.verifyPassword(password)
+      const matches = await this.verifyCredential(password)
       if (!matches) {
         return false
       }
@@ -99,7 +144,7 @@ export const usePrivacyStore = defineStore('privacy', {
     },
 
     lock(): void {
-      if (!this.isEnabled || !this.hasPassword) return
+      if (!this.isEnabled || !this.hasCredential) return
       this.isLocked = true
     },
 
@@ -118,7 +163,7 @@ export const usePrivacyStore = defineStore('privacy', {
     },
 
     async disablePrivacyWithPassword(password: string): Promise<void> {
-      const matched = await this.verifyPassword(password)
+      const matched = await this.verifyCredential(password)
       if (!matched) {
         throw new Error('原密码错误')
       }
@@ -140,6 +185,10 @@ export const usePrivacyStore = defineStore('privacy', {
     },
 
     async verifyPassword(password: string): Promise<boolean> {
+      return await this.verifyCredential(password)
+    },
+
+    async verifyPinPassword(password: string): Promise<boolean> {
       if (!isValidPrivacyPassword(password) || !this.passwordHash) {
         return false
       }
@@ -148,8 +197,32 @@ export const usePrivacyStore = defineStore('privacy', {
       return hashed === this.passwordHash
     },
 
+    async verifyCredential(password: string): Promise<boolean> {
+      if (this.authMethod === 'windows') {
+        if (!this.isWindowsPasswordSupported || !password) return false
+        return await window.api.verifyWindowsPassword(password)
+      }
+      return await this.verifyPinPassword(password)
+    },
+
+    async setAuthMethod(method: PrivacyAuthMethod): Promise<void> {
+      const normalizedMethod = normalizeAuthMethod(method, this.isWindowsPasswordSupported)
+      if (normalizedMethod !== method) {
+        throw new Error('当前系统不支持 Windows 登录密码')
+      }
+      if (normalizedMethod === 'pin' && this.isEnabled && !this.hasPassword) {
+        throw new Error('请先设置6位数字密码')
+      }
+
+      await window.api.setSetting(PRIVACY_AUTH_METHOD_KEY, normalizedMethod)
+      this.authMethod = normalizedMethod
+      if (this.isEnabled) {
+        this.isLocked = false
+      }
+    },
+
     async updatePasswordWithCurrent(currentPassword: string, newPassword: string): Promise<void> {
-      const currentValid = await this.verifyPassword(currentPassword)
+      const currentValid = await this.verifyPinPassword(currentPassword)
       if (!currentValid) {
         throw new Error('原密码错误')
       }

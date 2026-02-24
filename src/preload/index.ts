@@ -37,6 +37,8 @@ const api: DiaryAPI = {
   getSetting: (key) => invoke('settings:get', key),
   setSetting: (key, value) => invoke('settings:set', key, value),
   getAllSettings: () => invoke('settings:getAll'),
+  getPrivacyAuthSupport: () => invoke('privacy:getAuthSupport'),
+  verifyWindowsPassword: (password) => invoke('privacy:verifyWindowsPassword', password),
   exportData: (options) => invoke('data:export', options),
   importData: (options) => invoke('data:import', options),
   cancelDataTransfer: () => invoke('data:cancel'),
@@ -113,6 +115,16 @@ const api: DiaryAPI = {
     }
     ipcRenderer.on('system:lock-screen', listener)
     return () => ipcRenderer.removeListener('system:lock-screen', listener)
+  },
+  onAppBeforeQuit: (callback) => {
+    const listener = (): void => {
+      void callback()
+    }
+    ipcRenderer.on('app:before-quit', listener)
+    return () => ipcRenderer.removeListener('app:before-quit', listener)
+  },
+  notifyAppBeforeQuitDone: () => {
+    ipcRenderer.send('app:before-quit-done')
   }
 }
 

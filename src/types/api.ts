@@ -33,6 +33,10 @@ export interface AppInfo {
   nodeVersion: string
 }
 
+export interface PrivacyAuthSupport {
+  windowsPassword: boolean
+}
+
 export interface AppUpdateInfo {
   version: string
   releaseDate?: string
@@ -123,6 +127,8 @@ export interface DiaryAPI {
   getSetting(key: string): Promise<string | null>
   setSetting(key: string, value: string): Promise<void>
   getAllSettings(): Promise<Record<string, string>>
+  getPrivacyAuthSupport(): Promise<PrivacyAuthSupport>
+  verifyWindowsPassword(password: string): Promise<boolean>
   exportData(options: DataTransferOptions): Promise<DataTransferResult>
   importData(options: DataTransferOptions): Promise<DataTransferResult>
   cancelDataTransfer(): Promise<boolean>
@@ -170,4 +176,6 @@ export interface DiaryAPI {
   onDownloadProgress(callback: (progress: { percent: number }) => void): () => void
   onUpdateDownloaded(callback: () => void): () => void
   onSystemLock(callback: () => void): () => void
+  onAppBeforeQuit(callback: () => void | Promise<void>): () => void
+  notifyAppBeforeQuitDone(): void
 }

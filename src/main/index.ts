@@ -17,6 +17,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { promises as fs } from 'fs'
+import { spawn } from 'child_process'
 import { initDatabase, closeDatabase } from './database'
 import {
   getDiaryEntries,
@@ -76,7 +77,96 @@ const IMAGE_MIME_MAP: Record<string, string> = {
 }
 
 const UPDATE_CACHE_TTL_MS = 5 * 60 * 1000
+const APP_QUIT_PREPARE_TIMEOUT_MS = 3000
 let cachedUpdateCheck: CheckForUpdatesResult | null = null
+let isQuitInProgress = false
+let hasClosedDatabase = false
+let pendingQuitAckIds: Set<number> | null = null
+let quitPrepareTimer: ReturnType<typeof setTimeout> | null = null
+let resolveQuitPreparation: (() => void) | null = null
+
+function closeDatabaseSafely(): void {
+  if (hasClosedDatabase) return
+  hasClosedDatabase = true
+  try {
+    closeDatabase()
+  } catch (error) {
+    console.error('关闭数据库失败:', error)
+  }
+}
+
+function finishQuitPreparationWait(): void {
+  if (quitPrepareTimer) {
+    clearTimeout(quitPrepareTimer)
+    quitPrepareTimer = null
+  }
+  pendingQuitAckIds = null
+  const resolve = resolveQuitPreparation
+  resolveQuitPreparation = null
+  resolve?.()
+}
+
+function acknowledgeQuitPreparation(senderId: number): void {
+  if (!pendingQuitAckIds) return
+  pendingQuitAckIds.delete(senderId)
+  if (pendingQuitAckIds.size === 0) {
+    finishQuitPreparationWait()
+  }
+}
+
+async function waitForRendererBeforeQuit(): Promise<void> {
+  const targets = BrowserWindow.getAllWindows().filter(
+    (win) => !win.isDestroyed() && !win.webContents.isDestroyed()
+  )
+
+  if (targets.length === 0) return
+
+  await new Promise<void>((resolve) => {
+    resolveQuitPreparation = resolve
+    pendingQuitAckIds = new Set<number>(targets.map((win) => win.webContents.id))
+    quitPrepareTimer = setTimeout(() => {
+      finishQuitPreparationWait()
+    }, APP_QUIT_PREPARE_TIMEOUT_MS)
+
+    for (const win of targets) {
+      try {
+        win.webContents.send('app:before-quit')
+      } catch (error) {
+        console.error('发送退出前保存事件失败:', error)
+        acknowledgeQuitPreparation(win.webContents.id)
+      }
+    }
+
+    if (pendingQuitAckIds.size === 0) {
+      finishQuitPreparationWait()
+    }
+  })
+}
+
+function hideAllWindows(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.hide()
+    }
+  }
+}
+
+function requestAppQuit(): void {
+  if (isQuitInProgress) return
+  isQuitInProgress = true
+
+  void (async () => {
+    try {
+      hideAllWindows()
+      await waitForRendererBeforeQuit()
+    } catch (error) {
+      console.error('应用退出准备失败:', error)
+    } finally {
+      closeDatabaseSafely()
+      app.exit(0)
+    }
+  })()
+}
 
 function getImageMimeType(fileName: string): string {
   const ext = fileName.split('.').pop()?.toLowerCase()
@@ -225,12 +315,125 @@ function registerSystemSecurityEvents(): void {
   })
 }
 
+function isWindowsPasswordSupported(): boolean {
+  return process.platform === 'win32'
+}
+
+const POWERSHELL_WINDOWS_PASSWORD_VERIFY_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+$password = [Console]::In.ReadToEnd()
+if ([string]::IsNullOrEmpty($password)) {
+  Write-Output 'false'
+  exit 0
+}
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class NativeMethods {
+  [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+  public static extern bool LogonUser(
+    string lpszUsername,
+    string lpszDomain,
+    string lpszPassword,
+    int dwLogonType,
+    int dwLogonProvider,
+    out IntPtr phToken
+  );
+
+  [DllImport("kernel32.dll", SetLastError = true)]
+  public static extern bool CloseHandle(IntPtr hObject);
+}
+"@
+
+$userName = [Environment]::UserName
+$userDomain = [Environment]::UserDomainName
+function Test-Logon([string]$name, [string]$domain, [string]$pwd) {
+  $token = [IntPtr]::Zero
+  $ok = [NativeMethods]::LogonUser($name, $domain, $pwd, 2, 0, [ref]$token)
+  if ($ok) {
+    [NativeMethods]::CloseHandle($token) | Out-Null
+  }
+  return $ok
+}
+
+$identityName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+if (Test-Logon $userName $userDomain $password) {
+  Write-Output 'true'
+  exit 0
+}
+if (Test-Logon $userName '.' $password) {
+  Write-Output 'true'
+  exit 0
+}
+if ($identityName -and $identityName.Contains('\\')) {
+  $parts = $identityName.Split('\\', 2)
+  if ($parts.Length -eq 2 -and (Test-Logon $parts[1] $parts[0] $password)) {
+    Write-Output 'true'
+    exit 0
+  }
+}
+Write-Output 'false'
+`
+
+async function verifyWindowsPassword(password: string): Promise<boolean> {
+  if (!isWindowsPasswordSupported()) return false
+  if (!password) return false
+
+  return await new Promise<boolean>((resolve) => {
+    let settled = false
+    const settle = (value: boolean): void => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+
+    const child = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', POWERSHELL_WINDOWS_PASSWORD_VERIFY_SCRIPT],
+      {
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe']
+      }
+    )
+
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf8')
+    })
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8')
+    })
+
+    child.on('error', (error) => {
+      console.error('执行 Windows 密码验证失败:', error)
+      settle(false)
+    })
+
+    child.on('close', (code) => {
+      if (code !== 0 && stderr.trim()) {
+        console.error('Windows 密码验证脚本异常:', stderr.trim())
+      }
+      settle(stdout.trim().toLowerCase().endsWith('true'))
+    })
+
+    child.stdin.on('error', () => {
+      // 进程提前结束时忽略 stdin 写入错误
+    })
+    child.stdin.end(password)
+  })
+}
+
 async function runUpdateCheck(): Promise<CheckForUpdatesResult> {
   try {
     const result = await autoUpdater.checkForUpdates()
     return {
       success: true,
-      updateInfo: normalizeUpdateInfo(result?.updateInfo),
+      updateInfo:
+        result?.isUpdateAvailable === true ? normalizeUpdateInfo(result.updateInfo) : undefined,
       checkedAt: Date.now(),
       fromCache: false
     }
@@ -277,6 +480,12 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
+  })
+
+  mainWindow.on('close', (event) => {
+    if (isQuitInProgress) return
+    event.preventDefault()
+    requestAppQuit()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -340,13 +549,19 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
-  closeDatabase()
+app.on('before-quit', (event) => {
+  if (isQuitInProgress) return
+  event.preventDefault()
+  requestAppQuit()
 })
 
 // ========== IPC Handlers ==========
 
 function registerIpcHandlers(): void {
+  ipcMain.on('app:before-quit-done', (event) => {
+    acknowledgeQuitPreparation(event.sender.id)
+  })
+
   // 日记 CRUD
   ipcMain.handle('diary:list', (_event, params) => {
     return getDiaryEntries(params ?? {})
@@ -454,6 +669,15 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('settings:getAll', () => {
     return getAllSettings()
+  })
+
+  ipcMain.handle('privacy:getAuthSupport', () => {
+    return { windowsPassword: isWindowsPasswordSupported() }
+  })
+
+  ipcMain.handle('privacy:verifyWindowsPassword', async (_event, password: string) => {
+    if (typeof password !== 'string') return false
+    return await verifyWindowsPassword(password)
   })
 
   // 数据导入/导出
@@ -701,9 +925,8 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('window:close', (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    win?.close()
+  ipcMain.handle('window:close', () => {
+    requestAppQuit()
   })
 
   ipcMain.handle('window:isMaximized', (event) => {
@@ -729,7 +952,24 @@ function registerIpcHandlers(): void {
 
   // 下载更新
   ipcMain.handle('app:downloadUpdate', async () => {
-    await autoUpdater.downloadUpdate()
+    try {
+      await autoUpdater.downloadUpdate()
+    } catch (error) {
+      const message = String(error)
+      if (!message.includes('Please check update first')) {
+        throw error
+      }
+
+      const checkResult = await getUpdateCheckResult({ force: true })
+      if (!checkResult.success) {
+        throw new Error(checkResult.error || '检查更新失败，请稍后重试')
+      }
+      if (!checkResult.updateInfo) {
+        throw new Error('当前已是最新版本，无需下载更新')
+      }
+
+      await autoUpdater.downloadUpdate()
+    }
   })
 
   // 安装更新
