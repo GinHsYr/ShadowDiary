@@ -73,7 +73,7 @@
               <div class="setting-info">
                 <label class="setting-label">导出数据</label>
                 <span class="setting-description">
-                  导出数据库和图片/附件为 ZIP 备份文件，建议定期备份
+                  导出数据库与附件为 ZIP 备份，图片目录会另打包为口令加密 ZIP
                 </span>
               </div>
               <n-button
@@ -88,7 +88,9 @@
             <div class="setting-item">
               <div class="setting-info">
                 <label class="setting-label">导入数据</label>
-                <span class="setting-description">从 ZIP 备份文件恢复数据，会覆盖当前本地数据</span>
+                <span class="setting-description">
+                  从 ZIP 备份文件恢复数据，会覆盖当前本地数据，需输入备份口令
+                </span>
               </div>
               <n-button
                 type="warning"
@@ -219,14 +221,129 @@
         </n-space>
       </template>
     </n-modal>
+
+    <n-modal
+      v-model:show="showBackupPasswordModal"
+      preset="card"
+      :title="backupPasswordModalTitle"
+      :bordered="false"
+      style="width: 440px; border-radius: 12px"
+      @close="handleCloseBackupPasswordModal"
+    >
+      <n-space vertical :size="12">
+        <p class="privacy-modal-desc">
+          {{ backupPasswordModalDescription }}
+        </p>
+        <div class="setting-info">
+          <label class="setting-label">备份口令</label>
+          <n-input
+            v-model:value="backupPassword"
+            type="password"
+            show-password-on="mousedown"
+            :status="backupPasswordStatus"
+            :placeholder="`至少 ${MIN_BACKUP_PASSWORD_LENGTH} 位`"
+          />
+        </div>
+
+        <div v-if="backupPasswordMode === 'export'" class="setting-info">
+          <label class="setting-label">确认口令</label>
+          <n-input
+            v-model:value="confirmBackupPassword"
+            type="password"
+            show-password-on="mousedown"
+            :status="confirmBackupPasswordStatus"
+            :placeholder="`再次输入口令`"
+          />
+        </div>
+      </n-space>
+
+      <template #footer>
+        <n-space justify="end">
+          <n-button
+            :disabled="exportingData || importingData || backupPasswordSubmitting"
+            @click="handleCloseBackupPasswordModal"
+          >
+            取消
+          </n-button>
+          <n-button
+            type="primary"
+            :loading="backupPasswordSubmitting"
+            @click="handleConfirmBackupPassword"
+          >
+            {{ backupPasswordMode === 'export' ? '确认导出' : '确认导入' }}
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <n-modal
+      v-model:show="showExportProgressDialog"
+      preset="dialog"
+      title="导出备份中"
+      :mask-closable="false"
+      :closable="false"
+      :close-on-esc="false"
+    >
+      <n-space vertical :size="12">
+        <div class="progress-message">{{ exportProgressMessage }}</div>
+        <n-progress type="line" :percentage="exportProgress" :show-indicator="true" />
+      </n-space>
+      <template #action>
+        <n-button
+          v-if="!exportTransferDone"
+          :loading="exportCanceling"
+          :disabled="exportCanceling"
+          @click="handleCancelExportTransfer"
+        >
+          取消
+        </n-button>
+        <n-button v-else type="primary" @click="handleCloseExportProgressDialog">完成</n-button>
+      </template>
+    </n-modal>
+
+    <n-modal
+      v-model:show="showImportProgressDialog"
+      preset="dialog"
+      title="导入备份中"
+      :mask-closable="false"
+      :closable="false"
+      :close-on-esc="false"
+    >
+      <n-space vertical :size="12">
+        <div class="progress-message">{{ importProgressMessage }}</div>
+        <n-progress type="line" :percentage="importProgress" :show-indicator="true" />
+      </n-space>
+      <template #action>
+        <n-button
+          v-if="!importTransferDone"
+          :loading="importCanceling"
+          :disabled="importCanceling"
+          @click="handleCancelImportTransfer"
+        >
+          取消
+        </n-button>
+        <n-button v-else type="primary" @click="handleCloseImportProgressDialog">完成</n-button>
+      </template>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { NButton, NCard, NSpace, NSwitch, NProgress, NInputOtp, NModal, useDialog } from 'naive-ui'
+import {
+  NButton,
+  NCard,
+  NSpace,
+  NSwitch,
+  NProgress,
+  NInputOtp,
+  NInput,
+  NModal,
+  useDialog
+} from 'naive-ui'
 import { ThemeMode, useThemeStore } from '@renderer/stores/themes'
 import { isValidPrivacyPassword, usePrivacyStore } from '@renderer/stores/privacy'
+import type { DataTransferProgress, DataTransferResult } from '../../../../types/api'
 
 interface AppInfo {
   name: string
@@ -250,6 +367,25 @@ const exportingData = ref(false)
 const importingData = ref(false)
 const dataMessage = ref('')
 const dataMessageType = ref<'success' | 'error' | 'info'>('info')
+const showExportProgressDialog = ref(false)
+const exportProgress = ref(0)
+const exportProgressMessage = ref('正在准备导出任务...')
+const exportTransferDone = ref(false)
+const exportCanceling = ref(false)
+const showImportProgressDialog = ref(false)
+const importProgress = ref(0)
+const importProgressMessage = ref('正在准备导入任务...')
+const importTransferDone = ref(false)
+const importCanceling = ref(false)
+const reloadAfterImportComplete = ref(false)
+const MIN_BACKUP_PASSWORD_LENGTH = 8
+const showBackupPasswordModal = ref(false)
+const backupPasswordMode = ref<'export' | 'import'>('export')
+const backupPassword = ref('')
+const confirmBackupPassword = ref('')
+const backupPasswordStatus = ref<'error' | undefined>(undefined)
+const confirmBackupPasswordStatus = ref<'error' | undefined>(undefined)
+const backupPasswordSubmitting = ref(false)
 const privacyLoading = ref(false)
 const privacyMessage = ref('')
 const privacyMessageType = ref<'success' | 'error' | 'info'>('info')
@@ -267,6 +403,14 @@ const dialog = useDialog()
 const currentPasswordValue = computed(() => currentPassword.value.join(''))
 const newPasswordValue = computed(() => newPassword.value.join(''))
 const confirmPasswordValue = computed(() => confirmPassword.value.join(''))
+const backupPasswordModalTitle = computed(() =>
+  backupPasswordMode.value === 'export' ? '导出备份口令' : '导入备份口令'
+)
+const backupPasswordModalDescription = computed(() =>
+  backupPasswordMode.value === 'export'
+    ? '请设置本次备份口令，导入此备份时需要该口令'
+    : '请输入导出时设置的备份口令'
+)
 
 const appInfo = ref<AppInfo>({
   name: '',
@@ -302,6 +446,24 @@ onMounted(() => {
       downloaded.value = true
       updateMessage.value = '更新已下载完成，点击安装后将重启应用'
       updateMessageType.value = 'success'
+    })
+  )
+
+  removeUpdateListeners.push(
+    window.api.onExportProgress((progress: DataTransferProgress) => {
+      if (!exportingData.value) return
+      showExportProgressDialog.value = true
+      exportProgress.value = Math.max(0, Math.min(100, Math.round(progress.percent)))
+      exportProgressMessage.value = progress.message || '正在导出数据...'
+    })
+  )
+
+  removeUpdateListeners.push(
+    window.api.onImportProgress((progress: DataTransferProgress) => {
+      if (!importingData.value) return
+      showImportProgressDialog.value = true
+      importProgress.value = Math.max(0, Math.min(100, Math.round(progress.percent)))
+      importProgressMessage.value = progress.message || '正在导入数据...'
     })
   )
 })
@@ -531,63 +693,212 @@ const handleInstallUpdate = (): void => {
 }
 
 const handleExportData = async (): Promise<void> => {
+  openBackupPasswordModal('export')
+}
+
+function resetBackupPasswordStatuses(): void {
+  backupPasswordStatus.value = undefined
+  confirmBackupPasswordStatus.value = undefined
+}
+
+function resetBackupPasswordForm(): void {
+  backupPassword.value = ''
+  confirmBackupPassword.value = ''
+  resetBackupPasswordStatuses()
+}
+
+function openBackupPasswordModal(mode: 'export' | 'import'): void {
+  backupPasswordMode.value = mode
+  backupPasswordSubmitting.value = false
+  resetBackupPasswordForm()
+  showBackupPasswordModal.value = true
+}
+
+function handleCloseBackupPasswordModal(): void {
+  showBackupPasswordModal.value = false
+  backupPasswordSubmitting.value = false
+  resetBackupPasswordForm()
+}
+
+function isValidBackupPassword(value: string): boolean {
+  return value.trim().length >= MIN_BACKUP_PASSWORD_LENGTH
+}
+
+function resolveTransferErrorMessage(action: '导出' | '导入', result: DataTransferResult): string {
+  if (!result.errorCode) return `${action}失败：${result.error || '未知错误'}`
+
+  if (result.errorCode === 'VALIDATION_FAILED') {
+    return result.error || `备份口令长度至少 ${MIN_BACKUP_PASSWORD_LENGTH} 位`
+  }
+  if (result.errorCode === 'UNSUPPORTED_BACKUP_FORMAT') {
+    return result.error || '备份格式不受支持，仅可导入当前版本生成的备份'
+  }
+  if (result.errorCode === 'MISSING_KEY_ENVELOPE') {
+    return result.error || '备份缺少密钥文件，无法导入'
+  }
+  if (result.errorCode === 'WRONG_BACKUP_PASSWORD') {
+    return '备份口令错误，请重试'
+  }
+  if (result.errorCode === 'TRANSFER_IN_PROGRESS') {
+    return result.error || '已有导入/导出任务进行中'
+  }
+  return `${action}失败：${result.error || '未知错误'}`
+}
+
+const handleCloseExportProgressDialog = (): void => {
+  showExportProgressDialog.value = false
+}
+
+const handleCloseImportProgressDialog = (): void => {
+  showImportProgressDialog.value = false
+  if (reloadAfterImportComplete.value) {
+    reloadAfterImportComplete.value = false
+    window.location.reload()
+  }
+}
+
+const handleCancelExportTransfer = async (): Promise<void> => {
+  if (!exportingData.value || exportTransferDone.value || exportCanceling.value) return
+  exportCanceling.value = true
+  exportProgressMessage.value = '正在取消导出...'
+  try {
+    await window.api.cancelDataTransfer()
+  } finally {
+    exportCanceling.value = false
+  }
+}
+
+const handleCancelImportTransfer = async (): Promise<void> => {
+  if (!importingData.value || importTransferDone.value || importCanceling.value) return
+  importCanceling.value = true
+  importProgressMessage.value = '正在取消导入...'
+  try {
+    await window.api.cancelDataTransfer()
+  } finally {
+    importCanceling.value = false
+  }
+}
+
+const runExportData = async (backupPasswordValue: string): Promise<void> => {
   exportingData.value = true
+  exportTransferDone.value = false
+  exportCanceling.value = false
+  showExportProgressDialog.value = false
+  exportProgress.value = 0
+  exportProgressMessage.value = '正在准备导出任务...'
   dataMessage.value = '正在导出数据...'
   dataMessageType.value = 'info'
 
   try {
-    const result = await window.api.exportData()
+    const result = await window.api.exportData({ backupPassword: backupPasswordValue })
     if (result.canceled) {
+      exportProgress.value = 100
+      exportProgressMessage.value = '导出已取消'
       dataMessage.value = '已取消导出'
       dataMessageType.value = 'info'
       return
     }
 
     if (result.success) {
+      exportProgress.value = 100
+      exportProgressMessage.value = '导出完成'
       dataMessage.value = `导出成功：${result.path}`
       dataMessageType.value = 'success'
       return
     }
 
-    dataMessage.value = `导出失败：${result.error || '未知错误'}`
+    exportProgress.value = 100
+    exportProgressMessage.value = '导出失败'
+    dataMessage.value = resolveTransferErrorMessage('导出', result)
     dataMessageType.value = 'error'
   } catch (error) {
+    exportProgress.value = 100
+    exportProgressMessage.value = '导出失败'
     dataMessage.value = `导出失败：${String(error)}`
     dataMessageType.value = 'error'
   } finally {
     exportingData.value = false
+    exportTransferDone.value = true
   }
 }
 
-const runImportData = async (): Promise<void> => {
+const runImportData = async (backupPasswordValue: string): Promise<void> => {
   importingData.value = true
+  importTransferDone.value = false
+  importCanceling.value = false
+  reloadAfterImportComplete.value = false
+  showImportProgressDialog.value = false
+  importProgress.value = 0
+  importProgressMessage.value = '正在准备导入任务...'
   dataMessage.value = '正在导入数据...'
   dataMessageType.value = 'info'
 
   try {
-    const result = await window.api.importData()
+    const result = await window.api.importData({ backupPassword: backupPasswordValue })
     if (result.canceled) {
+      importProgress.value = 100
+      importProgressMessage.value = '导入已取消'
       dataMessage.value = '已取消导入'
       dataMessageType.value = 'info'
       return
     }
 
     if (result.success) {
-      dataMessage.value = '导入成功，正在刷新页面...'
+      importProgress.value = 100
+      importProgressMessage.value = '导入完成'
+      dataMessage.value = '导入成功，点击完成后刷新页面'
       dataMessageType.value = 'success'
-      setTimeout(() => {
-        window.location.reload()
-      }, 300)
+      reloadAfterImportComplete.value = true
       return
     }
 
-    dataMessage.value = `导入失败：${result.error || '未知错误'}`
+    importProgress.value = 100
+    importProgressMessage.value = '导入失败'
+    dataMessage.value = resolveTransferErrorMessage('导入', result)
     dataMessageType.value = 'error'
   } catch (error) {
+    importProgress.value = 100
+    importProgressMessage.value = '导入失败'
     dataMessage.value = `导入失败：${String(error)}`
     dataMessageType.value = 'error'
   } finally {
     importingData.value = false
+    importTransferDone.value = true
+  }
+}
+
+const handleConfirmBackupPassword = async (): Promise<void> => {
+  if (backupPasswordSubmitting.value) return
+
+  resetBackupPasswordStatuses()
+
+  if (!isValidBackupPassword(backupPassword.value)) {
+    backupPasswordStatus.value = 'error'
+    return
+  }
+
+  if (
+    backupPasswordMode.value === 'export' &&
+    backupPassword.value !== confirmBackupPassword.value
+  ) {
+    backupPasswordStatus.value = 'error'
+    confirmBackupPasswordStatus.value = 'error'
+    return
+  }
+
+  backupPasswordSubmitting.value = true
+  showBackupPasswordModal.value = false
+  const password = backupPassword.value
+  resetBackupPasswordForm()
+
+  try {
+    if (backupPasswordMode.value === 'export') {
+      await runExportData(password)
+      return
+    }
+    await runImportData(password)
+  } finally {
+    backupPasswordSubmitting.value = false
   }
 }
 
@@ -597,8 +908,8 @@ const handleImportData = (): void => {
     content: '导入 ZIP 会覆盖当前本地数据，建议先执行一次导出备份。确认继续吗？',
     positiveText: '继续导入',
     negativeText: '取消',
-    onPositiveClick: async () => {
-      await runImportData()
+    onPositiveClick: () => {
+      openBackupPasswordModal('import')
     }
   })
 }
@@ -749,6 +1060,12 @@ const handleImportData = (): void => {
 
 .download-progress {
   padding: 8px 0;
+}
+
+.progress-message {
+  font-size: 13px;
+  color: var(--n-text-color-2);
+  word-break: break-word;
 }
 
 @media (max-width: 768px) {

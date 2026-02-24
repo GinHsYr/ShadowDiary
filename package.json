@@ -1,12 +1,12 @@
 {
   "name": "shadow_diary",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "A simple diary app",
   "main": "./out/main/index.js",
   "author": "HsYr",
   "homepage": "https://electron-vite.org",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22"
   },
   "scripts": {
     "check:node": "node -e \"const [major, minor] = process.versions.node.split('.').map(Number); if (major < 20 || (major === 20 && minor < 19)) { console.error('Node.js >= 20.19.0 is required. Current: ' + process.versions.node); process.exit(1) }\"",
@@ -30,7 +30,8 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
-    "better-sqlite3": "^12.6.2",
+    "7zip-bin": "^5.2.0",
+    "better-sqlite3-multiple-ciphers": "latest",
     "electron-updater": "^6.3.9",
     "sharp": "^0.34.5",
     "uuid": "^13.0.0"

@@ -71,6 +71,22 @@ export interface DataTransferResult {
   canceled?: boolean
   path?: string
   error?: string
+  errorCode?:
+    | 'VALIDATION_FAILED'
+    | 'UNSUPPORTED_BACKUP_FORMAT'
+    | 'MISSING_KEY_ENVELOPE'
+    | 'WRONG_BACKUP_PASSWORD'
+    | 'INVALID_BACKUP'
+    | 'TRANSFER_IN_PROGRESS'
+}
+
+export interface DataTransferOptions {
+  backupPassword: string
+}
+
+export interface DataTransferProgress {
+  percent: number
+  message: string
 }
 
 export interface DiaryAPI {
@@ -107,8 +123,11 @@ export interface DiaryAPI {
   getSetting(key: string): Promise<string | null>
   setSetting(key: string, value: string): Promise<void>
   getAllSettings(): Promise<Record<string, string>>
-  exportData(): Promise<DataTransferResult>
-  importData(): Promise<DataTransferResult>
+  exportData(options: DataTransferOptions): Promise<DataTransferResult>
+  importData(options: DataTransferOptions): Promise<DataTransferResult>
+  cancelDataTransfer(): Promise<boolean>
+  onExportProgress(callback: (progress: DataTransferProgress) => void): () => void
+  onImportProgress(callback: (progress: DataTransferProgress) => void): () => void
 
   // 统计
   getStats(): Promise<HomePageStats>

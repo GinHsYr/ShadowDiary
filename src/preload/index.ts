@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { DiaryAPI } from '../types/api'
+import type { DataTransferProgress, DiaryAPI } from '../types/api'
 
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => {
   return ipcRenderer.invoke(channel, ...args) as Promise<T>
@@ -37,8 +37,23 @@ const api: DiaryAPI = {
   getSetting: (key) => invoke('settings:get', key),
   setSetting: (key, value) => invoke('settings:set', key, value),
   getAllSettings: () => invoke('settings:getAll'),
-  exportData: () => invoke('data:export'),
-  importData: () => invoke('data:import'),
+  exportData: (options) => invoke('data:export', options),
+  importData: (options) => invoke('data:import', options),
+  cancelDataTransfer: () => invoke('data:cancel'),
+  onExportProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: DataTransferProgress): void => {
+      callback(progress)
+    }
+    ipcRenderer.on('data:export-progress', listener)
+    return () => ipcRenderer.removeListener('data:export-progress', listener)
+  },
+  onImportProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: DataTransferProgress): void => {
+      callback(progress)
+    }
+    ipcRenderer.on('data:import-progress', listener)
+    return () => ipcRenderer.removeListener('data:import-progress', listener)
+  },
 
   // 统计
   getStats: () => invoke('stats:get'),

@@ -45,11 +45,12 @@ linux:
 appImage:
   artifactName: ShadowDiary-${version}-${os}-${arch}.${ext}
 npmRebuild: true
+electronDist: node_modules/electron/dist
 publish:
   provider: github
   owner: GinHsYr
   repo: ShadowDiary
   releaseType: release
 electronDownload:
-  mirror: https://npmmirror.com/mirrors/electron/
+  mirror: https://github.com/electron/electron/releases/download/
 buildDependenciesFromSource: false

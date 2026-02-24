@@ -57,7 +57,12 @@ import {
   deleteImageById,
   parseImageDataUrl
 } from './utils/imageStorage'
-import { exportAppData, importAppData } from './utils/dataTransfer'
+import {
+  cancelDataTransfer,
+  exportAppData,
+  importAppData,
+  type DataTransferProgress
+} from './utils/dataTransfer'
 
 const IMAGE_MIME_MAP: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -278,34 +283,40 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.hsyr.shadowdiary')
+app
+  .whenReady()
+  .then(() => {
+    electronApp.setAppUserModelId('com.hsyr.shadowdiary')
 
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+    app.on('browser-window-created', (_, window) => {
+      optimizer.watchWindowShortcuts(window)
+    })
+
+    // Initialize database
+    initDatabase()
+
+    // Ensure image directories exist
+    void ensureImageDirs()
+
+    // Register custom protocol for images
+    registerDiaryImageProtocol()
+
+    void migrateLegacyAvatarSetting()
+
+    // Register IPC handlers
+    registerIpcHandlers()
+
+    createWindow()
+    void getUpdateCheckResult({ force: true })
+
+    app.on('activate', function () {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
   })
-
-  // Initialize database
-  initDatabase()
-
-  // Ensure image directories exist
-  void ensureImageDirs()
-
-  // Register custom protocol for images
-  registerDiaryImageProtocol()
-
-  void migrateLegacyAvatarSetting()
-
-  // Register IPC handlers
-  registerIpcHandlers()
-
-  createWindow()
-  void getUpdateCheckResult({ force: true })
-
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  .catch((error) => {
+    console.error('应用初始化失败:', error)
+    app.quit()
   })
-})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -430,18 +441,34 @@ function registerIpcHandlers(): void {
   })
 
   // 数据导入/导出
-  ipcMain.handle('data:export', async (event) => {
+  ipcMain.handle('data:export', async (event, options?: { backupPassword?: string }) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    return await exportAppData(win)
+    return await exportAppData(
+      win,
+      { backupPassword: options?.backupPassword ?? '' },
+      (progress: DataTransferProgress) => {
+        event.sender.send('data:export-progress', progress)
+      }
+    )
   })
 
-  ipcMain.handle('data:import', async (event) => {
+  ipcMain.handle('data:import', async (event, options?: { backupPassword?: string }) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    const result = await importAppData(win)
+    const result = await importAppData(
+      win,
+      { backupPassword: options?.backupPassword ?? '' },
+      (progress: DataTransferProgress) => {
+        event.sender.send('data:import-progress', progress)
+      }
+    )
     if (result.success) {
       invalidatePersonMentionCache()
     }
     return result
+  })
+
+  ipcMain.handle('data:cancel', () => {
+    return cancelDataTransfer()
   })
 
   // 统计
