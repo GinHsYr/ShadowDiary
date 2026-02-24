@@ -493,13 +493,13 @@ html.dark .title-input::placeholder {
 }
 
 .mood-btn:hover {
-  background: rgba(16, 185, 129, 0.08);
+  background: var(--app-accent-08, rgba(24, 160, 88, 0.08));
 }
 
 .mood-btn.active {
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.4);
-  color: #10b981;
+  background: var(--app-accent-12, rgba(24, 160, 88, 0.12));
+  border-color: var(--app-accent-40, rgba(24, 160, 88, 0.4));
+  color: var(--app-accent-color, #18a058);
   font-weight: 600;
 }
 

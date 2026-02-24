@@ -17,6 +17,36 @@
               </div>
               <n-switch :value="theme.isDark" @update:value="handleThemeChange" />
             </div>
+
+            <div class="setting-item setting-item-top">
+              <div class="setting-info">
+                <label class="setting-label">主题色</label>
+                <span class="setting-description">
+                  {{
+                    theme.isDark
+                      ? '暗色模式下固定使用默认暗色主题色'
+                      : '选择你喜欢的颜色'
+                  }}
+                </span>
+              </div>
+
+              <div class="accent-palette" :class="{ 'accent-palette--disabled': theme.isDark }">
+                <button
+                  v-for="option in accentOptions"
+                  :key="option.value"
+                  type="button"
+                  class="accent-chip"
+                  :class="{ 'accent-chip--active': theme.accent === option.value }"
+                  :style="{ '--accent-color': option.color }"
+                  :aria-label="option.label"
+                  :title="option.label"
+                  :disabled="theme.isDark"
+                  @click="handleAccentChange(option.value)"
+                >
+                  <span class="accent-chip-dot" />
+                </button>
+              </div>
+            </div>
           </n-space>
         </n-card>
 
@@ -341,7 +371,12 @@ import {
   NModal,
   useDialog
 } from 'naive-ui'
-import { ThemeMode, useThemeStore } from '@renderer/stores/themes'
+import {
+  ThemeAccent,
+  ThemeMode,
+  THEME_ACCENT_PALETTES,
+  useThemeStore
+} from '@renderer/stores/themes'
 import { isValidPrivacyPassword, usePrivacyStore } from '@renderer/stores/privacy'
 import type { DataTransferProgress, DataTransferResult } from '../../../../types/api'
 
@@ -353,9 +388,47 @@ interface AppInfo {
   nodeVersion: string
 }
 
+interface AccentOption {
+  value: ThemeAccent
+  label: string
+  color: string
+}
+
 const theme = useThemeStore()
 const privacy = usePrivacyStore()
 const OTP_LENGTH = 6
+const accentOptions: AccentOption[] = [
+  {
+    value: ThemeAccent.Green,
+    label: '翡翠绿',
+    color: THEME_ACCENT_PALETTES[ThemeAccent.Green].primaryColor
+  },
+  {
+    value: ThemeAccent.Blue,
+    label: '天空蓝',
+    color: THEME_ACCENT_PALETTES[ThemeAccent.Blue].primaryColor
+  },
+  {
+    value: ThemeAccent.Orange,
+    label: '琥珀橙',
+    color: THEME_ACCENT_PALETTES[ThemeAccent.Orange].primaryColor
+  },
+  {
+    value: ThemeAccent.Red,
+    label: '珊瑚红',
+    color: THEME_ACCENT_PALETTES[ThemeAccent.Red].primaryColor
+  },
+  {
+    value: ThemeAccent.Purple,
+    label: '霓虹紫',
+    color: THEME_ACCENT_PALETTES[ThemeAccent.Purple].primaryColor
+  },
+  {
+    value: ThemeAccent.Teal,
+    label: '青绿色',
+    color: THEME_ACCENT_PALETTES[ThemeAccent.Teal].primaryColor
+  }
+]
 const checkingUpdate = ref(false)
 const updateMessage = ref('')
 const updateMessageType = ref<'success' | 'error' | 'info'>('info')
@@ -477,6 +550,11 @@ onBeforeUnmount(() => {
 
 const handleThemeChange = (value: boolean): void => {
   theme.setMode(value ? ThemeMode.Dark : ThemeMode.Light)
+}
+
+const handleAccentChange = (accent: ThemeAccent): void => {
+  if (theme.isDark) return
+  theme.setAccent(accent)
 }
 
 const passwordModalTitle = computed(() => {
@@ -992,6 +1070,56 @@ const handleImportData = (): void => {
   color: var(--n-text-color-3);
 }
 
+.accent-palette {
+  width: min(360px, 100%);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.accent-palette--disabled {
+  opacity: 0.6;
+}
+
+.accent-chip {
+  --accent-color: #18a058;
+  border: 1px solid var(--n-border-color);
+  border-radius: 50%;
+  background: var(--n-color-modal);
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  align-items: center;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    transform 0.2s;
+}
+
+.accent-chip:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.accent-chip--active {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 1px var(--accent-color) inset;
+}
+
+.accent-chip:disabled {
+  cursor: not-allowed;
+}
+
+.accent-chip-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent-color);
+}
+
 .privacy-actions {
   width: min(240px, 100%);
   display: flex;
@@ -1081,6 +1209,11 @@ const handleImportData = (): void => {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+  }
+
+  .accent-palette {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .privacy-actions {

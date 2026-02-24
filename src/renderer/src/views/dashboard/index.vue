@@ -986,8 +986,8 @@ const jumpToLastMonth = (): void => {
 }
 
 .mention-item-snippet :deep(mark) {
-  background: rgba(16, 185, 129, 0.2);
-  color: inherit;
+  background: var(--app-accent-20, rgba(24, 160, 88, 0.2));
+  color: var(--app-accent-color, #18a058);
   border-radius: 3px;
   padding: 0 2px;
 }

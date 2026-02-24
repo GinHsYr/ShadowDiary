@@ -771,7 +771,7 @@ defineExpose({
 }
 
 .diary-editor-wrapper :deep(.keyword-scroll-highlight) {
-  background: rgba(16, 185, 129, 0.16);
+  background: var(--app-accent-16, rgba(24, 160, 88, 0.16));
   transition: background 0.3s ease;
 }
 

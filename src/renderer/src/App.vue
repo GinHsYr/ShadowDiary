@@ -25,6 +25,12 @@ const unlockStatus = computed<'error' | undefined>(() => (unlockError.value ? 'e
 
 const showLockOverlay = computed(() => privacy.isInitialized && privacy.isLocked)
 
+function applyAccentStyleVars(vars: Record<string, string>): void {
+  for (const [key, value] of Object.entries(vars)) {
+    document.documentElement.style.setProperty(key, value)
+  }
+}
+
 function allowDigitInput(char: string): boolean {
   return /^\d$/.test(char)
 }
@@ -79,10 +85,18 @@ watch(
   },
   { immediate: true }
 )
+
+watch(
+  () => theme.accentStyleVars,
+  (vars) => {
+    applyAccentStyleVars(vars)
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
-  <n-config-provider :theme="theme.getTheme">
+  <n-config-provider :theme="theme.getTheme" :theme-overrides="theme.themeOverrides">
     <n-dialog-provider>
       <div class="app-shell">
         <TitleBar />

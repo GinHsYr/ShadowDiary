@@ -195,12 +195,12 @@ defineExpose({ refresh })
 }
 
 .archive-item:hover {
-  background: rgba(16, 185, 129, 0.06);
+  background: var(--app-accent-06, rgba(24, 160, 88, 0.06));
 }
 
 .archive-item.active {
-  background: rgba(16, 185, 129, 0.12);
-  box-shadow: inset 3px 0 0 #10b981;
+  background: var(--app-accent-12, rgba(24, 160, 88, 0.12));
+  box-shadow: inset 3px 0 0 var(--app-accent-color, #18a058);
 }
 
 .item-info {
