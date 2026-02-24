@@ -1001,7 +1001,7 @@ const handleCheckUpdate = async (): Promise<void> => {
       updateMessageType.value = 'error'
     }
   } catch (error) {
-    updateMessage.value = `检查更新失败: ${error}`
+    updateMessage.value = `检查更新失败: ${unwrapIpcErrorMessage(error)}`
     updateMessageType.value = 'error'
   } finally {
     checkingUpdate.value = false

@@ -77,6 +77,7 @@ const IMAGE_MIME_MAP: Record<string, string> = {
 }
 
 const UPDATE_CACHE_TTL_MS = 5 * 60 * 1000
+const UPDATE_CHECK_RETRY_COUNT = 1
 const APP_QUIT_PREPARE_TIMEOUT_MS = 3000
 let cachedUpdateCheck: CheckForUpdatesResult | null = null
 let isQuitInProgress = false
@@ -301,6 +302,66 @@ function isUpdateCacheFresh(): boolean {
   return Date.now() - cachedUpdateCheck.checkedAt < UPDATE_CACHE_TTL_MS
 }
 
+function getErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.replace(/^Error:\s*/i, '').trim()
+}
+
+function isLikelyNetworkUpdateError(message: string): boolean {
+  const normalized = message.toUpperCase()
+  return (
+    normalized.includes('ERR_CONNECTION_RESET') ||
+    normalized.includes('ERR_CONNECTION_REFUSED') ||
+    normalized.includes('ERR_CONNECTION_CLOSED') ||
+    normalized.includes('ERR_CONNECTION_TIMED_OUT') ||
+    normalized.includes('ERR_TIMED_OUT') ||
+    normalized.includes('ERR_INTERNET_DISCONNECTED') ||
+    normalized.includes('ERR_NAME_NOT_RESOLVED') ||
+    normalized.includes('ECONNRESET') ||
+    normalized.includes('ECONNREFUSED') ||
+    normalized.includes('ETIMEDOUT') ||
+    normalized.includes('ENOTFOUND') ||
+    normalized.includes('EAI_AGAIN')
+  )
+}
+
+function normalizeUpdateErrorMessage(error: unknown): string {
+  const message = getErrorMessage(error)
+  const normalized = message.toUpperCase()
+
+  if (normalized.includes('ERR_CONNECTION_RESET') || normalized.includes('ECONNRESET')) {
+    return '连接更新服务器时被重置，请检查网络或代理后重试'
+  }
+
+  if (
+    normalized.includes('ERR_CONNECTION_TIMED_OUT') ||
+    normalized.includes('ERR_TIMED_OUT') ||
+    normalized.includes('ETIMEDOUT')
+  ) {
+    return '连接更新服务器超时，请稍后重试'
+  }
+
+  if (normalized.includes('ERR_NAME_NOT_RESOLVED') || normalized.includes('ENOTFOUND')) {
+    return '无法解析更新服务器地址，请检查网络或 DNS 设置后重试'
+  }
+
+  if (
+    normalized.includes('ERR_CONNECTION_REFUSED') ||
+    normalized.includes('ERR_CONNECTION_CLOSED') ||
+    normalized.includes('ECONNREFUSED') ||
+    normalized.includes('ERR_INTERNET_DISCONNECTED') ||
+    normalized.includes('EAI_AGAIN')
+  ) {
+    return '无法连接更新服务器，请检查网络连接或代理设置后重试'
+  }
+
+  if (normalized.includes('CERT_') || normalized.includes('ERR_SSL')) {
+    return '更新服务器证书校验失败，请检查系统时间或代理设置'
+  }
+
+  return message || '未知错误'
+}
+
 function broadcastToAllWindows(channel: string): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) {
@@ -428,21 +489,31 @@ async function verifyWindowsPassword(password: string): Promise<boolean> {
 }
 
 async function runUpdateCheck(): Promise<CheckForUpdatesResult> {
-  try {
-    const result = await autoUpdater.checkForUpdates()
-    return {
-      success: true,
-      updateInfo:
-        result?.isUpdateAvailable === true ? normalizeUpdateInfo(result.updateInfo) : undefined,
-      checkedAt: Date.now(),
-      fromCache: false
-    }
-  } catch (error) {
-    return {
-      success: false,
-      error: String(error),
-      checkedAt: Date.now(),
-      fromCache: false
+  let retryLeft = UPDATE_CHECK_RETRY_COUNT
+
+  while (true) {
+    try {
+      const result = await autoUpdater.checkForUpdates()
+      return {
+        success: true,
+        updateInfo:
+          result?.isUpdateAvailable === true ? normalizeUpdateInfo(result.updateInfo) : undefined,
+        checkedAt: Date.now(),
+        fromCache: false
+      }
+    } catch (error) {
+      const rawMessage = getErrorMessage(error)
+      if (retryLeft > 0 && isLikelyNetworkUpdateError(rawMessage)) {
+        retryLeft -= 1
+        continue
+      }
+
+      return {
+        success: false,
+        error: normalizeUpdateErrorMessage(error),
+        checkedAt: Date.now(),
+        fromCache: false
+      }
     }
   }
 }
@@ -955,9 +1026,9 @@ function registerIpcHandlers(): void {
     try {
       await autoUpdater.downloadUpdate()
     } catch (error) {
-      const message = String(error)
+      const message = getErrorMessage(error)
       if (!message.includes('Please check update first')) {
-        throw error
+        throw new Error(normalizeUpdateErrorMessage(error))
       }
 
       const checkResult = await getUpdateCheckResult({ force: true })
