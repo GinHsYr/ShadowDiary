@@ -169,4 +169,5 @@ export interface DiaryAPI {
   installUpdate(): Promise<void>
   onDownloadProgress(callback: (progress: { percent: number }) => void): () => void
   onUpdateDownloaded(callback: () => void): () => void
+  onSystemLock(callback: () => void): () => void
 }

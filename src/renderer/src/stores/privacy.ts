@@ -2,6 +2,22 @@ import { defineStore } from 'pinia'
 
 const PRIVACY_ENABLED_KEY = 'privacy.enabled'
 const PRIVACY_PASSWORD_HASH_KEY = 'privacy.passwordHash'
+const PRIVACY_IDLE_LOCK_MINUTES_KEY = 'privacy.idleLockMinutes'
+const DEFAULT_PRIVACY_IDLE_LOCK_MINUTES = 5
+export const PRIVACY_IDLE_LOCK_MINUTE_OPTIONS = [1, 5, 10, 15, 30] as const
+
+function normalizeIdleLockMinutes(value: string | null | undefined): number {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed)) return DEFAULT_PRIVACY_IDLE_LOCK_MINUTES
+  if (
+    PRIVACY_IDLE_LOCK_MINUTE_OPTIONS.includes(
+      parsed as (typeof PRIVACY_IDLE_LOCK_MINUTE_OPTIONS)[number]
+    )
+  ) {
+    return parsed
+  }
+  return DEFAULT_PRIVACY_IDLE_LOCK_MINUTES
+}
 
 export function isValidPrivacyPassword(password: string): boolean {
   return /^\d{6}$/.test(password)
@@ -20,7 +36,8 @@ export const usePrivacyStore = defineStore('privacy', {
     isEnabled: false,
     isLocked: false,
     isInitialized: false,
-    passwordHash: ''
+    passwordHash: '',
+    idleLockMinutes: DEFAULT_PRIVACY_IDLE_LOCK_MINUTES
   }),
 
   getters: {
@@ -29,27 +46,34 @@ export const usePrivacyStore = defineStore('privacy', {
     },
     hasPassword(state): boolean {
       return state.passwordHash.length > 0
+    },
+    idleLockMs(state): number {
+      return state.idleLockMinutes * 60 * 1000
     }
   },
 
   actions: {
     async initFromStorage(): Promise<void> {
       try {
-        const [enabledSetting, passwordHash] = await Promise.all([
+        const [enabledSetting, passwordHash, idleLockMinutesSetting] = await Promise.all([
           window.api.getSetting(PRIVACY_ENABLED_KEY),
-          window.api.getSetting(PRIVACY_PASSWORD_HASH_KEY)
+          window.api.getSetting(PRIVACY_PASSWORD_HASH_KEY),
+          window.api.getSetting(PRIVACY_IDLE_LOCK_MINUTES_KEY)
         ])
 
         const enabled = enabledSetting === '1'
         const normalizedHash = passwordHash?.trim() || ''
+        const idleLockMinutes = normalizeIdleLockMinutes(idleLockMinutesSetting)
         this.isEnabled = enabled
         this.passwordHash = normalizedHash
+        this.idleLockMinutes = idleLockMinutes
         this.isLocked = enabled && normalizedHash.length > 0
       } catch (error) {
         console.error('加载隐私设置失败:', error)
         this.isEnabled = false
         this.isLocked = false
         this.passwordHash = ''
+        this.idleLockMinutes = DEFAULT_PRIVACY_IDLE_LOCK_MINUTES
       } finally {
         this.isInitialized = true
       }
@@ -72,6 +96,11 @@ export const usePrivacyStore = defineStore('privacy', {
 
       this.isLocked = false
       return true
+    },
+
+    lock(): void {
+      if (!this.isEnabled || !this.hasPassword) return
+      this.isLocked = true
     },
 
     async enablePrivacy(): Promise<void> {
@@ -126,6 +155,12 @@ export const usePrivacyStore = defineStore('privacy', {
       }
 
       await this.setPassword(newPassword)
+    },
+
+    async setIdleLockMinutes(minutes: number): Promise<void> {
+      const normalized = normalizeIdleLockMinutes(String(minutes))
+      await window.api.setSetting(PRIVACY_IDLE_LOCK_MINUTES_KEY, String(normalized))
+      this.idleLockMinutes = normalized
     }
   }
 })

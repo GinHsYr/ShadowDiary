@@ -6,7 +6,8 @@ import {
   dialog,
   nativeImage,
   clipboard,
-  protocol
+  protocol,
+  powerMonitor
 } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { AppUpdateInfo, CheckForUpdatesResult, UpdateCheckOptions } from '../types/api'
@@ -210,6 +211,20 @@ function isUpdateCacheFresh(): boolean {
   return Date.now() - cachedUpdateCheck.checkedAt < UPDATE_CACHE_TTL_MS
 }
 
+function broadcastToAllWindows(channel: string): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(channel)
+    }
+  }
+}
+
+function registerSystemSecurityEvents(): void {
+  powerMonitor.on('lock-screen', () => {
+    broadcastToAllWindows('system:lock-screen')
+  })
+}
+
 async function runUpdateCheck(): Promise<CheckForUpdatesResult> {
   try {
     const result = await autoUpdater.checkForUpdates()
@@ -305,6 +320,7 @@ app
 
     // Register IPC handlers
     registerIpcHandlers()
+    registerSystemSecurityEvents()
 
     createWindow()
     void getUpdateCheckResult({ force: true })

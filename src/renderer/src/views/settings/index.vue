@@ -22,11 +22,7 @@
               <div class="setting-info">
                 <label class="setting-label">主题色</label>
                 <span class="setting-description">
-                  {{
-                    theme.isDark
-                      ? '暗色模式下固定使用默认暗色主题色'
-                      : '选择你喜欢的颜色'
-                  }}
+                  {{ theme.isDark ? '暗色模式下固定使用默认暗色主题色' : '选择你喜欢的颜色' }}
                 </span>
               </div>
 
@@ -57,7 +53,7 @@
               <div class="setting-info">
                 <label class="setting-label">隐私保护开关</label>
                 <span class="setting-description">
-                  开启后，重启并重新进入应用时需要输入 6 位数字密码
+                  开启后，重新进入应用需要提供密码
                 </span>
               </div>
               <n-switch
@@ -65,6 +61,25 @@
                 :loading="privacyLoading"
                 @update:value="handlePrivacyToggle"
               />
+            </div>
+
+            <div v-if="privacy.isEnabled" class="setting-item setting-item-top">
+              <div class="setting-info">
+                <label class="setting-label">空闲自动锁定</label>
+                <span class="setting-description">
+                  无操作达到设定时长后，自动进入隐私保护锁定
+                </span>
+              </div>
+
+              <div class="privacy-actions privacy-actions--end">
+                <n-select
+                  :value="privacy.idleLockMinutes"
+                  :options="privacyIdleMinuteOptions"
+                  :disabled="privacyLoading"
+                  style="width: 160px"
+                  @update:value="handlePrivacyIdleMinuteChange"
+                />
+              </div>
             </div>
 
             <div v-if="privacy.isEnabled" class="setting-item setting-item-top">
@@ -363,12 +378,13 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   NButton,
   NCard,
+  NModal,
+  NInput,
+  NInputOtp,
+  NProgress,
+  NSelect,
   NSpace,
   NSwitch,
-  NProgress,
-  NInputOtp,
-  NInput,
-  NModal,
   useDialog
 } from 'naive-ui'
 import {
@@ -377,7 +393,11 @@ import {
   THEME_ACCENT_PALETTES,
   useThemeStore
 } from '@renderer/stores/themes'
-import { isValidPrivacyPassword, usePrivacyStore } from '@renderer/stores/privacy'
+import {
+  isValidPrivacyPassword,
+  PRIVACY_IDLE_LOCK_MINUTE_OPTIONS,
+  usePrivacyStore
+} from '@renderer/stores/privacy'
 import type { DataTransferProgress, DataTransferResult } from '../../../../types/api'
 
 interface AppInfo {
@@ -397,6 +417,10 @@ interface AccentOption {
 const theme = useThemeStore()
 const privacy = usePrivacyStore()
 const OTP_LENGTH = 6
+const privacyIdleMinuteOptions = PRIVACY_IDLE_LOCK_MINUTE_OPTIONS.map((minutes) => ({
+  label: `${minutes} 分钟`,
+  value: minutes
+}))
 const accentOptions: AccentOption[] = [
   {
     value: ThemeAccent.Green,
@@ -645,6 +669,23 @@ const handlePrivacyToggle = (value: boolean): void => {
 
 const handleOpenPasswordModal = (): void => {
   openPasswordModal(privacy.hasPassword ? 'reset' : 'setup')
+}
+
+const handlePrivacyIdleMinuteChange = async (value: number | null): Promise<void> => {
+  if (value === null || privacyLoading.value || value === privacy.idleLockMinutes) return
+
+  privacyLoading.value = true
+  try {
+    await privacy.setIdleLockMinutes(value)
+    privacyMessage.value = '空闲自动锁定时长已更新'
+    privacyMessageType.value = 'success'
+  } catch (error) {
+    console.error('更新自动锁定时长失败:', error)
+    privacyMessage.value = `更新失败：${String(error)}`
+    privacyMessageType.value = 'error'
+  } finally {
+    privacyLoading.value = false
+  }
 }
 
 const handleSubmitPasswordModal = async (): Promise<void> => {

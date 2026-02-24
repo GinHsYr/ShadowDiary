@@ -106,6 +106,13 @@ const api: DiaryAPI = {
     }
     ipcRenderer.on('update:downloaded', listener)
     return () => ipcRenderer.removeListener('update:downloaded', listener)
+  },
+  onSystemLock: (callback) => {
+    const listener = (): void => {
+      callback()
+    }
+    ipcRenderer.on('system:lock-screen', listener)
+    return () => ipcRenderer.removeListener('system:lock-screen', listener)
   }
 }
 

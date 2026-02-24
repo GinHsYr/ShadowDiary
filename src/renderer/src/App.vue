@@ -7,7 +7,7 @@ import {
   NLayout,
   NLayoutContent
 } from 'naive-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import TitleBar from './components/TitleBar.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import AppHeader from './components/AppHeader.vue'
@@ -17,11 +17,15 @@ import { isValidPrivacyPassword, usePrivacyStore } from './stores/privacy'
 const theme = useThemeStore()
 const privacy = usePrivacyStore()
 const OTP_LENGTH = 6
+const USER_ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'] as const
 const password = ref<string[]>([])
 const unlockError = ref('')
 const unlocking = ref(false)
 const passwordValue = computed(() => password.value.join(''))
 const unlockStatus = computed<'error' | undefined>(() => (unlockError.value ? 'error' : undefined))
+let idleTimer: number | null = null
+let lastActivityAt = Date.now()
+let removeSystemLockListener: (() => void) | null = null
 
 const showLockOverlay = computed(() => privacy.isInitialized && privacy.isLocked)
 
@@ -45,6 +49,75 @@ function handlePasswordInput(value: string[]): void {
 function handlePasswordFinish(value: string[]): void {
   password.value = value
   void handleUnlock()
+}
+
+function canAutoLockByPrivacy(): boolean {
+  return privacy.isInitialized && privacy.isEnabled && privacy.hasPassword
+}
+
+function clearIdleTimer(): void {
+  if (idleTimer !== null) {
+    window.clearTimeout(idleTimer)
+    idleTimer = null
+  }
+}
+
+function scheduleIdleLock(): void {
+  clearIdleTimer()
+  if (!canAutoLockByPrivacy() || privacy.isLocked) return
+
+  const idleLockMs = privacy.idleLockMs
+  const elapsed = Date.now() - lastActivityAt
+  const remaining = idleLockMs - elapsed
+  if (remaining <= 0) {
+    privacy.lock()
+    return
+  }
+
+  idleTimer = window.setTimeout(() => {
+    idleTimer = null
+    if (!canAutoLockByPrivacy() || privacy.isLocked) return
+    if (Date.now() - lastActivityAt >= idleLockMs) {
+      privacy.lock()
+      return
+    }
+    scheduleIdleLock()
+  }, remaining)
+}
+
+function recordActivity(): void {
+  if (!canAutoLockByPrivacy() || privacy.isLocked) return
+  lastActivityAt = Date.now()
+  scheduleIdleLock()
+}
+
+function evaluateIdleLock(): void {
+  if (!canAutoLockByPrivacy() || privacy.isLocked) {
+    clearIdleTimer()
+    return
+  }
+
+  if (Date.now() - lastActivityAt >= privacy.idleLockMs) {
+    privacy.lock()
+    clearIdleTimer()
+    return
+  }
+
+  scheduleIdleLock()
+}
+
+function handleUserActivity(): void {
+  recordActivity()
+}
+
+function handleWindowFocus(): void {
+  evaluateIdleLock()
+}
+
+function handleVisibilityChange(): void {
+  if (document.visibilityState === 'visible') {
+    evaluateIdleLock()
+  }
 }
 
 async function handleUnlock(): Promise<void> {
@@ -93,6 +166,61 @@ watch(
   },
   { immediate: true }
 )
+
+watch(
+  () =>
+    [
+      privacy.isInitialized,
+      privacy.isEnabled,
+      privacy.hasPassword,
+      privacy.isLocked,
+      privacy.idleLockMs
+    ] as const,
+  ([isInitialized, isEnabled, hasPassword, isLocked], previous) => {
+    const shouldMonitor = isInitialized && isEnabled && hasPassword
+    if (!shouldMonitor || isLocked) {
+      clearIdleTimer()
+      return
+    }
+
+    if (!previous || previous[3]) {
+      lastActivityAt = Date.now()
+    }
+
+    scheduleIdleLock()
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
+  for (const eventName of USER_ACTIVITY_EVENTS) {
+    window.addEventListener(eventName, handleUserActivity)
+  }
+  window.addEventListener('focus', handleWindowFocus)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+
+  removeSystemLockListener = window.api.onSystemLock(() => {
+    if (!canAutoLockByPrivacy() || privacy.isLocked) return
+    privacy.lock()
+    clearIdleTimer()
+  })
+
+  evaluateIdleLock()
+})
+
+onBeforeUnmount(() => {
+  for (const eventName of USER_ACTIVITY_EVENTS) {
+    window.removeEventListener(eventName, handleUserActivity)
+  }
+  window.removeEventListener('focus', handleWindowFocus)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  clearIdleTimer()
+
+  if (removeSystemLockListener) {
+    removeSystemLockListener()
+    removeSystemLockListener = null
+  }
+})
 </script>
 
 <template>
