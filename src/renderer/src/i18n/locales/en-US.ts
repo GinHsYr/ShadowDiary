@@ -211,6 +211,7 @@ const enUS = {
     accents: {
       green: 'Emerald Green',
       blue: 'Sky Blue',
+      black: 'Classic Black',
       orange: 'Amber Orange',
       red: 'Coral Red',
       purple: 'Neon Purple',
@@ -235,11 +236,17 @@ const enUS = {
       windowsPassword: 'Windows Sign-in Password',
       windowsPasswordDescription:
         'Uses your system account password for unlock, no local privacy password needed',
+      manualLockShortcut: 'Manual Lock Shortcut',
+      manualLockShortcutDescription:
+        'When privacy protection is enabled, use this shortcut to lock immediately (focus the input then press a new combo)',
       enabledSuccess: 'Privacy protection enabled',
       disabledSuccess: 'Privacy protection disabled',
       switchToWindows: 'Switched to Windows password unlock',
       switchToPin: 'Switched to PIN unlock',
       idleLockUpdated: 'Idle lock duration updated',
+      manualLockShortcutUpdated: 'Manual lock shortcut updated to {shortcut}',
+      manualLockShortcutInvalid: 'Invalid shortcut. Use Ctrl/Alt/Shift/Meta + letter or number',
+      resetManualLockShortcut: 'Reset Default',
       passwordResetSuccess: 'Password reset successfully',
       passwordSetAndEnabled: 'Password set successfully, privacy protection enabled',
       passwordSetAndSwitched: 'Password set successfully, switched to PIN unlock',

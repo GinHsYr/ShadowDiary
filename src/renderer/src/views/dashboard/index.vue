@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onBeforeUnmount, onMounted, ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   NGrid,
@@ -46,20 +46,79 @@ const mentionEntries = ref<PersonMentionDetailItem[]>([])
 const mentionTotal = ref(0)
 const mentionPage = ref(1)
 const mentionPageSize = 20
+const mentionListEpoch = ref(0)
 const monthGridTransitionName = ref<'month-grid-next' | 'month-grid-prev' | 'month-grid-fade'>(
   'month-grid-fade'
 )
 const monthGridKey = ref('')
 const statsEntered = ref(false)
 const skipStatsEnterAnimation = ref(false)
+const dashboardEntered = ref(false)
 const STATS_ANIMATED_SESSION_KEY = 'dashboard.stats-entered'
 const mentionPageCount = computed(() =>
   Math.max(1, Math.ceil(mentionTotal.value / mentionPageSize))
 )
+const mentionContentKey = computed(() => {
+  if (mentionLoading.value) return 'loading'
+  if (mentionEntries.value.length === 0) return `empty-${mentionListEpoch.value}`
+  return `list-${mentionPage.value}-${mentionListEpoch.value}`
+})
 const mentionTagColor = {
   color: 'var(--app-accent-12, rgba(24, 160, 88, 0.12))',
   borderColor: 'var(--app-accent-20, rgba(24, 160, 88, 0.2))',
   textColor: 'var(--app-accent-color, var(--n-color-target, #18a058))'
+}
+const typedWelcome = ref('')
+const welcomeTyping = ref(false)
+const welcomeText = computed(() => t('dashboard.welcome'))
+const WELCOME_TYPING_INTERVAL_MS = 60
+let welcomeTypingTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearWelcomeTypingTimer(): void {
+  if (welcomeTypingTimer) {
+    clearTimeout(welcomeTypingTimer)
+    welcomeTypingTimer = null
+  }
+}
+
+function shouldReduceMotion(): boolean {
+  return (
+    document.documentElement.classList.contains('reduced-motion') ||
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
+function playWelcomeTyping(text: string): void {
+  clearWelcomeTypingTimer()
+  if (!text) {
+    typedWelcome.value = ''
+    welcomeTyping.value = false
+    return
+  }
+
+  if (shouldReduceMotion()) {
+    typedWelcome.value = text
+    welcomeTyping.value = false
+    return
+  }
+
+  const chars = Array.from(text)
+  let charIndex = 0
+  typedWelcome.value = ''
+  welcomeTyping.value = true
+
+  const typeNextChar = (): void => {
+    typedWelcome.value += chars[charIndex]
+    charIndex += 1
+    if (charIndex < chars.length) {
+      welcomeTypingTimer = setTimeout(typeNextChar, WELCOME_TYPING_INTERVAL_MS)
+      return
+    }
+    welcomeTyping.value = false
+    welcomeTypingTimer = null
+  }
+
+  typeNextChar()
 }
 
 // 加载统计数据
@@ -180,16 +239,33 @@ onMounted(() => {
   loadDiaryDates()
   loadPersonMentions()
 
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      dashboardEntered.value = true
+    })
+  })
+
   if (sessionStorage.getItem(STATS_ANIMATED_SESSION_KEY) === '1') {
     skipStatsEnterAnimation.value = true
     statsEntered.value = true
-    return
+  } else {
+    requestAnimationFrame(() => {
+      statsEntered.value = true
+      sessionStorage.setItem(STATS_ANIMATED_SESSION_KEY, '1')
+    })
   }
+})
 
-  requestAnimationFrame(() => {
-    statsEntered.value = true
-    sessionStorage.setItem(STATS_ANIMATED_SESSION_KEY, '1')
-  })
+watch(
+  welcomeText,
+  (value) => {
+    playWelcomeTyping(value)
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => {
+  clearWelcomeTypingTimer()
 })
 
 interface PieClickParams {
@@ -279,6 +355,7 @@ async function fetchMentionDetailsPage(personName: string, page: number): Promis
     mentionKeywords.value = result.keywords.length > 0 ? result.keywords : [personName]
     mentionEntries.value = result.entries
     mentionTotal.value = result.total
+    mentionListEpoch.value++
   } catch (error) {
     console.error('加载人物提及明细失败:', error)
   } finally {
@@ -293,6 +370,7 @@ async function loadMentionDetails(personName: string): Promise<void> {
   mentionTotal.value = 0
   mentionKeywords.value = [personName]
   mentionPage.value = 1
+  mentionListEpoch.value = 0
   await fetchMentionDetailsPage(personName, 1)
 }
 
@@ -518,13 +596,20 @@ const jumpToLastMonth = (): void => {
 </script>
 
 <template>
-  <div class="home-view">
-    <div class="welcome-box">
-      <h2>{{ t('dashboard.welcome') }}</h2>
+  <div class="home-view" :class="{ 'home-view--entered': dashboardEntered }">
+    <div class="welcome-box motion-section" style="--section-index: 0">
+      <h2>
+        {{ typedWelcome }}
+        <span
+          v-if="welcomeTyping || typedWelcome.length > 0"
+          class="typing-caret"
+          aria-hidden="true"
+        ></span>
+      </h2>
     </div>
 
     <!-- 日历卡片 -->
-    <n-card :bordered="false" class="calendar-card">
+    <n-card :bordered="false" class="calendar-card motion-section" style="--section-index: 1">
       <!-- 日历头部：月份导航 + 快捷跳转 -->
       <div class="calendar-top">
         <div class="month-nav">
@@ -650,7 +735,8 @@ const jumpToLastMonth = (): void => {
     <n-grid
       :x-gap="24"
       :cols="3"
-      class="stats-grid"
+      class="stats-grid motion-section"
+      style="--section-index: 2"
       :class="{
         'stats-grid--entered': statsEntered,
         'stats-grid--skip-enter': skipStatsEnterAnimation
@@ -683,7 +769,12 @@ const jumpToLastMonth = (): void => {
     </n-grid>
 
     <!-- 人物提及饼图 -->
-    <n-card v-if="personMentionData.length > 0" :bordered="false" class="chart-card">
+    <n-card
+      v-if="personMentionData.length > 0"
+      :bordered="false"
+      class="chart-card motion-section"
+      style="--section-index: 3"
+    >
       <div class="chart-content">
         <v-chart :option="pieChartOption" autoresize class="pie-chart" @click="handlePieClick" />
         <div class="month-progress-panel">
@@ -719,44 +810,53 @@ const jumpToLastMonth = (): void => {
     >
       <div class="mention-meta">{{ t('dashboard.mentionMeta', { count: mentionTotal }) }}</div>
 
-      <div v-if="mentionLoading" class="mention-loading">
-        <n-spin size="small" />
-      </div>
-
-      <div v-else-if="mentionEntries.length === 0" class="mention-empty">
-        {{ t('dashboard.mentionEmpty') }}
-      </div>
-
-      <div v-else class="mention-list">
-        <div v-for="entry in mentionEntries" :key="entry.id" class="mention-item">
-          <div class="mention-item-head">
-            <span class="mention-item-date">{{ formatDate(entry.createdAt) }}</span>
-            <span class="mention-item-count">{{
-              t('dashboard.mentionCount', { count: entry.mentionCount })
-            }}</span>
+      <transition name="mention-state-fade" mode="out-in">
+        <div :key="mentionContentKey" class="mention-state-shell">
+          <div v-if="mentionLoading" class="mention-loading">
+            <n-spin size="small" />
           </div>
-          <div class="mention-item-title">{{ entry.title || t('common.noTitle') }}</div>
-          <!-- eslint-disable-next-line vue/no-v-html -->
-          <div class="mention-item-snippet" v-html="getHighlightedSnippet(entry)" />
-          <div class="mention-item-footer">
-            <div class="mention-tags">
-              <n-tag
-                v-for="kw in entry.matchedKeywords"
-                :key="`${entry.id}-${kw}`"
-                size="small"
-                round
-                :color="mentionTagColor"
-                :bordered="false"
-              >
-                {{ kw }}
-              </n-tag>
+
+          <div v-else-if="mentionEntries.length === 0" class="mention-empty">
+            {{ t('dashboard.mentionEmpty') }}
+          </div>
+
+          <transition-group v-else name="mention-item-motion" tag="div" class="mention-list">
+            <div
+              v-for="(entry, idx) in mentionEntries"
+              :key="`${mentionListEpoch}-${entry.id}`"
+              class="mention-item"
+              :style="{ '--mention-index': String(idx) }"
+            >
+              <div class="mention-item-head">
+                <span class="mention-item-date">{{ formatDate(entry.createdAt) }}</span>
+                <span class="mention-item-count">{{
+                  t('dashboard.mentionCount', { count: entry.mentionCount })
+                }}</span>
+              </div>
+              <div class="mention-item-title">{{ entry.title || t('common.noTitle') }}</div>
+              <!-- eslint-disable-next-line vue/no-v-html -->
+              <div class="mention-item-snippet" v-html="getHighlightedSnippet(entry)" />
+              <div class="mention-item-footer">
+                <div class="mention-tags">
+                  <n-tag
+                    v-for="kw in entry.matchedKeywords"
+                    :key="`${entry.id}-${kw}`"
+                    size="small"
+                    round
+                    :color="mentionTagColor"
+                    :bordered="false"
+                  >
+                    {{ kw }}
+                  </n-tag>
+                </div>
+                <n-button size="tiny" tertiary type="primary" @click="openMentionDiary(entry)">
+                  {{ t('dashboard.openDiary') }}
+                </n-button>
+              </div>
             </div>
-            <n-button size="tiny" tertiary type="primary" @click="openMentionDiary(entry)">
-              {{ t('dashboard.openDiary') }}
-            </n-button>
-          </div>
+          </transition-group>
         </div>
-      </div>
+      </transition>
 
       <div v-if="mentionTotal > mentionPageSize" class="mention-pagination">
         <n-pagination
@@ -781,8 +881,32 @@ const jumpToLastMonth = (): void => {
   height: 100%;
 }
 
+.motion-section {
+  opacity: 0;
+  transform: translateY(calc(var(--motion-distance-md) * 1.4)) scale(0.985);
+}
+
+.home-view--entered .motion-section {
+  animation: dashboard-section-in var(--motion-spring-normal) var(--ease-spring-soft) both;
+  animation-delay: calc(var(--section-index, 0) * 72ms);
+}
+
 .welcome-box {
   margin-bottom: 20px;
+}
+
+.welcome-box h2 {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.4em;
+}
+
+.typing-caret {
+  width: 0.6em;
+  height: 1.1em;
+  margin-left: 3px;
+  border-right: 2px solid currentColor;
+  animation: typing-caret-blink 1s steps(1, end) infinite;
 }
 
 /* ===== 日历卡片 ===== */
@@ -819,11 +943,14 @@ const jumpToLastMonth = (): void => {
   cursor: pointer;
   padding: 4px 10px;
   border-radius: 6px;
-  transition: background 0.2s;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    transform var(--motion-spring-fast) var(--ease-spring-soft);
 }
 
 .month-label.clickable:hover {
   background: var(--n-color-hover, rgba(0, 0, 0, 0.04));
+  transform: translateY(-1px);
 }
 
 /* 年月选择器 */
@@ -862,23 +989,25 @@ const jumpToLastMonth = (): void => {
   border-radius: 6px;
   cursor: pointer;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-spring-fast) var(--ease-spring-soft);
   user-select: none;
 }
 
 .ym-month-cell:hover {
   background: var(--n-color-hover, rgba(0, 0, 0, 0.04));
+  transform: translateY(-1px);
 }
 
 .ym-month-cell.is-active {
-  background: var(--n-color-target, #18a058);
+  background: var(--app-accent-color, var(--n-primary-color, #18a058));
   color: #fff;
   font-weight: 600;
 }
 
 .ym-month-cell.is-now:not(.is-active) {
-  color: var(--n-color-target, #18a058);
+  color: var(--app-accent-color, var(--n-primary-color, #18a058));
   font-weight: 600;
 }
 
@@ -922,16 +1051,24 @@ const jumpToLastMonth = (): void => {
   height: 40px;
   border-radius: 8px;
   cursor: pointer;
+  overflow: hidden;
   transition:
     background var(--motion-fast) var(--ease-standard),
     color var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
+    box-shadow var(--motion-fast) var(--ease-standard),
+    transform var(--motion-spring-fast) var(--ease-spring-soft);
   gap: 2px;
 }
 
 .day-cell:hover {
   background: var(--n-color-hover, rgba(0, 0, 0, 0.04));
-  transform: translateY(-1px);
+  transform: translateY(-2px) scale(var(--motion-scale-hover));
+  box-shadow: 0 8px 16px var(--app-accent-08, rgba(24, 160, 88, 0.08));
+}
+
+.day-cell:active {
+  transform: translateY(0) scale(var(--motion-scale-press));
+  box-shadow: none;
 }
 
 .day-cell.other-month {
@@ -943,6 +1080,10 @@ const jumpToLastMonth = (): void => {
   color: #fff;
   font-weight: 700;
   border-radius: 8px;
+}
+
+.home-view--entered .day-cell.is-today {
+  animation: today-cell-pop var(--motion-spring-fast) var(--ease-spring-pop) both;
 }
 
 .day-cell.is-today:hover {
@@ -960,6 +1101,8 @@ const jumpToLastMonth = (): void => {
 .day-number {
   font-size: 13px;
   line-height: 1;
+  position: relative;
+  z-index: 1;
 }
 
 .diary-dot {
@@ -968,6 +1111,8 @@ const jumpToLastMonth = (): void => {
   border-radius: 50%;
   background: var(--n-color-target, #18a058);
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
 }
 
 /* 图例 */
@@ -1009,11 +1154,11 @@ const jumpToLastMonth = (): void => {
 .stat-card {
   border-radius: 12px;
   opacity: 0;
-  transform: translateY(var(--motion-distance-sm));
+  transform: translateY(var(--motion-distance-md)) scale(0.985);
 }
 
 .stats-grid--entered .stat-card {
-  animation: stats-card-in var(--motion-normal) var(--ease-enter) both;
+  animation: stats-card-in var(--motion-spring-normal) var(--ease-spring-pop) both;
   animation-delay: calc(var(--stat-index, 0) * 60ms);
 }
 
@@ -1028,6 +1173,14 @@ const jumpToLastMonth = (): void => {
   margin-bottom: 24px;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  transition:
+    box-shadow var(--motion-fast) var(--ease-standard),
+    transform var(--motion-spring-fast) var(--ease-spring-soft);
+}
+
+.chart-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px var(--app-accent-08, rgba(24, 160, 88, 0.08));
 }
 
 .chart-content {
@@ -1050,6 +1203,13 @@ const jumpToLastMonth = (): void => {
   align-items: center;
   gap: 10px;
   color: var(--n-text-color, #333);
+  opacity: 0;
+  transform: translateY(var(--motion-distance-md)) scale(0.985);
+}
+
+.home-view--entered .month-progress-panel {
+  animation: month-progress-in var(--motion-spring-normal) var(--ease-spring-soft) both;
+  animation-delay: 260ms;
 }
 
 .month-progress-title {
@@ -1094,6 +1254,10 @@ const jumpToLastMonth = (): void => {
   color: var(--n-text-color-3, #999);
 }
 
+.mention-state-shell {
+  min-height: 120px;
+}
+
 .mention-list {
   max-height: min(62vh, 560px);
   overflow-y: auto;
@@ -1106,6 +1270,16 @@ const jumpToLastMonth = (): void => {
   padding: 12px;
   margin-bottom: 10px;
   background: var(--n-color, #fff);
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    transform var(--motion-spring-fast) var(--ease-spring-soft);
+}
+
+.mention-item:hover {
+  transform: translateY(-1px);
+  border-color: var(--app-accent-20, rgba(24, 160, 88, 0.2));
+  box-shadow: 0 8px 18px var(--app-accent-08, rgba(24, 160, 88, 0.08));
 }
 
 .mention-item-head {
@@ -1157,6 +1331,44 @@ const jumpToLastMonth = (): void => {
   justify-content: flex-end;
 }
 
+.mention-state-fade-enter-active,
+.mention-state-fade-leave-active {
+  transition: opacity var(--motion-normal) var(--ease-standard);
+}
+
+.mention-state-fade-enter-from,
+.mention-state-fade-leave-to {
+  opacity: 0;
+}
+
+.mention-item-motion-enter-active {
+  transition:
+    opacity var(--motion-normal) var(--ease-standard),
+    transform var(--motion-spring-fast) var(--ease-spring-soft);
+  transition-delay: calc(var(--mention-index, 0) * 20ms);
+}
+
+.mention-item-motion-leave-active {
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-exit);
+}
+
+.mention-item-motion-enter-from,
+.mention-item-motion-leave-to {
+  opacity: 0;
+  transform: translateY(var(--motion-distance-sm)) scale(0.985);
+}
+
+.mention-item-motion-move {
+  transition: transform var(--motion-normal) var(--ease-standard);
+}
+
+.mention-modal-card :deep(.n-card) {
+  transform-origin: center top;
+  animation: mention-modal-in var(--motion-spring-normal) var(--ease-spring-soft);
+}
+
 .month-grid-next-enter-active,
 .month-grid-next-leave-active,
 .month-grid-prev-enter-active,
@@ -1164,43 +1376,123 @@ const jumpToLastMonth = (): void => {
 .month-grid-fade-enter-active,
 .month-grid-fade-leave-active {
   transition:
-    opacity var(--motion-normal) var(--ease-enter),
-    transform var(--motion-normal) var(--ease-enter);
+    opacity var(--motion-spring-normal) var(--ease-standard),
+    transform var(--motion-spring-normal) var(--ease-spring-soft);
 }
 
 .month-grid-next-enter-from {
   opacity: 0;
-  transform: translateX(var(--motion-distance-md));
+  transform: translateX(var(--motion-distance-md)) scale(0.985);
 }
 
 .month-grid-next-leave-to {
   opacity: 0;
-  transform: translateX(calc(var(--motion-distance-md) * -1));
+  transform: translateX(calc(var(--motion-distance-md) * -1)) scale(0.985);
 }
 
 .month-grid-prev-enter-from {
   opacity: 0;
-  transform: translateX(calc(var(--motion-distance-md) * -1));
+  transform: translateX(calc(var(--motion-distance-md) * -1)) scale(0.985);
 }
 
 .month-grid-prev-leave-to {
   opacity: 0;
-  transform: translateX(var(--motion-distance-md));
+  transform: translateX(var(--motion-distance-md)) scale(0.985);
 }
 
 .month-grid-fade-enter-from,
 .month-grid-fade-leave-to {
   opacity: 0;
+  transform: scale(0.99);
 }
 
 @keyframes stats-card-in {
   from {
     opacity: 0;
-    transform: translateY(var(--motion-distance-sm));
+    transform: translateY(var(--motion-distance-md)) scale(0.982);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
+}
+
+@keyframes dashboard-section-in {
+  0% {
+    opacity: 0;
+    transform: translateY(calc(var(--motion-distance-md) * 1.4))
+      scale(var(--motion-scale-pop-start));
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(-1px) scale(var(--motion-scale-pop-over));
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes typing-caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes today-cell-pop {
+  0% {
+    transform: scale(var(--motion-scale-pop-start));
+  }
+  68% {
+    transform: scale(var(--motion-scale-pop-over));
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes month-progress-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-distance-md)) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mention-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-distance-md)) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+:global(:root.reduced-motion) .motion-section,
+:global(:root.reduced-motion) .stat-card,
+:global(:root.reduced-motion) .month-progress-panel {
+  opacity: 1;
+  transform: none;
+  animation: none !important;
+}
+
+:global(:root.reduced-motion) .mention-modal-card :deep(.n-card),
+:global(:root.reduced-motion) .day-cell,
+:global(:root.reduced-motion) .day-cell.is-today,
+:global(:root.reduced-motion) .day-cell.has-diary:not(.is-today),
+:global(:root.reduced-motion) .mention-item {
+  transform: none;
+  animation: none !important;
+  box-shadow: none;
 }
 </style>

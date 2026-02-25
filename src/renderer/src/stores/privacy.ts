@@ -4,8 +4,10 @@ const PRIVACY_ENABLED_KEY = 'privacy.enabled'
 const PRIVACY_PASSWORD_HASH_KEY = 'privacy.passwordHash'
 const PRIVACY_IDLE_LOCK_MINUTES_KEY = 'privacy.idleLockMinutes'
 const PRIVACY_AUTH_METHOD_KEY = 'privacy.authMethod'
+const PRIVACY_MANUAL_LOCK_SHORTCUT_KEY = 'privacy.manualLockShortcut'
 const DEFAULT_PRIVACY_AUTH_METHOD = 'pin'
 const DEFAULT_PRIVACY_IDLE_LOCK_MINUTES = 5
+export const DEFAULT_PRIVACY_MANUAL_LOCK_SHORTCUT = 'Alt+L'
 export const PRIVACY_IDLE_LOCK_MINUTE_OPTIONS = [1, 5, 10, 15, 30] as const
 export type PrivacyAuthMethod = 'pin' | 'windows'
 
@@ -36,6 +38,137 @@ function normalizeIdleLockMinutes(value: string | null | undefined): number {
   return DEFAULT_PRIVACY_IDLE_LOCK_MINUTES
 }
 
+type ParsedShortcut = {
+  ctrl: boolean
+  alt: boolean
+  shift: boolean
+  meta: boolean
+  key: string
+}
+
+const MODIFIER_EVENT_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta'])
+const SHORTCUT_MODIFIER_ALIASES: Record<string, keyof Omit<ParsedShortcut, 'key'>> = {
+  ctrl: 'ctrl',
+  control: 'ctrl',
+  alt: 'alt',
+  option: 'alt',
+  shift: 'shift',
+  meta: 'meta',
+  cmd: 'meta',
+  command: 'meta',
+  super: 'meta',
+  win: 'meta'
+}
+
+function normalizeShortcutKey(raw: string): string | null {
+  const key = raw.trim()
+  if (!key) return null
+
+  const lower = key.toLowerCase()
+  if (lower === 'space' || lower === 'spacebar') return 'Space'
+  if (/^[a-z0-9]$/i.test(key)) return key.toUpperCase()
+  if (/^f([1-9]|1[0-9]|2[0-4])$/i.test(key)) return lower.toUpperCase()
+
+  const normalizedNamedKeys: Record<string, string> = {
+    enter: 'Enter',
+    escape: 'Escape',
+    esc: 'Escape',
+    tab: 'Tab',
+    backspace: 'Backspace',
+    delete: 'Delete',
+    insert: 'Insert',
+    home: 'Home',
+    end: 'End',
+    pageup: 'PageUp',
+    pagedown: 'PageDown',
+    arrowup: 'ArrowUp',
+    arrowdown: 'ArrowDown',
+    arrowleft: 'ArrowLeft',
+    arrowright: 'ArrowRight'
+  }
+
+  return normalizedNamedKeys[lower] ?? null
+}
+
+function parseShortcut(value: string | null | undefined): ParsedShortcut | null {
+  const raw = value?.trim() || ''
+  if (!raw) return null
+
+  const tokens = raw
+    .split('+')
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0)
+  if (tokens.length < 2) return null
+
+  const parsed: ParsedShortcut = {
+    ctrl: false,
+    alt: false,
+    shift: false,
+    meta: false,
+    key: ''
+  }
+
+  for (const token of tokens) {
+    const modifier = SHORTCUT_MODIFIER_ALIASES[token.toLowerCase()]
+    if (modifier) {
+      parsed[modifier] = true
+      continue
+    }
+
+    if (parsed.key) return null
+    const normalizedKey = normalizeShortcutKey(token)
+    if (!normalizedKey) return null
+    parsed.key = normalizedKey
+  }
+
+  if (!parsed.key) return null
+  if (!parsed.ctrl && !parsed.alt && !parsed.shift && !parsed.meta) return null
+  return parsed
+}
+
+function formatShortcut(parsed: ParsedShortcut): string {
+  const parts: string[] = []
+  if (parsed.ctrl) parts.push('Ctrl')
+  if (parsed.alt) parts.push('Alt')
+  if (parsed.shift) parts.push('Shift')
+  if (parsed.meta) parts.push('Meta')
+  parts.push(parsed.key)
+  return parts.join('+')
+}
+
+export function normalizePrivacyManualLockShortcut(value: string | null | undefined): string {
+  const parsed = parseShortcut(value)
+  if (!parsed) return DEFAULT_PRIVACY_MANUAL_LOCK_SHORTCUT
+  return formatShortcut(parsed)
+}
+
+export function isModifierOnlyKey(key: string): boolean {
+  return MODIFIER_EVENT_KEYS.has(key)
+}
+
+export function buildPrivacyManualLockShortcutFromEvent(event: KeyboardEvent): string | null {
+  if (event.isComposing || isModifierOnlyKey(event.key)) return null
+  const normalizedKey = normalizeShortcutKey(event.key)
+  if (!normalizedKey) return null
+
+  const parsed: ParsedShortcut = {
+    ctrl: event.ctrlKey,
+    alt: event.altKey,
+    shift: event.shiftKey,
+    meta: event.metaKey,
+    key: normalizedKey
+  }
+
+  if (!parsed.ctrl && !parsed.alt && !parsed.shift && !parsed.meta) return null
+  return formatShortcut(parsed)
+}
+
+export function isPrivacyManualLockShortcutMatch(event: KeyboardEvent, shortcut: string): boolean {
+  const eventShortcut = buildPrivacyManualLockShortcutFromEvent(event)
+  if (!eventShortcut) return false
+  return eventShortcut === normalizePrivacyManualLockShortcut(shortcut)
+}
+
 export function isValidPrivacyPassword(password: string): boolean {
   return /^\d{6}$/.test(password)
 }
@@ -55,6 +188,7 @@ export const usePrivacyStore = defineStore('privacy', {
     isInitialized: false,
     passwordHash: '',
     idleLockMinutes: DEFAULT_PRIVACY_IDLE_LOCK_MINUTES,
+    manualLockShortcut: DEFAULT_PRIVACY_MANUAL_LOCK_SHORTCUT,
     authMethod: DEFAULT_PRIVACY_AUTH_METHOD as PrivacyAuthMethod,
     isWindowsPasswordSupported: false
   }),
@@ -88,24 +222,28 @@ export const usePrivacyStore = defineStore('privacy', {
           passwordHash,
           idleLockMinutesSetting,
           authMethodSetting,
+          manualLockShortcutSetting,
           authSupport
         ] = await Promise.all([
           window.api.getSetting(PRIVACY_ENABLED_KEY),
           window.api.getSetting(PRIVACY_PASSWORD_HASH_KEY),
           window.api.getSetting(PRIVACY_IDLE_LOCK_MINUTES_KEY),
           window.api.getSetting(PRIVACY_AUTH_METHOD_KEY),
+          window.api.getSetting(PRIVACY_MANUAL_LOCK_SHORTCUT_KEY),
           window.api.getPrivacyAuthSupport()
         ])
 
         const enabled = enabledSetting === '1'
         const normalizedHash = passwordHash?.trim() || ''
         const idleLockMinutes = normalizeIdleLockMinutes(idleLockMinutesSetting)
+        const manualLockShortcut = normalizePrivacyManualLockShortcut(manualLockShortcutSetting)
         const windowsPasswordSupported = !!authSupport?.windowsPassword
         const authMethod = normalizeAuthMethod(authMethodSetting, windowsPasswordSupported)
 
         this.isEnabled = enabled
         this.passwordHash = normalizedHash
         this.idleLockMinutes = idleLockMinutes
+        this.manualLockShortcut = manualLockShortcut
         this.authMethod = authMethod
         this.isWindowsPasswordSupported = windowsPasswordSupported
         this.isLocked = enabled && this.hasCredential
@@ -115,12 +253,18 @@ export const usePrivacyStore = defineStore('privacy', {
             .setSetting(PRIVACY_AUTH_METHOD_KEY, authMethod)
             .catch((error) => console.error('保存隐私认证方式失败:', error))
         }
+        if ((manualLockShortcutSetting?.trim() || '') !== manualLockShortcut) {
+          void window.api
+            .setSetting(PRIVACY_MANUAL_LOCK_SHORTCUT_KEY, manualLockShortcut)
+            .catch((error) => console.error('保存手动锁定快捷键失败:', error))
+        }
       } catch (error) {
         console.error('加载隐私设置失败:', error)
         this.isEnabled = false
         this.isLocked = false
         this.passwordHash = ''
         this.idleLockMinutes = DEFAULT_PRIVACY_IDLE_LOCK_MINUTES
+        this.manualLockShortcut = DEFAULT_PRIVACY_MANUAL_LOCK_SHORTCUT
         this.authMethod = DEFAULT_PRIVACY_AUTH_METHOD
         this.isWindowsPasswordSupported = false
       } finally {
@@ -234,6 +378,16 @@ export const usePrivacyStore = defineStore('privacy', {
       const normalized = normalizeIdleLockMinutes(String(minutes))
       await window.api.setSetting(PRIVACY_IDLE_LOCK_MINUTES_KEY, String(normalized))
       this.idleLockMinutes = normalized
+    },
+
+    async setManualLockShortcut(shortcut: string): Promise<void> {
+      const parsed = parseShortcut(shortcut)
+      if (!parsed) {
+        throw new Error('手动锁定快捷键格式无效')
+      }
+      const normalized = formatShortcut(parsed)
+      await window.api.setSetting(PRIVACY_MANUAL_LOCK_SHORTCUT_KEY, normalized)
+      this.manualLockShortcut = normalized
     }
   }
 })

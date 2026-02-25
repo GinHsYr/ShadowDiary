@@ -2,21 +2,37 @@
   --motion-fast: 0.16s;
   --motion-normal: 0.24s;
   --motion-slow: 0.36s;
+  --motion-spring-fast: 0.28s;
+  --motion-spring-normal: 0.42s;
+  --motion-spring-slow: 0.56s;
   --motion-stagger: 22ms;
   --motion-distance-sm: 6px;
   --motion-distance-md: 10px;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring-soft: cubic-bezier(0.22, 1.2, 0.36, 1);
+  --ease-spring-pop: cubic-bezier(0.18, 1.35, 0.32, 1);
+  --motion-scale-hover: 1.02;
+  --motion-scale-press: 0.97;
+  --motion-scale-pop-start: 0.94;
+  --motion-scale-pop-over: 1.015;
 }
 
 :root.reduced-motion {
   --motion-fast: 0.08s;
   --motion-normal: 0.1s;
   --motion-slow: 0.12s;
+  --motion-spring-fast: 0.1s;
+  --motion-spring-normal: 0.12s;
+  --motion-spring-slow: 0.14s;
   --motion-stagger: 0ms;
   --motion-distance-sm: 0px;
   --motion-distance-md: 0px;
+  --motion-scale-hover: 1;
+  --motion-scale-press: 1;
+  --motion-scale-pop-start: 1;
+  --motion-scale-pop-over: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -24,8 +40,15 @@
     --motion-fast: 0.08s;
     --motion-normal: 0.1s;
     --motion-slow: 0.12s;
+    --motion-spring-fast: 0.1s;
+    --motion-spring-normal: 0.12s;
+    --motion-spring-slow: 0.14s;
     --motion-stagger: 0ms;
     --motion-distance-sm: 0px;
     --motion-distance-md: 0px;
+    --motion-scale-hover: 1;
+    --motion-scale-press: 1;
+    --motion-scale-pop-start: 1;
+    --motion-scale-pop-over: 1;
   }
 }

@@ -124,6 +124,28 @@
               </div>
             </div>
 
+            <div v-if="privacy.isEnabled" class="setting-item setting-item-top">
+              <div class="setting-info">
+                <label class="setting-label">{{ t('settings.privacy.manualLockShortcut') }}</label>
+                <span class="setting-description">
+                  {{ t('settings.privacy.manualLockShortcutDescription') }}
+                </span>
+              </div>
+
+              <div class="privacy-actions privacy-actions--end privacy-actions--shortcut">
+                <n-input
+                  :value="privacy.manualLockShortcut"
+                  class="privacy-shortcut-input"
+                  readonly
+                  :disabled="privacyLoading"
+                  @keydown="handleManualLockShortcutInput"
+                />
+                <n-button :disabled="privacyLoading" @click="handleResetManualLockShortcut">
+                  {{ t('settings.privacy.resetManualLockShortcut') }}
+                </n-button>
+              </div>
+            </div>
+
             <div
               v-if="privacy.isEnabled && privacy.authMethod === 'pin'"
               class="setting-item setting-item-top"
@@ -548,6 +570,9 @@ import {
   useThemeStore
 } from '@renderer/stores/themes'
 import {
+  buildPrivacyManualLockShortcutFromEvent,
+  DEFAULT_PRIVACY_MANUAL_LOCK_SHORTCUT,
+  isModifierOnlyKey,
   isValidPrivacyPassword,
   type PrivacyAuthMethod,
   PRIVACY_IDLE_LOCK_MINUTE_OPTIONS,
@@ -594,6 +619,11 @@ const accentOptions: AccentOption[] = [
     value: ThemeAccent.Blue,
     label: t('settings.accents.blue'),
     color: THEME_ACCENT_PALETTES[ThemeAccent.Blue].primaryColor
+  },
+  {
+    value: ThemeAccent.Black,
+    label: t('settings.accents.black'),
+    color: THEME_ACCENT_PALETTES[ThemeAccent.Black].primaryColor
   },
   {
     value: ThemeAccent.Orange,
@@ -1026,6 +1056,43 @@ const handlePrivacyIdleMinuteChange = async (value: number | null): Promise<void
   } finally {
     privacyLoading.value = false
   }
+}
+
+const updateManualLockShortcut = async (shortcut: string): Promise<void> => {
+  if (privacyLoading.value || shortcut === privacy.manualLockShortcut) return
+
+  privacyLoading.value = true
+  try {
+    await privacy.setManualLockShortcut(shortcut)
+    privacyMessage.value = t('settings.privacy.manualLockShortcutUpdated', { shortcut })
+    privacyMessageType.value = 'success'
+  } catch (error) {
+    console.error('更新手动锁定快捷键失败:', error)
+    privacyMessage.value = t('settings.data.updateFailedWithReason', { reason: String(error) })
+    privacyMessageType.value = 'error'
+  } finally {
+    privacyLoading.value = false
+  }
+}
+
+const handleManualLockShortcutInput = (event: KeyboardEvent): void => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  const shortcut = buildPrivacyManualLockShortcutFromEvent(event)
+  if (!shortcut) {
+    if (!isModifierOnlyKey(event.key)) {
+      privacyMessage.value = t('settings.privacy.manualLockShortcutInvalid')
+      privacyMessageType.value = 'error'
+    }
+    return
+  }
+
+  void updateManualLockShortcut(shortcut)
+}
+
+const handleResetManualLockShortcut = (): void => {
+  void updateManualLockShortcut(DEFAULT_PRIVACY_MANUAL_LOCK_SHORTCUT)
 }
 
 const handleSubmitPasswordModal = async (): Promise<void> => {
@@ -1658,6 +1725,15 @@ const handleImportData = (): void => {
 
 .privacy-actions--end {
   justify-content: flex-end;
+}
+
+.privacy-actions--shortcut {
+  width: min(320px, 100%);
+}
+
+.privacy-shortcut-input {
+  width: 80px;
+  max-width: 100%;
 }
 
 .privacy-modal-desc {

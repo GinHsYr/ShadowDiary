@@ -16,7 +16,11 @@ import TitleBar from './components/TitleBar.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import AppHeader from './components/AppHeader.vue'
 import { useThemeStore } from './stores/themes'
-import { isValidPrivacyPassword, usePrivacyStore } from './stores/privacy'
+import {
+  isPrivacyManualLockShortcutMatch,
+  isValidPrivacyPassword,
+  usePrivacyStore
+} from './stores/privacy'
 
 const { t } = useI18n()
 const theme = useThemeStore()
@@ -172,6 +176,16 @@ function handleVisibilityChange(): void {
   }
 }
 
+function handleManualLockShortcut(event: KeyboardEvent): void {
+  if (event.defaultPrevented || event.repeat || privacy.isLocked) return
+  if (!canAutoLockByPrivacy()) return
+  if (!isPrivacyManualLockShortcutMatch(event, privacy.manualLockShortcut)) return
+
+  event.preventDefault()
+  privacy.lock()
+  clearIdleTimer()
+}
+
 async function flushBeforeQuit(): Promise<void> {
   if (isHandlingBeforeQuit) return
   isHandlingBeforeQuit = true
@@ -300,6 +314,7 @@ onMounted(() => {
   }
   window.addEventListener('focus', handleWindowFocus)
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  document.addEventListener('keydown', handleManualLockShortcut)
 
   removeSystemLockListener = window.api.onSystemLock(() => {
     if (!canAutoLockByPrivacy() || privacy.isLocked) return
@@ -324,6 +339,7 @@ onBeforeUnmount(() => {
   }
   window.removeEventListener('focus', handleWindowFocus)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  document.removeEventListener('keydown', handleManualLockShortcut)
   clearIdleTimer()
 
   if (removeSystemLockListener) {
@@ -359,7 +375,7 @@ onBeforeUnmount(() => {
           </n-layout>
         </n-layout>
 
-        <transition name="privacy-lock-fade">
+        <transition name="privacy-lock-fade" :duration="{ enter: 640, leave: 260 }">
           <div v-if="showLockOverlay" class="privacy-lock-overlay">
             <n-card class="privacy-lock-card" :bordered="false">
               <h2 class="privacy-lock-title">{{ t('app.privacy.title') }}</h2>
@@ -531,14 +547,16 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(14, 18, 24, 0.28);
+  background:
+    radial-gradient(130% 90% at 50% -15%, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 58%),
+    rgba(14, 18, 24, 0.32);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
 
 .privacy-lock-fade-enter-active,
 .privacy-lock-fade-leave-active {
-  transition: opacity var(--motion-normal) var(--ease-standard);
+  transition: opacity 260ms var(--ease-standard);
 }
 
 .privacy-lock-fade-enter-from,
@@ -546,10 +564,48 @@ body {
   opacity: 0;
 }
 
+.privacy-lock-fade-enter-active .privacy-lock-card {
+  animation: privacy-lock-card-drop-bounce 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.privacy-lock-fade-leave-active .privacy-lock-card {
+  animation: privacy-lock-card-leave 220ms var(--ease-standard) both;
+}
+
+.privacy-lock-fade-enter-active .privacy-lock-title {
+  animation: privacy-lock-content-in 280ms var(--ease-out) 120ms both;
+}
+
+.privacy-lock-fade-enter-active .privacy-lock-description {
+  animation: privacy-lock-content-in 280ms var(--ease-out) 160ms both;
+}
+
+.privacy-lock-fade-enter-active .privacy-lock-form {
+  animation: privacy-lock-content-in 280ms var(--ease-out) 200ms both;
+}
+
 .privacy-lock-card {
   width: min(420px, 100%);
   border-radius: 16px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+  position: relative;
+  overflow: hidden;
+  transform-origin: center top;
+  will-change: transform, opacity, box-shadow;
+}
+
+.privacy-lock-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0),
+    rgba(120, 185, 255, 0.72),
+    rgba(255, 255, 255, 0)
+  );
+  opacity: 0.9;
 }
 
 .privacy-lock-title {
@@ -575,9 +631,67 @@ body {
   gap: 10px;
 }
 
+@keyframes privacy-lock-card-drop-bounce {
+  0% {
+    opacity: 0;
+    transform: translateY(-80px) scale(0.94);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  }
+  58% {
+    opacity: 1;
+    transform: translateY(14px) scale(1.01);
+    box-shadow: 0 24px 58px rgba(0, 0, 0, 0.24);
+  }
+  78% {
+    transform: translateY(-6px) scale(0.998);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+  }
+}
+
+@keyframes privacy-lock-card-leave {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+}
+
+@keyframes privacy-lock-content-in {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 768px) {
   .privacy-lock-form {
     justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .privacy-lock-fade-enter-active,
+  .privacy-lock-fade-leave-active {
+    transition: opacity var(--motion-fast) linear;
+  }
+
+  .privacy-lock-fade-enter-active .privacy-lock-card,
+  .privacy-lock-fade-leave-active .privacy-lock-card,
+  .privacy-lock-fade-enter-active .privacy-lock-title,
+  .privacy-lock-fade-enter-active .privacy-lock-description,
+  .privacy-lock-fade-enter-active .privacy-lock-form {
+    animation: none;
   }
 }
 </style>

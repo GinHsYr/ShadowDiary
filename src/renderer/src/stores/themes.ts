@@ -10,6 +10,7 @@ export enum ThemeMode {
 export enum ThemeAccent {
   Green = 'green',
   Blue = 'blue',
+  Black = 'black',
   Orange = 'orange',
   Red = 'red',
   Purple = 'purple',
@@ -57,6 +58,12 @@ export const THEME_ACCENT_PALETTES: Record<ThemeAccent, ThemeAccentPalette> = {
     primaryColorHover: '#4098fc',
     primaryColorPressed: '#1060c9',
     primaryColorSuppl: '#4098fc'
+  },
+  [ThemeAccent.Black]: {
+    primaryColor: '#1a1a1a',
+    primaryColorHover: '#333333',
+    primaryColorPressed: '#000000',
+    primaryColorSuppl: '#333333'
   },
   [ThemeAccent.Orange]: {
     primaryColor: '#f0a020',

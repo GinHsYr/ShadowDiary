@@ -211,6 +211,7 @@ const koKR = {
     accents: {
       green: '에메랄드 그린',
       blue: '스카이 블루',
+      black: '클래식 블랙',
       orange: '앰버 오렌지',
       red: '코랄 레드',
       purple: '네온 퍼플',
@@ -235,11 +236,18 @@ const koKR = {
       windowsPassword: 'Windows 로그인 비밀번호',
       windowsPasswordDescription:
         '잠금 해제 시 시스템 계정 비밀번호를 사용하며, 별도 로컬 비밀번호는 필요하지 않습니다',
+      manualLockShortcut: '수동 잠금 단축키',
+      manualLockShortcutDescription:
+        '개인정보 보호가 활성화되면 이 단축키로 즉시 잠글 수 있습니다 (입력칸을 선택한 뒤 새 조합을 누르세요)',
       enabledSuccess: '개인정보 보호가 활성화되었습니다',
       disabledSuccess: '개인정보 보호가 비활성화되었습니다',
       switchToWindows: '잠금 해제 방식이 Windows 비밀번호로 변경되었습니다',
       switchToPin: '잠금 해제 방식이 PIN으로 변경되었습니다',
       idleLockUpdated: '자동 잠금 시간이 업데이트되었습니다',
+      manualLockShortcutUpdated: '수동 잠금 단축키가 {shortcut}(으)로 업데이트되었습니다',
+      manualLockShortcutInvalid:
+        '잘못된 단축키입니다. Ctrl/Alt/Shift/Meta + 문자 또는 숫자를 사용하세요',
+      resetManualLockShortcut: '기본값 복원',
       passwordResetSuccess: '비밀번호가 재설정되었습니다',
       passwordSetAndEnabled: '비밀번호 설정 완료, 개인정보 보호가 활성화되었습니다',
       passwordSetAndSwitched: '비밀번호 설정 완료, PIN 잠금 해제로 전환되었습니다',

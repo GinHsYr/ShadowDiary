@@ -211,6 +211,7 @@ const jaJP = {
     accents: {
       green: 'エメラルドグリーン',
       blue: 'スカイブルー',
+      black: 'クラシックブラック',
       orange: 'アンバーオレンジ',
       red: 'コーラルレッド',
       purple: 'ネオンパープル',
@@ -235,11 +236,18 @@ const jaJP = {
       windowsPassword: 'Windows サインインパスワード',
       windowsPasswordDescription:
         '解除にはシステムアカウントのパスワードを使用します。ローカルのプライバシーパスワードは不要です',
+      manualLockShortcut: '手動ロックショートカット',
+      manualLockShortcutDescription:
+        'プライバシー保護が有効なとき、このショートカットで即時ロックできます（入力欄を選択して新しい組み合わせを押してください）',
       enabledSuccess: 'プライバシー保護を有効にしました',
       disabledSuccess: 'プライバシー保護を無効にしました',
       switchToWindows: 'Windows パスワードでの解除に切り替えました',
       switchToPin: 'PIN での解除に切り替えました',
       idleLockUpdated: 'アイドルロック時間を更新しました',
+      manualLockShortcutUpdated: '手動ロックショートカットを {shortcut} に更新しました',
+      manualLockShortcutInvalid:
+        '無効なショートカットです。Ctrl/Alt/Shift/Meta + 英字または数字を使用してください',
+      resetManualLockShortcut: 'デフォルトに戻す',
       passwordResetSuccess: 'パスワードを再設定しました',
       passwordSetAndEnabled: 'パスワードを設定し、プライバシー保護を有効にしました',
       passwordSetAndSwitched: 'パスワードを設定し、PIN 解除に切り替えました',

@@ -383,6 +383,7 @@ function handleKeydown(e: KeyboardEvent): void {
 
 // --- Global shortcut Ctrl+K / Cmd+K ---
 function handleGlobalKeydown(e: KeyboardEvent): void {
+  if (e.defaultPrevented) return
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault()
     nextTick(() => {
