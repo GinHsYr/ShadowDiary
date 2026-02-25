@@ -5,73 +5,71 @@
   <img src="resources/icon.png" width="120" alt="Shadow Diary Logo" />
 </p>
 
-A lightweight local diary application built with Electron + Vue 3 + TypeScript.
+A local-first diary desktop app built with Electron + Vue 3 + TypeScript.
 
 [中文](README_CN.md) | English
 
 ## Features
 
-* **Diary Editing**
-
-  * Rich text editor (with image support)
-  * Manage title, mood, and other metadata
-* **Overview**
-
-  * Monthly calendar writing prompts
-  * Detailed statistical insights
-* **Global Search**
-
-  * `Ctrl/Cmd + K` quick search
-  * Combined filtering by keyword, mood, tags, date range, and archives
-* **Archive System**
-
-  * Manage people/items/other categories
-  * Alias support with automatic search expansion
-* **Privacy & Security**
-
-  * App lock (6-digit password / Windows PIN)
-  * Auto-lock when idle, synchronized with system lock screen
-  * Encrypted SQLite database (SQLCipher)
-* **Data Import & Export**
-
-  * One-click ZIP backup
-  * Password-protected backups
-* **Auto Update**
-
-  * Check, download, and install updates (based on `electron-updater`)
-* **i18n Support**
+- **Diary Writing**
+  - Rich text editor with image support
+  - Entry metadata management (title, mood, tags)
+- **Dashboard & Insights**
+  - Calendar-based writing prompts
+  - Statistics and trend views
+- **Archive System**
+  - Manage person/object/other archives
+  - Alias-aware search expansion
+- **Media Library**
+  - Unified media browsing from diaries and archives
+- **Global Search**
+  - `Ctrl/Cmd + K` quick search
+  - Combined filters by keyword, mood, tags, date range, and archive data
+- **Privacy & Security**
+  - App lock (6-digit PIN / Windows sign-in password)
+  - Auto-lock on idle and system lock linkage
+  - Encrypted SQLite database (SQLCipher)
+  - Optional disguise mode for privacy-sensitive scenarios
+- **Data Import & Export**
+  - One-click ZIP backup and restore
+  - Password-protected backup flow
+- **Auto Update**
+  - Check, download, and install updates via `electron-updater`
+- **Internationalization**
 
 ## Tech Stack
 
-* Electron + electron-vite
-* Vue 3 + TypeScript + Pinia + Vue Router
-* Naive UI + ECharts
-* better-sqlite3-multiple-ciphers (SQLCipher)
-* sharp (image processing)
-* electron-builder (packaging)
+- Electron + electron-vite
+- Vue 3 + TypeScript + Pinia + Vue Router
+- Naive UI + ECharts
+- better-sqlite3-multiple-ciphers (SQLCipher)
+- sharp (image processing)
+- electron-builder (packaging)
 
 ## Project Structure
 
 ```text
 src/
-  main/                    # Electron main process (IPC, database, file & security)
+  main/                    # Electron main process
     database/              # Data access and migrations
+    privacy/               # Disguise mode and privacy sessions
     security/              # Local key management
-    utils/                 # Image storage, data import/export
-  preload/                 # Secure APIs exposed via contextBridge
+    utils/                 # Image storage, backup import/export, helpers
+  preload/                 # Safe APIs exposed via contextBridge
   renderer/src/            # Vue frontend
-    components/            # Shared components (sidebar, search, editor, etc.)
-    views/                 # Pages (dashboard/today/archives/settings)
-    stores/                # Pinia state management (theme, privacy, user)
-resources/                 # Icons, installation scripts, and static assets
+    components/            # Shared UI components
+    views/                 # Pages: dashboard/today/archives/media/settings
+    stores/                # Pinia stores
+    i18n/                  # Locale definitions and i18n bootstrap
+resources/                 # Icons and static packaging assets
 ```
 
 ## Quick Start
 
 ### Requirements
 
-* Node.js `>= 22`
-* npm (recommended to use the latest version compatible with your Node.js version)
+- Node.js `>= 22` (22 LTS recommended)
+- npm (latest version compatible with your Node.js)
 
 ### Install Dependencies
 
@@ -85,16 +83,16 @@ npm install
 npm run dev
 ```
 
-### Preview
+### Preview Build
 
 ```bash
 npm run start
 ```
 
-## Common Scripts
+## Scripts
 
 ```bash
-# Code Quality
+# Code quality
 npm run lint
 npm run format
 npm run typecheck
@@ -114,18 +112,17 @@ npm run release
 
 ## Data & Security Notes
 
-* Application data is stored in the Electron `app.getPath('userData')` directory.
-* Key data includes:
-
-  * `diary.db`: Encrypted database (SQLCipher)
-  * `images/`, `thumbnails/`: Images and thumbnails
-  * `db-key.json`: Local database key file (encrypted and stored using Electron `safeStorage`)
-* Exported backups are ZIP files containing the database, attachments, metadata, and encrypted image packages.
-* The minimum backup password length is 8 characters.
+- App data is stored under Electron `app.getPath('userData')`.
+- Key files and folders include:
+  - `diary.db`: encrypted database (SQLCipher)
+  - `images/`, `thumbnails/`: image assets and thumbnails
+  - `db-key.json`: local DB key file (encrypted via Electron `safeStorage`)
+- Exported backups are ZIP packages containing database, attachments, metadata, and encrypted key envelope.
+- Backup password minimum length is 8 characters.
 
 ## Packaging & Installation
 
-### Multi-Platform Build
+### Multi-platform Packaging
 
 ```bash
 npm run build:win
@@ -133,7 +130,7 @@ npm run build:mac
 npm run build:linux
 ```
 
-### Silent Installation on Windows
+### Silent Install on Windows
 
 ```bash
 # NSIS
