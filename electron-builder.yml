@@ -32,7 +32,9 @@ mac:
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
-dmg:
+  target:
+    - dmg
+    - zip
   artifactName: ShadowDiary-${version}-${os}-${arch}.${ext}
 linux:
   target:
@@ -45,6 +47,8 @@ linux:
   maintainer: electronjs.org
   category: Utility
 appImage:
+  artifactName: ShadowDiary-${version}-${os}-${arch}.${ext}
+deb:
   artifactName: ShadowDiary-${version}-${os}-${arch}.${ext}
 npmRebuild: true
 electronDist: node_modules/electron/dist
