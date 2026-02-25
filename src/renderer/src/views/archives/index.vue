@@ -52,12 +52,47 @@ const archiveDetailRef = ref<InstanceType<typeof ArchiveDetail> | null>(null)
 
 const selectedArchiveId = ref<string | null>(null)
 const isCreating = ref(false)
+const activeDraftArchiveId = ref<string | null>(null)
+
+function createDraftArchiveId(): string {
+  return `draft-archive-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function removeActiveDraftArchive(): void {
+  const draftId = activeDraftArchiveId.value
+  if (!draftId) return
+  archiveListRef.value?.removeDraftArchive(draftId)
+  if (selectedArchiveId.value === draftId) {
+    selectedArchiveId.value = null
+  }
+  activeDraftArchiveId.value = null
+}
+
+function startCreateDraftArchive(): void {
+  const draftId = createDraftArchiveId()
+  const now = Date.now()
+  activeDraftArchiveId.value = draftId
+  selectedArchiveId.value = draftId
+  isCreating.value = true
+  archiveListRef.value?.prependDraftArchive({
+    id: draftId,
+    name: '',
+    aliases: [],
+    type: 'person',
+    description: '',
+    mainImage: '',
+    images: [],
+    createdAt: now,
+    updatedAt: now
+  })
+}
 
 // 监听路由参数变化，支持从全局搜索跳转
 watch(
   () => route.query.id,
   (id) => {
     if (id && typeof id === 'string') {
+      removeActiveDraftArchive()
       selectedArchiveId.value = id
       isCreating.value = false
     }
@@ -141,20 +176,30 @@ function startResize(e: MouseEvent): void {
 // ========== 档案操作 ==========
 async function handleSelectArchive(archive: Archive): Promise<void> {
   await archiveDetailRef.value?.flushSave()
+  if (activeDraftArchiveId.value && activeDraftArchiveId.value !== archive.id) {
+    removeActiveDraftArchive()
+  }
   isCreating.value = false
   selectedArchiveId.value = archive.id
 }
 
 async function handleCreate(): Promise<void> {
   await archiveDetailRef.value?.flushSave()
-  selectedArchiveId.value = null
-  isCreating.value = true
+  removeActiveDraftArchive()
+  startCreateDraftArchive()
 }
 
 function handleSaved(archive: Archive): void {
-  if (isCreating.value) {
+  if (isCreating.value && activeDraftArchiveId.value) {
+    const committed =
+      archiveListRef.value?.commitDraftArchive(activeDraftArchiveId.value, archive) ?? false
+    activeDraftArchiveId.value = null
     isCreating.value = false
     selectedArchiveId.value = archive.id
+    if (!committed) {
+      archiveListRef.value?.refresh()
+    }
+    return
   }
   archiveListRef.value?.refresh()
 }
@@ -166,6 +211,8 @@ function handleDeleted(): void {
 }
 
 function handleCancelCreate(): void {
+  removeActiveDraftArchive()
+  selectedArchiveId.value = null
   isCreating.value = false
 }
 

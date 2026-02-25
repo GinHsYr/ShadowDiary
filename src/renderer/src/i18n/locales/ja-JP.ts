@@ -86,6 +86,8 @@ const jaJP = {
     searchPlaceholder: 'アーカイブを検索...',
     empty: 'アーカイブはまだありません',
     create: '+ 新規アーカイブ',
+    draft: '下書き',
+    untitledDraft: '無題のアーカイブ',
     all: 'すべて',
     person: '人物',
     object: '物',
@@ -113,6 +115,7 @@ const jaJP = {
   diaryList: {
     empty: '日記はまだありません',
     create: '+ 新規日記',
+    draft: '下書き',
     selectDate: '日付を選択',
     confirm: '確認',
     delete: '削除',

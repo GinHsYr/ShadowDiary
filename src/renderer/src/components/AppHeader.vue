@@ -6,7 +6,6 @@ import {
   NButton,
   NIcon,
   NInput,
-  NLayoutHeader,
   NSpace,
   NPopover,
   NList,
@@ -21,20 +20,16 @@ import {
   NSpin
 } from 'naive-ui'
 import {
-  Moon,
   SearchOutline,
-  Sunny,
   FunnelOutline,
   CloseCircleOutline,
   TimeOutline,
   CloseOutline
 } from '@vicons/ionicons5'
-import { ThemeMode, useThemeStore } from '../stores/themes'
 import { useRouter } from 'vue-router'
 import type { Archive, DiaryEntry, Mood } from '../../../types/model'
 import SafeHighlightedText from './SafeHighlightedText.vue'
 
-const theme = useThemeStore()
 const router = useRouter()
 const { t } = useI18n()
 
@@ -393,15 +388,6 @@ function handleGlobalKeydown(e: KeyboardEvent): void {
   }
 }
 
-// --- Theme ---
-const changeTheme = (): void => {
-  if (theme.isDark) {
-    theme.setMode(ThemeMode.Light)
-  } else {
-    theme.setMode(ThemeMode.Dark)
-  }
-}
-
 // --- Lifecycle ---
 onMounted(() => {
   loadHistory()
@@ -418,13 +404,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <n-layout-header bordered class="app-header">
-    <!-- 左侧搜索 -->
+  <div class="app-header">
     <div class="header-left no-drag">
       <n-popover
         :show="showPopover"
         trigger="manual"
-        placement="bottom-start"
+        placement="bottom"
         :show-arrow="false"
         raw
         style="width: 440px"
@@ -721,31 +706,21 @@ onBeforeUnmount(() => {
         </div>
       </n-popover>
     </div>
-
-    <!-- 右侧工具 -->
-    <div class="header-right no-drag">
-      <n-space>
-        <n-button circle size="small" tertiary @click="changeTheme">
-          <template #icon>
-            <n-icon>
-              <Sunny v-if="theme.mode === ThemeMode.Light" />
-              <Moon v-else-if="theme.mode === ThemeMode.Dark" />
-            </n-icon>
-          </template>
-        </n-button>
-      </n-space>
-    </div>
-  </n-layout-header>
+  </div>
 </template>
 
 <style scoped>
 .app-header {
-  height: 60px;
+  position: fixed;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1100;
+}
+
+.header-left {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  -webkit-app-region: drag;
 }
 
 .no-drag {

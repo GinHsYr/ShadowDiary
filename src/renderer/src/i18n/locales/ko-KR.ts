@@ -86,6 +86,8 @@ const koKR = {
     searchPlaceholder: '아카이브 검색...',
     empty: '아직 아카이브가 없습니다',
     create: '+ 새 아카이브',
+    draft: '초안',
+    untitledDraft: '제목 없는 아카이브',
     all: '전체',
     person: '인물',
     object: '사물',
@@ -113,6 +115,7 @@ const koKR = {
   diaryList: {
     empty: '아직 일기가 없습니다',
     create: '+ 새 일기',
+    draft: '초안',
     selectDate: '날짜 선택',
     confirm: '확인',
     delete: '삭제',

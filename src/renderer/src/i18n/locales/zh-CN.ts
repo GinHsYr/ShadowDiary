@@ -86,6 +86,8 @@ const zhCN = {
     searchPlaceholder: '搜索档案...',
     empty: '暂无档案',
     create: '+ 新建档案',
+    draft: '草稿',
+    untitledDraft: '未命名档案',
     all: '全部',
     person: '人物',
     object: '物品',
@@ -113,6 +115,7 @@ const zhCN = {
   diaryList: {
     empty: '还没有日记',
     create: '+ 新建日记',
+    draft: '草稿',
     selectDate: '选择日期',
     confirm: '确定',
     delete: '删除',

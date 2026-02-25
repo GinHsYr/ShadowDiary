@@ -27,17 +27,22 @@
           {{ typeOption.label }}
         </n-tag>
       </div>
+      <div class="create-row">
+        <n-button block type="primary" ghost size="small" @click="$emit('create')">
+          {{ t('archiveList.create') }}
+        </n-button>
+      </div>
     </div>
 
     <!-- 档案列表 -->
     <div class="list-body">
       <transition-group name="archive-item-motion" tag="div" class="archive-item-group">
         <div
-          v-for="archive in archives"
+          v-for="archive in displayArchives"
           :key="archive.id"
           class="archive-item"
-          :class="{ active: archive.id === selectedId }"
-          @click="$emit('select', archive)"
+          :class="{ active: archive.id === selectedId, 'is-draft': isDraftArchive(archive) }"
+          @click="handleSelectArchive(archive)"
         >
           <n-avatar
             :src="archive.mainImage || undefined"
@@ -50,7 +55,20 @@
             </template>
           </n-avatar>
           <div class="item-info">
-            <div class="item-name">{{ archive.name }}</div>
+            <div class="item-name">
+              <span class="item-name-text">{{
+                  archive.name || t('archiveList.untitledDraft')
+                }}</span>
+              <n-tag
+                v-if="isDraftArchive(archive)"
+                size="tiny"
+                round
+                type="warning"
+                class="draft-tag"
+              >
+                {{ t('archiveList.draft') }}
+              </n-tag>
+            </div>
             <div v-if="archive.aliases?.length" class="item-alias">
               {{ archive.aliases.join('、') }}
             </div>
@@ -61,7 +79,7 @@
         </div>
       </transition-group>
 
-      <div v-if="archives.length === 0 && !loading" class="list-empty">
+      <div v-if="displayArchives.length === 0 && !loading" class="list-empty">
         <n-empty size="small" :description="t('archiveList.empty')" />
       </div>
 
@@ -69,18 +87,11 @@
         <n-spin size="small" />
       </div>
     </div>
-
-    <!-- 新建按钮 -->
-    <div class="list-footer">
-      <n-button block type="primary" ghost size="small" @click="$emit('create')">
-        {{ t('archiveList.create') }}
-      </n-button>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { NAvatar, NButton, NEmpty, NIcon, NInput, NSpin, NTag } from 'naive-ui'
 import { SearchOutline } from '@vicons/ionicons5'
 import { useI18n } from 'vue-i18n'
@@ -90,10 +101,28 @@ defineProps<{
   selectedId: string | null
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   select: [archive: Archive]
   create: []
 }>()
+
+interface ArchiveDraftItem extends Archive {
+  isDraft: true
+}
+
+interface ArchiveDraftInput {
+  id: string
+  name: string
+  aliases: string[]
+  type: ArchiveType
+  description?: string
+  mainImage?: string
+  images: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+type ArchiveListItem = Archive | ArchiveDraftItem
 
 const { t } = useI18n()
 
@@ -117,12 +146,26 @@ const typeTagMap: Record<ArchiveType, 'info' | 'success' | 'warning'> = {
 }
 
 const archives = ref<Archive[]>([])
+const draftArchives = ref<ArchiveDraftItem[]>([])
 const loading = ref(false)
 const searchKeyword = ref('')
 const selectedType = ref<ArchiveType | 'all'>('all')
+const displayArchives = computed<ArchiveListItem[]>(() => [
+  ...draftArchives.value,
+  ...archives.value
+])
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 let pendingReload = false
+
+function isDraftArchive(archive: ArchiveListItem): archive is ArchiveDraftItem {
+  return 'isDraft' in archive && archive.isDraft
+}
+
+function handleSelectArchive(archive: ArchiveListItem): void {
+  if (isDraftArchive(archive)) return
+  emit('select', archive)
+}
 
 function handleSearch(): void {
   if (searchTimer) clearTimeout(searchTimer)
@@ -173,6 +216,38 @@ async function refresh(): Promise<void> {
   await loadArchives()
 }
 
+function prependDraftArchive(draft: ArchiveDraftInput): void {
+  const next: ArchiveDraftItem = { ...draft, isDraft: true }
+  draftArchives.value = [next, ...draftArchives.value.filter((archive) => archive.id !== draft.id)]
+}
+
+function commitDraftArchive(tempId: string, saved: Archive): boolean {
+  const draftIdx = draftArchives.value.findIndex((archive) => archive.id === tempId)
+  if (draftIdx === -1) return false
+  draftArchives.value.splice(draftIdx, 1)
+
+  const existingIdx = archives.value.findIndex((archive) => archive.id === saved.id)
+  if (existingIdx !== -1) {
+    archives.value[existingIdx] = saved
+    return true
+  }
+
+  const insertIdx = archives.value.findIndex((archive) => archive.createdAt < saved.createdAt)
+  if (insertIdx === -1) {
+    archives.value.push(saved)
+  } else {
+    archives.value.splice(insertIdx, 0, saved)
+  }
+  return true
+}
+
+function removeDraftArchive(tempId: string): void {
+  const draftIdx = draftArchives.value.findIndex((archive) => archive.id === tempId)
+  if (draftIdx !== -1) {
+    draftArchives.value.splice(draftIdx, 1)
+  }
+}
+
 onMounted(() => {
   void loadArchives()
 })
@@ -184,7 +259,12 @@ onBeforeUnmount(() => {
   }
 })
 
-defineExpose({ refresh })
+defineExpose({
+  refresh,
+  prependDraftArchive,
+  commitDraftArchive,
+  removeDraftArchive
+})
 </script>
 
 <style scoped>
@@ -198,6 +278,10 @@ defineExpose({ refresh })
 .list-header {
   padding: 12px;
   border-bottom: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
+}
+
+.create-row {
+  margin-top: 10px;
 }
 
 .type-filter {
@@ -229,6 +313,22 @@ defineExpose({ refresh })
 
 .archive-item:hover {
   background: var(--app-accent-06, rgba(24, 160, 88, 0.06));
+}
+
+.archive-item.is-draft {
+  background: var(--app-accent-08, rgba(24, 160, 88, 0.08));
+  box-shadow: inset 0 0 0 1px var(--app-accent-20, rgba(24, 160, 88, 0.2));
+}
+
+.archive-item.is-draft::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  border: 1px solid var(--app-accent-24, rgba(24, 160, 88, 0.24));
+  opacity: 0;
+  animation: draft-sheen var(--motion-spring-normal) var(--ease-enter);
+  pointer-events: none;
 }
 
 .archive-item::before {
@@ -265,9 +365,21 @@ defineExpose({ refresh })
   font-size: 14px;
   font-weight: 600;
   color: var(--n-text-color, #333);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.item-name-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.draft-tag {
+  flex-shrink: 0;
+  line-height: 1;
 }
 
 .item-alias {
@@ -289,29 +401,48 @@ defineExpose({ refresh })
   padding: 16px;
 }
 
-.list-footer {
-  padding: 12px;
-  border-top: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
-}
-
 .archive-item-motion-enter-active,
 .archive-item-motion-leave-active {
   transition:
-    transform var(--motion-normal) var(--ease-enter),
-    opacity var(--motion-normal) var(--ease-standard);
+    transform var(--motion-spring-fast) var(--ease-spring-soft),
+    opacity var(--motion-normal) var(--ease-standard),
+    filter var(--motion-normal) var(--ease-standard);
 }
 
 .archive-item-motion-enter-from {
   opacity: 0;
-  transform: translateY(var(--motion-distance-sm));
+  filter: blur(1px);
+  transform: translateY(var(--motion-distance-md)) scale(var(--motion-scale-pop-start));
+}
+
+.archive-item-motion-enter-to {
+  opacity: 1;
+  filter: blur(0);
+  transform: translateY(0) scale(1);
 }
 
 .archive-item-motion-leave-to {
   opacity: 0;
-  transform: scale(0.98);
+  filter: blur(1px);
+  transform: translateY(calc(var(--motion-distance-sm) * -1)) scale(0.985);
 }
 
 .archive-item-motion-move {
-  transition: transform var(--motion-normal) var(--ease-standard);
+  transition: transform var(--motion-spring-fast) var(--ease-spring-soft);
+}
+
+@keyframes draft-sheen {
+  0% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+:global(:root.reduced-motion) .archive-item-motion-enter-from,
+:global(:root.reduced-motion) .archive-item-motion-leave-to {
+  filter: none;
+  transform: none;
 }
 </style>

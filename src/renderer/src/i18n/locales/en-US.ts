@@ -86,6 +86,8 @@ const enUS = {
     searchPlaceholder: 'Search archives...',
     empty: 'No archives yet',
     create: '+ New Archive',
+    draft: 'Draft',
+    untitledDraft: 'Untitled archive',
     all: 'All',
     person: 'Person',
     object: 'Object',
@@ -113,6 +115,7 @@ const enUS = {
   diaryList: {
     empty: 'No diaries yet',
     create: '+ New Diary',
+    draft: 'Draft',
     selectDate: 'Select Date',
     confirm: 'Confirm',
     delete: 'Delete',

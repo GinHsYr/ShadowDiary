@@ -100,6 +100,7 @@ const diaryTitle = ref('')
 const diaryContent = ref('')
 const existingEntryId = ref<string | null>(null)
 const selectedDate = ref<Date>(new Date())
+const activeDraftEntryId = ref<string | null>(null)
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 const saveState = ref<SaveState>('idle')
 const isDirty = ref(false)
@@ -133,6 +134,14 @@ const saveStatusIcon = computed(() => {
   if (isDirty.value) return '●'
   return '✓'
 })
+
+function isDraftEntryId(id: string | null): boolean {
+  return Boolean(id && id.startsWith('draft-diary-'))
+}
+
+function createDraftEntryId(): string {
+  return `draft-diary-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
 
 function clearResizeReleaseTimer(): void {
   if (resizeReleaseTimer) {
@@ -255,29 +264,36 @@ async function doSave(): Promise<void> {
 
   setSaveState('saving')
   try {
-    const wasNewEntry = !existingEntryId.value
+    const currentId = existingEntryId.value
+    const isDraftSave = isDraftEntryId(currentId)
+    const wasNewEntry = !currentId || isDraftSave
     const d = new Date(selectedDate.value)
     d.setHours(12, 0, 0, 0)
 
     const saved = await window.api.saveDiaryEntry({
-      id: existingEntryId.value ?? undefined,
+      id: currentId && !isDraftSave ? currentId : undefined,
       title: diaryTitle.value,
       content: diaryContent.value,
       mood: selectedMood.value,
-      createdAt: existingEntryId.value ? undefined : d.getTime()
+      createdAt: currentId && !isDraftSave ? undefined : d.getTime()
     })
     existingEntryId.value = saved.id
     isDirty.value = false
-    const updatedInList =
-      diaryListRef.value?.updateEntry(saved.id, {
-        title: saved.title,
-        content: saved.content,
-        mood: saved.mood,
-        createdAt: saved.createdAt,
-        updatedAt: saved.updatedAt
-      }) ?? false
+    const updatedInList = isDraftSave
+      ? ((currentId && diaryListRef.value?.commitDraftEntry(currentId, saved)) ?? false)
+      : (diaryListRef.value?.updateEntry(saved.id, {
+          title: saved.title,
+          content: saved.content,
+          mood: saved.mood,
+          createdAt: saved.createdAt,
+          updatedAt: saved.updatedAt
+        }) ?? false)
 
-    if (!updatedInList || wasNewEntry) {
+    if (isDraftSave) {
+      activeDraftEntryId.value = null
+    }
+
+    if (!updatedInList || (wasNewEntry && !isDraftSave)) {
       void diaryListRef.value?.refresh().catch((error) => {
         console.error('刷新日记列表失败:', error)
       })
@@ -319,8 +335,49 @@ function resetEditorState(date: Date = new Date()): void {
   setSaveState('idle')
 }
 
+function applyEntryToEditor(entry: DiaryEntry): void {
+  existingEntryId.value = entry.id
+  diaryTitle.value = entry.title
+  diaryContent.value = entry.content
+  selectedMood.value = entry.mood
+  selectedDate.value = new Date(entry.createdAt)
+  isDirty.value = false
+  setSaveState('idle')
+}
+
+function removeActiveDraftEntry(): void {
+  const draftId = activeDraftEntryId.value
+  if (!draftId) return
+  diaryListRef.value?.removeDraftEntry(draftId)
+  if (existingEntryId.value === draftId) {
+    existingEntryId.value = null
+  }
+  activeDraftEntryId.value = null
+}
+
+function createDraftEntryForDate(dateStr: string): void {
+  const targetDate = new Date(dateStr + 'T12:00:00')
+  const draftId = createDraftEntryId()
+  const createdAt = targetDate.getTime()
+  activeDraftEntryId.value = draftId
+  resetEditorState(targetDate)
+  existingEntryId.value = draftId
+  diaryListRef.value?.prependDraftEntry({
+    id: draftId,
+    title: '',
+    content: '',
+    mood: selectedMood.value,
+    createdAt,
+    updatedAt: createdAt
+  })
+}
+
 async function handleSelectEntry(entry: DiaryEntry): Promise<void> {
   await flushSave()
+  if (activeDraftEntryId.value && activeDraftEntryId.value !== entry.id) {
+    removeActiveDraftEntry()
+  }
+
   let targetEntry = entry
   // 列表使用 lightweight 模式，选中后统一按 id 拉取完整内容，避免覆盖原始富文本/图片
   try {
@@ -332,19 +389,26 @@ async function handleSelectEntry(entry: DiaryEntry): Promise<void> {
     console.error('加载完整日记内容失败:', error)
   }
 
-  existingEntryId.value = targetEntry.id
-  diaryTitle.value = targetEntry.title
-  diaryContent.value = targetEntry.content
-  selectedMood.value = targetEntry.mood
-  selectedDate.value = new Date(targetEntry.createdAt)
-  isDirty.value = false
-  setSaveState('idle')
+  applyEntryToEditor(targetEntry)
 }
 
 async function handleCreate(dateStr?: string): Promise<void> {
   await flushSave()
+  if (activeDraftEntryId.value) {
+    removeActiveDraftEntry()
+  }
+
   if (dateStr) {
-    await loadOrCreateForDate(dateStr)
+    try {
+      const entry = await window.api.getDiaryByDate(dateStr)
+      if (entry) {
+        applyEntryToEditor(entry)
+      } else {
+        createDraftEntryForDate(dateStr)
+      }
+    } catch (error) {
+      console.error('加载日记失败:', error)
+    }
   } else {
     const dateParam = route.query.date as string | undefined
     const targetDate = dateParam ? new Date(dateParam + 'T12:00:00') : new Date()
@@ -394,6 +458,7 @@ async function loadEntryById(id: string, keyword?: string): Promise<void> {
         scrollToKeyword(keyword)
       }
     } else {
+      removeActiveDraftEntry()
       resetEditorState()
       dialog.warning({
         title: t('today.tipTitle'),
@@ -409,19 +474,14 @@ async function loadEntryById(id: string, keyword?: string): Promise<void> {
 // 从日历跳转：加载指定日期的日记，若无则初始化为该日期的新日记
 async function loadOrCreateForDate(dateStr: string): Promise<void> {
   await flushSave()
+  removeActiveDraftEntry()
 
   const targetDate = new Date(dateStr + 'T12:00:00')
   selectedDate.value = targetDate
   try {
     const entry = await window.api.getDiaryByDate(dateStr)
     if (entry) {
-      existingEntryId.value = entry.id
-      diaryTitle.value = entry.title
-      diaryContent.value = entry.content
-      selectedMood.value = entry.mood
-      selectedDate.value = new Date(entry.createdAt)
-      isDirty.value = false
-      setSaveState('idle')
+      applyEntryToEditor(entry)
     } else {
       resetEditorState(targetDate)
     }

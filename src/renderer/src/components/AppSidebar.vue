@@ -6,16 +6,20 @@ import {
   BookOutline,
   SettingsOutline,
   Add,
+  Moon,
+  Sunny,
   CloudUploadOutline,
   PencilOutline,
   FolderOpenOutline,
   ImagesOutline
 } from '@vicons/ionicons5'
 import { useUserStore } from '../stores/user'
+import { ThemeMode, useThemeStore } from '../stores/themes'
 import { useRouter, useRoute } from 'vue-router'
 
 const COLLAPSE_WIDTH = 900
 const { t } = useI18n()
+const theme = useThemeStore()
 
 // 使用用户信息 store
 const userStore = useUserStore()
@@ -209,6 +213,14 @@ const handleTodayClick = (): void => {
     console.error('导航失败:', err)
   })
 }
+
+const toggleTheme = (): void => {
+  if (theme.isDark) {
+    theme.setMode(ThemeMode.Light)
+  } else {
+    theme.setMode(ThemeMode.Dark)
+  }
+}
 </script>
 
 <template>
@@ -223,48 +235,68 @@ const handleTodayClick = (): void => {
     @collapse="collapsed = true"
     @expand="collapsed = false"
   >
-    <div class="logo-container" :class="{ collapsed }">
-      <n-avatar
-        size="large"
-        style="cursor: pointer"
-        :src="userAvatar || undefined"
-        @click="openModal"
-      >
-        <span v-if="!userAvatar">{{ displayUserName.charAt(0) }}</span>
-      </n-avatar>
-      <span v-if="!collapsed" class="app-name">{{ t('common.appName') }}</span>
-    </div>
+    <div class="sidebar-content">
+      <div class="logo-container" :class="{ collapsed }">
+        <n-avatar
+          size="large"
+          style="cursor: pointer"
+          :src="userAvatar || undefined"
+          @click="openModal"
+        >
+          <span v-if="!userAvatar">{{ displayUserName.charAt(0) }}</span>
+        </n-avatar>
+        <span v-if="!collapsed" class="app-name">{{ t('common.appName') }}</span>
+      </div>
 
-    <!-- 写日记按钮 -->
-    <div class="action-btn">
-      <n-button
-        class="sidebar-ripple-button"
-        type="primary"
-        block
-        :round="collapsed"
-        :theme-overrides="sidebarButtonThemeOverrides"
-        @mousedown="handleTodayButtonMouseDown"
-        @click="handleTodayClick"
-      >
-        <template #icon>
-          <n-icon><Add /></n-icon>
-        </template>
-        <span v-if="!collapsed">{{ t('sidebar.todayDiary') }}</span>
-      </n-button>
-    </div>
+      <!-- 写日记按钮 -->
+      <div class="action-btn">
+        <n-button
+          class="sidebar-ripple-button"
+          type="primary"
+          block
+          :round="collapsed"
+          :theme-overrides="sidebarButtonThemeOverrides"
+          @mousedown="handleTodayButtonMouseDown"
+          @click="handleTodayClick"
+        >
+          <template #icon>
+            <n-icon><Add /></n-icon>
+          </template>
+          <span v-if="!collapsed">{{ t('sidebar.todayDiary') }}</span>
+        </n-button>
+      </div>
 
-    <!-- 菜单 -->
-    <div class="menu-ripple-area" @mousedown="handleMenuItemMouseDown">
-      <n-menu
-        :key="menuKey"
-        :value="activeKey"
-        :collapsed="collapsed"
-        :collapsed-width="64"
-        :collapsed-icon-size="22"
-        :options="menuOptions"
-        :theme-overrides="sidebarMenuThemeOverrides"
-        @update:value="handleMenuUpdate"
-      />
+      <!-- 菜单 -->
+      <div class="menu-ripple-area" @mousedown="handleMenuItemMouseDown">
+        <n-menu
+          :key="menuKey"
+          :value="activeKey"
+          :collapsed="collapsed"
+          :collapsed-width="64"
+          :collapsed-icon-size="22"
+          :options="menuOptions"
+          :theme-overrides="sidebarMenuThemeOverrides"
+          @update:value="handleMenuUpdate"
+        />
+      </div>
+
+      <div class="sidebar-footer">
+        <n-button
+          class="theme-toggle-btn"
+          secondary
+          :block="!collapsed"
+          :circle="collapsed"
+          @click="toggleTheme"
+        >
+          <template #icon>
+            <n-icon>
+              <Sunny v-if="theme.mode === ThemeMode.Light" />
+              <Moon v-else />
+            </n-icon>
+          </template>
+          <span v-if="!collapsed">{{ t('settings.darkMode') }}</span>
+        </n-button>
+      </div>
     </div>
 
     <n-modal
@@ -344,6 +376,14 @@ const handleTodayClick = (): void => {
   height: 100vh;
 }
 
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+  padding-bottom: 36px;
+}
+
 .logo-container {
   display: flex;
   align-items: center;
@@ -361,6 +401,22 @@ const handleTodayClick = (): void => {
 
 .action-btn {
   padding: 0 12px 20px;
+}
+
+.menu-ripple-area {
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar-footer {
+  padding: 12px 12px 6px;
+  border-top: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
+  display: flex;
+  justify-content: center;
+}
+
+.theme-toggle-btn {
+  border-radius: 12px;
 }
 
 :deep(.sidebar-ripple-button),

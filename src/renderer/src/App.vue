@@ -510,7 +510,7 @@ body {
 }
 
 .main-content {
-  height: calc(100vh - 92px); /* 减去 TitleBar(32px) + Header(60px) 高度 */
+  height: calc(100vh - 32px); /* 仅减去 TitleBar(32px) 高度 */
   overflow: hidden;
   position: relative;
 }

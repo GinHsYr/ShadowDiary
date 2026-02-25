@@ -1,51 +1,9 @@
 <template>
   <div class="diary-list">
-    <!-- 日记列表 -->
-    <div ref="listRef" class="list-body" @scroll="handleScroll">
-      <transition-group name="diary-item-motion" tag="div" class="diary-item-group">
-        <div
-          v-for="entry in entries"
-          :key="entry.id"
-          class="diary-item"
-          :class="{ active: entry.id === selectedId }"
-          @click="$emit('select', entry)"
-          @contextmenu.prevent="handleContextMenu($event, entry)"
-        >
-          <div class="item-header">
-            <span class="item-date">{{ formatDate(entry.createdAt) }}</span>
-            <span class="item-mood">{{ moodEmoji[entry.mood] || '' }}</span>
-          </div>
-          <div class="item-title">{{ entry.title || t('common.noTitle') }}</div>
-          <div class="item-preview">{{ stripHtml(entry.content) }}</div>
-        </div>
-      </transition-group>
-
-      <div v-if="entries.length === 0 && !loading" class="list-empty">
-        <p>{{ t('diaryList.empty') }}</p>
-      </div>
-
-      <div v-if="loading" class="list-loading">
-        <n-spin size="small" />
-      </div>
-    </div>
-
-    <!-- 右键菜单 -->
-    <n-dropdown
-      placement="bottom-start"
-      trigger="manual"
-      :x="contextMenuX"
-      :y="contextMenuY"
-      :options="contextMenuOptions"
-      :show="showContextMenu"
-      @select="handleContextMenuSelect"
-      @clickoutside="showContextMenu = false"
-    />
-
-    <!-- 新建按钮 -->
-    <div class="list-footer">
+    <div class="list-topbar">
       <n-popover
         trigger="click"
-        placement="top"
+        placement="bottom"
         :show="showDatePicker"
         @update:show="showDatePicker = $event"
       >
@@ -69,14 +27,60 @@
         </div>
       </n-popover>
     </div>
+
+    <!-- 日记列表 -->
+    <div ref="listRef" class="list-body" @scroll="handleScroll">
+      <transition-group name="diary-item-motion" tag="div" class="diary-item-group">
+        <div
+          v-for="entry in displayEntries"
+          :key="entry.id"
+          class="diary-item"
+          :class="{ active: entry.id === selectedId, 'is-draft': isDraftEntry(entry) }"
+          @click="handleItemClick(entry)"
+          @contextmenu.prevent="handleContextMenu($event, entry)"
+        >
+          <div class="item-header">
+            <span class="item-date">{{ formatDate(entry.createdAt) }}</span>
+            <div class="item-header-right">
+              <n-tag v-if="isDraftEntry(entry)" size="tiny" round type="warning" class="draft-tag">
+                {{ t('diaryList.draft') }}
+              </n-tag>
+              <span class="item-mood">{{ moodEmoji[entry.mood] || '' }}</span>
+            </div>
+          </div>
+          <div class="item-title">{{ entry.title || t('common.noTitle') }}</div>
+          <div class="item-preview">{{ stripHtml(entry.content) }}</div>
+        </div>
+      </transition-group>
+
+      <div v-if="displayEntries.length === 0 && !loading" class="list-empty">
+        <p>{{ t('diaryList.empty') }}</p>
+      </div>
+
+      <div v-if="loading" class="list-loading">
+        <n-spin size="small" />
+      </div>
+    </div>
+
+    <!-- 右键菜单 -->
+    <n-dropdown
+      placement="bottom-start"
+      trigger="manual"
+      :x="contextMenuX"
+      :y="contextMenuY"
+      :options="contextMenuOptions"
+      :show="showContextMenu"
+      @select="handleContextMenuSelect"
+      @clickoutside="showContextMenu = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { NButton, NSpin, NPopover, NDatePicker, NDropdown } from 'naive-ui'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { NButton, NDatePicker, NDropdown, NPopover, NSpin, NTag } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import type { DiaryEntry } from '../../../types/model'
+import type { DiaryEntry, Mood } from '../../../types/model'
 const { t, tm } = useI18n()
 
 const props = defineProps<{
@@ -89,6 +93,21 @@ const emit = defineEmits<{
   delete: [entry: DiaryEntry]
 }>()
 
+interface DiaryEntryDraftItem extends DiaryEntry {
+  isDraft: true
+}
+
+interface DiaryEntryDraftInput {
+  id: string
+  title: string
+  content: string
+  mood: Mood
+  createdAt: number
+  updatedAt: number
+}
+
+type DiaryListItem = DiaryEntry | DiaryEntryDraftItem
+
 const showDatePicker = ref(false)
 const newDiaryDate = ref<number>(Date.now())
 
@@ -99,7 +118,17 @@ const contextMenuY = ref(0)
 const contextMenuEntry = ref<DiaryEntry | null>(null)
 const contextMenuOptions = [{ label: t('diaryList.delete'), key: 'delete' }]
 
-function handleContextMenu(e: MouseEvent, entry: DiaryEntry): void {
+function isDraftEntry(entry: DiaryListItem): entry is DiaryEntryDraftItem {
+  return 'isDraft' in entry && entry.isDraft
+}
+
+function handleItemClick(entry: DiaryListItem): void {
+  if (isDraftEntry(entry)) return
+  emit('select', entry)
+}
+
+function handleContextMenu(e: MouseEvent, entry: DiaryListItem): void {
+  if (isDraftEntry(entry)) return
   contextMenuX.value = e.clientX
   contextMenuY.value = e.clientY
   contextMenuEntry.value = entry
@@ -129,6 +158,7 @@ const moodEmoji: Record<string, string> = {
 }
 
 const entries = ref<DiaryEntry[]>([])
+const draftEntries = ref<DiaryEntryDraftItem[]>([])
 const loading = ref(false)
 const hasMore = ref(true)
 const PAGE_SIZE = 10 // 减少每页加载数量，从 20 降到 10
@@ -136,6 +166,7 @@ const MAX_WINDOW_SIZE = 200
 const TRIM_BATCH_SIZE = 40
 const listRef = ref<HTMLElement | null>(null)
 const loadedCount = ref(0)
+const displayEntries = computed<DiaryListItem[]>(() => [...draftEntries.value, ...entries.value])
 
 function stripHtml(html: string): string {
   if (!html) return ''
@@ -194,7 +225,7 @@ async function trimEntriesWindow(): Promise<void> {
   const el = listRef.value
   let removedHeight = 0
   if (el) {
-    const itemNodes = el.querySelectorAll<HTMLElement>('.diary-item')
+    const itemNodes = el.querySelectorAll<HTMLElement>('.diary-item:not(.is-draft)')
     for (let i = 0; i < removeCount && i < itemNodes.length; i += 1) {
       removedHeight += itemNodes[i].offsetHeight
     }
@@ -246,6 +277,13 @@ function updateEntry(id: string, patch: Partial<DiaryEntry>): boolean {
     entries.value[idx] = { ...entries.value[idx], ...patch }
     return true
   }
+
+  const draftIdx = draftEntries.value.findIndex((e) => e.id === id)
+  if (draftIdx !== -1) {
+    draftEntries.value[draftIdx] = { ...draftEntries.value[draftIdx], ...patch }
+    return true
+  }
+
   return false
 }
 
@@ -255,9 +293,55 @@ function removeEntry(id: string): void {
     entries.value.splice(idx, 1)
     loadedCount.value = Math.max(loadedCount.value - 1, 0)
   }
+
+  removeDraftEntry(id)
 }
 
-defineExpose({ refresh, updateEntry, removeEntry })
+function prependDraftEntry(draft: DiaryEntryDraftInput): void {
+  const next: DiaryEntryDraftItem = {
+    ...draft,
+    tags: [],
+    isDraft: true
+  }
+  draftEntries.value = [next, ...draftEntries.value.filter((entry) => entry.id !== draft.id)]
+}
+
+function commitDraftEntry(tempId: string, saved: DiaryEntry): boolean {
+  const draftIdx = draftEntries.value.findIndex((entry) => entry.id === tempId)
+  if (draftIdx === -1) return false
+  draftEntries.value.splice(draftIdx, 1)
+
+  const existingIdx = entries.value.findIndex((entry) => entry.id === saved.id)
+  if (existingIdx !== -1) {
+    entries.value[existingIdx] = saved
+    return true
+  }
+
+  const insertIdx = entries.value.findIndex((entry) => entry.createdAt < saved.createdAt)
+  if (insertIdx === -1) {
+    entries.value.push(saved)
+  } else {
+    entries.value.splice(insertIdx, 0, saved)
+  }
+  loadedCount.value += 1
+  return true
+}
+
+function removeDraftEntry(tempId: string): void {
+  const draftIdx = draftEntries.value.findIndex((entry) => entry.id === tempId)
+  if (draftIdx !== -1) {
+    draftEntries.value.splice(draftIdx, 1)
+  }
+}
+
+defineExpose({
+  refresh,
+  updateEntry,
+  removeEntry,
+  prependDraftEntry,
+  commitDraftEntry,
+  removeDraftEntry
+})
 </script>
 
 <style scoped>
@@ -266,6 +350,11 @@ defineExpose({ refresh, updateEntry, removeEntry })
   flex-direction: column;
   height: 100%;
   background: var(--n-color, #fff);
+}
+
+.list-topbar {
+  padding: 12px;
+  border-bottom: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
 }
 
 .list-body {
@@ -287,6 +376,22 @@ defineExpose({ refresh, updateEntry, removeEntry })
 
 .diary-item:hover {
   background: var(--app-accent-06, rgba(24, 160, 88, 0.06));
+}
+
+.diary-item.is-draft {
+  background: var(--app-accent-08, rgba(24, 160, 88, 0.08));
+  box-shadow: inset 0 0 0 1px var(--app-accent-20, rgba(24, 160, 88, 0.2));
+}
+
+.diary-item.is-draft::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  border: 1px solid var(--app-accent-24, rgba(24, 160, 88, 0.24));
+  opacity: 0;
+  animation: draft-sheen var(--motion-spring-normal) var(--ease-enter);
+  pointer-events: none;
 }
 
 .diary-item::before {
@@ -327,6 +432,16 @@ defineExpose({ refresh, updateEntry, removeEntry })
   font-weight: 500;
 }
 
+.item-header-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.draft-tag {
+  line-height: 1;
+}
+
 .item-mood {
   font-size: 14px;
 }
@@ -363,11 +478,6 @@ defineExpose({ refresh, updateEntry, removeEntry })
   padding: 16px;
 }
 
-.list-footer {
-  padding: 12px;
-  border-top: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
-}
-
 .date-picker-popup {
   padding: 4px;
 }
@@ -382,21 +492,45 @@ defineExpose({ refresh, updateEntry, removeEntry })
 .diary-item-motion-enter-active,
 .diary-item-motion-leave-active {
   transition:
-    transform var(--motion-normal) var(--ease-enter),
-    opacity var(--motion-normal) var(--ease-standard);
+    transform var(--motion-spring-fast) var(--ease-spring-soft),
+    opacity var(--motion-normal) var(--ease-standard),
+    filter var(--motion-normal) var(--ease-standard);
 }
 
 .diary-item-motion-enter-from {
   opacity: 0;
-  transform: translateY(var(--motion-distance-sm));
+  filter: blur(1px);
+  transform: translateY(var(--motion-distance-md)) scale(var(--motion-scale-pop-start));
+}
+
+.diary-item-motion-enter-to {
+  opacity: 1;
+  filter: blur(0);
+  transform: translateY(0) scale(1);
 }
 
 .diary-item-motion-leave-to {
   opacity: 0;
-  transform: scale(0.98);
+  filter: blur(1px);
+  transform: translateY(calc(var(--motion-distance-sm) * -1)) scale(0.985);
 }
 
 .diary-item-motion-move {
-  transition: transform var(--motion-normal) var(--ease-standard);
+  transition: transform var(--motion-spring-fast) var(--ease-spring-soft);
+}
+
+@keyframes draft-sheen {
+  0% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+:global(:root.reduced-motion) .diary-item-motion-enter-from,
+:global(:root.reduced-motion) .diary-item-motion-leave-to {
+  filter: none;
+  transform: none;
 }
 </style>

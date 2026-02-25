@@ -353,6 +353,10 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
   clearSaveStateTimer()
 })
 
