@@ -6,6 +6,7 @@ import { useThemeStore } from './stores/themes'
 import { usePrivacyStore } from './stores/privacy'
 import { useLocaleStore } from './stores/locale'
 import { useDisguiseStore } from './stores/disguise'
+import { useStartupStore } from './stores/startup'
 import router from './router'
 import { i18n } from './i18n'
 import './assets/motion.css'
@@ -32,6 +33,7 @@ const themeStore = useThemeStore()
 const privacyStore = usePrivacyStore()
 const localeStore = useLocaleStore()
 const disguiseStore = useDisguiseStore()
+const startupStore = useStartupStore()
 
 let appDataInitialized = false
 
@@ -65,39 +67,45 @@ async function ensureFroalaLoaded(): Promise<void> {
 }
 
 router.beforeEach(async (to) => {
-  if (to.path === '/today' && !privacyStore.isLocked) {
+  if (to.path === '/today' && privacyStore.isInitialized && !privacyStore.isLocked) {
     await ensureFroalaLoaded()
   }
 })
 
-async function bootstrap(): Promise<void> {
-  await localeStore.initFromStorage()
-  await privacyStore.initFromStorage()
-  await disguiseStore.initFromMain()
-  if (!privacyStore.isLocked) {
+watch(
+  () => [privacyStore.isInitialized, privacyStore.isLocked] as const,
+  async ([isInitialized, isLocked]) => {
+    if (!isInitialized || isLocked) return
     await initUnlockedAppData()
-  }
+    if (router.currentRoute.value.path === '/today') {
+      await ensureFroalaLoaded()
+    }
+  },
+  { immediate: true }
+)
 
-  watch(
-    () => [privacyStore.isInitialized, privacyStore.isLocked] as const,
-    async ([isInitialized, isLocked]) => {
-      if (!isInitialized || isLocked) return
+async function bootstrap(): Promise<void> {
+  try {
+    await localeStore.initFromStorage()
+    await privacyStore.initFromStorage()
+    await disguiseStore.initFromMain()
+    if (!privacyStore.isLocked) {
       await initUnlockedAppData()
-      if (router.currentRoute.value.path === '/today') {
-        await ensureFroalaLoaded()
-      }
-    },
-    { immediate: true }
-  )
+    }
 
-  app.use(router)
-  await router.isReady()
+    await router.isReady()
 
-  if (router.currentRoute.value.path === '/today' && !privacyStore.isLocked) {
-    await ensureFroalaLoaded()
+    if (router.currentRoute.value.path === '/today' && !privacyStore.isLocked) {
+      await ensureFroalaLoaded()
+    }
+  } catch (error) {
+    console.error('应用启动初始化失败:', error)
+  } finally {
+    startupStore.finishBoot()
   }
-
-  app.mount('#app')
 }
+
+app.use(router)
+app.mount('#app')
 
 void bootstrap()

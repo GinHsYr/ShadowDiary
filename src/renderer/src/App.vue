@@ -8,6 +8,7 @@ import {
   NInputOtp,
   NLayout,
   NLayoutContent,
+  NSkeleton,
   dateEnUS,
   dateJaJP,
   dateKoKR,
@@ -30,11 +31,13 @@ import {
   usePrivacyStore
 } from './stores/privacy'
 import { isDisguiseShortcutMatch, useDisguiseStore } from './stores/disguise'
+import { useStartupStore } from './stores/startup'
 
 const { t, locale } = useI18n()
 const theme = useThemeStore()
 const privacy = usePrivacyStore()
 const disguise = useDisguiseStore()
+const startup = useStartupStore()
 const route = useRoute()
 const OTP_LENGTH = 6
 const USER_ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'] as const
@@ -406,71 +409,102 @@ onBeforeUnmount(() => {
   >
     <n-dialog-provider>
       <div class="app-shell">
-        <TitleBar />
-        <n-layout has-sider position="absolute" style="top: 32px">
-          <AppSidebar />
-
-          <n-layout>
-            <AppHeader />
-            <n-layout-content class="main-content">
-              <router-view v-if="privacy.isUnlocked" v-slot="{ Component, route: currentRoute }">
-                <transition :name="routeTransitionName" mode="out-in">
-                  <div :key="currentRoute.fullPath" class="route-page">
-                    <component :is="Component" ref="activeRouteViewRef" />
-                  </div>
-                </transition>
-              </router-view>
-            </n-layout-content>
-          </n-layout>
-        </n-layout>
-
-        <transition name="privacy-lock-fade" :duration="{ enter: 640, leave: 260 }">
-          <div v-if="showLockOverlay" class="privacy-lock-overlay">
-            <n-card class="privacy-lock-card" :bordered="false">
-              <h2 class="privacy-lock-title">{{ t('app.privacy.title') }}</h2>
-              <p class="privacy-lock-description">
-                {{
-                  privacy.usesWindowsPassword
-                    ? t('app.privacy.unlockWithWindowsPassword')
-                    : t('app.privacy.unlockWithPin')
-                }}
-              </p>
-
-              <div
-                class="privacy-lock-form"
-                :class="{ 'privacy-lock-form--windows': privacy.usesWindowsPassword }"
-              >
-                <n-input-otp
-                  v-if="!privacy.usesWindowsPassword"
-                  :value="password"
-                  :length="OTP_LENGTH"
-                  mask
-                  :allow-input="allowDigitInput"
-                  size="large"
-                  :status="unlockStatus"
-                  @update:value="handlePasswordInput"
-                  @finish="handlePasswordFinish"
-                />
-                <template v-else>
-                  <n-input
-                    :value="windowsPassword"
-                    type="password"
-                    show-password-on="mousedown"
-                    clearable
-                    :disabled="unlocking"
-                    :status="unlockStatus"
-                    :placeholder="t('app.privacy.windowsPasswordPlaceholder')"
-                    @update:value="handleWindowsPasswordInput"
-                    @keyup.enter="handleUnlock"
-                  />
-                  <n-button type="primary" :loading="unlocking" @click="handleUnlock">{{
-                    t('app.privacy.unlock')
-                  }}</n-button>
-                </template>
-              </div>
-            </n-card>
+        <div v-if="startup.isBooting" class="startup-skeleton">
+          <div class="startup-skeleton-titlebar">
+            <n-skeleton width="100%" height="32px" />
           </div>
-        </transition>
+          <div class="startup-skeleton-layout">
+            <aside class="startup-skeleton-sidebar">
+              <n-skeleton class="startup-skeleton-avatar" width="56px" height="56px" />
+              <n-skeleton class="startup-skeleton-line" width="100%" height="12px" />
+              <n-skeleton class="startup-skeleton-line" width="100%" height="12px" />
+              <n-skeleton class="startup-skeleton-line" width="86%" height="12px" />
+              <n-skeleton class="startup-skeleton-line" width="100%" height="12px" />
+              <n-skeleton class="startup-skeleton-line" width="68%" height="12px" />
+            </aside>
+            <main class="startup-skeleton-main">
+              <div class="startup-skeleton-header">
+                <n-skeleton class="startup-skeleton-search" width="420px" height="34px" />
+              </div>
+              <div class="startup-skeleton-content">
+                <n-skeleton class="startup-skeleton-card tall" width="100%" height="100%" />
+                <n-skeleton class="startup-skeleton-card" width="100%" height="100%" />
+                <n-skeleton class="startup-skeleton-card" width="100%" height="100%" />
+              </div>
+            </main>
+          </div>
+        </div>
+
+        <template v-else>
+          <TitleBar />
+          <n-layout has-sider position="absolute" style="top: 32px">
+            <AppSidebar />
+
+            <n-layout>
+              <AppHeader />
+              <n-layout-content class="main-content">
+                <router-view
+                  v-if="privacy.isInitialized && privacy.isUnlocked"
+                  v-slot="{ Component, route: currentRoute }"
+                >
+                  <transition :name="routeTransitionName" mode="out-in">
+                    <div :key="currentRoute.fullPath" class="route-page">
+                      <component :is="Component" ref="activeRouteViewRef" />
+                    </div>
+                  </transition>
+                </router-view>
+              </n-layout-content>
+            </n-layout>
+          </n-layout>
+
+          <transition name="privacy-lock-fade" :duration="{ enter: 640, leave: 260 }">
+            <div v-if="showLockOverlay" class="privacy-lock-overlay">
+              <n-card class="privacy-lock-card" :bordered="false">
+                <h2 class="privacy-lock-title">{{ t('app.privacy.title') }}</h2>
+                <p class="privacy-lock-description">
+                  {{
+                    privacy.usesWindowsPassword
+                      ? t('app.privacy.unlockWithWindowsPassword')
+                      : t('app.privacy.unlockWithPin')
+                  }}
+                </p>
+
+                <div
+                  class="privacy-lock-form"
+                  :class="{ 'privacy-lock-form--windows': privacy.usesWindowsPassword }"
+                >
+                  <n-input-otp
+                    v-if="!privacy.usesWindowsPassword"
+                    :value="password"
+                    :length="OTP_LENGTH"
+                    mask
+                    :allow-input="allowDigitInput"
+                    size="large"
+                    :status="unlockStatus"
+                    @update:value="handlePasswordInput"
+                    @finish="handlePasswordFinish"
+                  />
+                  <template v-else>
+                    <n-input
+                      :value="windowsPassword"
+                      type="password"
+                      show-password-on="mousedown"
+                      clearable
+                      :disabled="unlocking"
+                      :status="unlockStatus"
+                      :placeholder="t('app.privacy.windowsPasswordPlaceholder')"
+                      @update:value="handleWindowsPasswordInput"
+                      @keyup.enter="handleUnlock"
+                    />
+                    <n-button type="primary" :loading="unlocking" @click="handleUnlock">{{
+                      t('app.privacy.unlock')
+                    }}</n-button>
+                  </template>
+                </div>
+              </n-card>
+            </div>
+          </transition>
+        </template>
       </div>
     </n-dialog-provider>
   </n-config-provider>
@@ -501,6 +535,80 @@ body {
 .app-shell {
   height: 100%;
   overflow: hidden;
+}
+
+.startup-skeleton {
+  height: 100%;
+  background:
+    radial-gradient(120% 70% at 15% -20%, var(--app-accent-12, rgba(24, 160, 88, 0.12)) 0%, transparent 60%),
+    radial-gradient(110% 80% at 100% 120%, var(--app-accent-08, rgba(24, 160, 88, 0.08)) 0%, transparent 58%),
+    var(--n-body-color, #f5f7fa);
+}
+
+.startup-skeleton-titlebar {
+  height: 32px;
+}
+
+.startup-skeleton-layout {
+  height: calc(100% - 32px);
+  display: flex;
+}
+
+.startup-skeleton-sidebar {
+  width: 220px;
+  padding: 24px 14px 16px;
+  border-right: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.08));
+  box-sizing: border-box;
+}
+
+.startup-skeleton-avatar {
+  border-radius: 50%;
+  overflow: hidden;
+  margin: 0 auto 22px;
+}
+
+.startup-skeleton-line {
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.startup-skeleton-main {
+  flex: 1;
+  padding: 14px 18px 18px;
+  box-sizing: border-box;
+}
+
+.startup-skeleton-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 42px;
+}
+
+.startup-skeleton-search {
+  width: min(420px, 56vw) !important;
+  max-width: 100%;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.startup-skeleton-content {
+  margin-top: 18px;
+  height: calc(100% - 60px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(140px, 1fr));
+  gap: 14px;
+}
+
+.startup-skeleton-card {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.startup-skeleton-card.tall {
+  grid-row: span 2;
 }
 
 /* 禁止 Naive UI 布局组件的滚动 */
@@ -579,6 +687,38 @@ body {
   .page-slide-back-enter-from,
   .page-slide-back-leave-to {
     transform: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .startup-skeleton-sidebar {
+    width: 64px;
+    padding: 16px 10px;
+  }
+
+  .startup-skeleton-avatar {
+    width: 40px !important;
+    height: 40px !important;
+    margin-bottom: 16px;
+  }
+
+  .startup-skeleton-line {
+    width: 100% !important;
+    margin-bottom: 10px;
+    height: 10px !important;
+  }
+
+  .startup-skeleton-search {
+    width: min(320px, 70vw) !important;
+  }
+
+  .startup-skeleton-content {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(3, minmax(120px, 1fr));
+  }
+
+  .startup-skeleton-card.tall {
+    grid-row: auto;
   }
 }
 
