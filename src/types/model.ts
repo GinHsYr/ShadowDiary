@@ -87,3 +87,34 @@ export interface Archive {
   createdAt: number
   updatedAt: number
 }
+
+export type MediaLibrarySourceType = 'diary' | 'archive'
+
+export interface MediaLibrarySourceRef {
+  type: MediaLibrarySourceType
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface MediaLibraryItem {
+  id: string
+  imagePath: string
+  previewPath: string
+  latestAt: number
+  sourceTypes: MediaLibrarySourceType[]
+  sources: MediaLibrarySourceRef[]
+}
+
+export interface MediaLibraryQueryParams {
+  limit?: number
+  offset?: number
+  source?: 'all' | MediaLibrarySourceType
+}
+
+export interface MediaLibraryResult {
+  items: MediaLibraryItem[]
+  total: number
+  hasMore: boolean
+}

@@ -37,6 +37,7 @@ const zhCN = {
       dashboard: '概览',
       today: '今日',
       archives: '档案',
+      media: '媒体库',
       settings: '设置'
     },
     todayDiary: '今日日记',
@@ -158,6 +159,23 @@ const zhCN = {
   archivesPage: {
     empty: '选择或新建一个档案'
   },
+  mediaPage: {
+    title: '媒体库',
+    subtitle: '浏览日记与档案中的所有图片',
+    dateFormat: '{year}年{month}月{day}日',
+    totalImages: '共 {count} 张图片',
+    filterAll: '全部',
+    filterDiary: '日记',
+    filterArchive: '档案',
+    sourceDiary: '日记',
+    sourceArchive: '档案',
+    untitledArchive: '未命名档案',
+    openSource: '打开来源',
+    moreSources: '另 {count} 个来源',
+    empty: '暂无图片',
+    emptyHint: '在日记编辑器或档案详情中插入图片后会显示在这里',
+    loadingMore: '加载更多图片...'
+  },
   dashboard: {
     welcome: '👋 你好，准备写点什么？',
     other: '其他',
@@ -201,7 +219,7 @@ const zhCN = {
     darkMode: '深色模式',
     darkModeDescription: '深色模式切换',
     themeAccent: '主题色',
-    themeAccentDarkHint: '暗色模式下固定使用默认暗色主题色',
+    themeAccentDarkHint: '暗色模式下不支持黑色主题色，若当前为黑色会自动切换为绿色',
     themeAccentHint: '选择你喜欢的颜色',
     language: '语言',
     languageDescription: '设置应用显示语言',

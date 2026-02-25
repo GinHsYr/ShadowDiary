@@ -37,6 +37,7 @@ const jaJP = {
       dashboard: 'ダッシュボード',
       today: '今日',
       archives: 'アーカイブ',
+      media: 'メディアライブラリ',
       settings: '設定'
     },
     todayDiary: '今日の日記を書く',
@@ -158,6 +159,23 @@ const jaJP = {
   archivesPage: {
     empty: 'アーカイブを選択または作成してください'
   },
+  mediaPage: {
+    title: 'メディアライブラリ',
+    subtitle: '日記とアーカイブ内のすべての画像を表示します',
+    dateFormat: '{year}年{month}月{day}日',
+    totalImages: '{count} 枚の画像',
+    filterAll: 'すべて',
+    filterDiary: '日記',
+    filterArchive: 'アーカイブ',
+    sourceDiary: '日記',
+    sourceArchive: 'アーカイブ',
+    untitledArchive: '無題のアーカイブ',
+    openSource: '元を開く',
+    moreSources: '他 {count} 件',
+    empty: '画像がありません',
+    emptyHint: '日記エディタまたはアーカイブ詳細で追加した画像がここに表示されます',
+    loadingMore: '画像を読み込み中...'
+  },
   dashboard: {
     welcome: '👋 こんにちは、何か書いてみませんか？',
     other: 'その他',
@@ -201,7 +219,8 @@ const jaJP = {
     darkMode: 'ダークモード',
     darkModeDescription: 'ダークモードを切り替え',
     themeAccent: 'テーマカラー',
-    themeAccentDarkHint: 'ダークモードでは既定のアクセントカラーを使用します',
+    themeAccentDarkHint:
+      'ダークモードではブラックのテーマカラーは使用できません。現在ブラックの場合は自動でグリーンに切り替わります',
     themeAccentHint: 'お好みの色を選択してください',
     language: '言語',
     languageDescription: 'アプリの表示言語を設定',

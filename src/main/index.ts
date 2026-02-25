@@ -35,6 +35,7 @@ import {
   invalidatePersonMentionCache
 } from './database/diary'
 import { archives } from './database/archives'
+import { getMediaLibrary, invalidateMediaLibraryCache } from './database/media'
 import { getAllTags } from './database/tags'
 import {
   addAttachment,
@@ -826,6 +827,7 @@ function registerIpcHandlers(): void {
       await cleanupReleasedImages(releasedIds)
     }
     invalidatePersonMentionCache()
+    invalidateMediaLibraryCache()
     return saved
   })
 
@@ -839,6 +841,7 @@ function registerIpcHandlers(): void {
         await cleanupReleasedImages(releasedIds)
       }
       invalidatePersonMentionCache()
+      invalidateMediaLibraryCache()
       if (!isDisguiseModeEnabled()) {
         await deleteAttachmentFiles(attachments.map((attachment) => attachment.filePath))
       }
@@ -881,6 +884,7 @@ function registerIpcHandlers(): void {
         await cleanupReleasedImages(releasedIds)
       }
       invalidatePersonMentionCache()
+      invalidateMediaLibraryCache()
       return saved
     }
   )
@@ -893,6 +897,7 @@ function registerIpcHandlers(): void {
       await cleanupReleasedImages(releasedIds)
     }
     invalidatePersonMentionCache()
+    invalidateMediaLibraryCache()
   })
 
   // 标签
@@ -948,6 +953,7 @@ function registerIpcHandlers(): void {
     }
     setDisguiseLastEnabled(Boolean(enabled))
     invalidatePersonMentionCache()
+    invalidateMediaLibraryCache()
     return true
   })
 
@@ -964,6 +970,7 @@ function registerIpcHandlers(): void {
   handleTrustedIpc('disguise:regenerateData', () => {
     regenerateDisguiseModeData()
     invalidatePersonMentionCache()
+    invalidateMediaLibraryCache()
     return true
   })
 
@@ -1001,6 +1008,7 @@ function registerIpcHandlers(): void {
     )
     if (result.success) {
       invalidatePersonMentionCache()
+      invalidateMediaLibraryCache()
     }
     return result
   })
@@ -1025,6 +1033,10 @@ function registerIpcHandlers(): void {
       return getPersonMentionDetails(personName, params)
     }
   )
+
+  handleTrustedIpc('media:list', (_event, params: Parameters<typeof getMediaLibrary>[0]) => {
+    return getMediaLibrary(params ?? {})
+  })
 
   // 保存图片（兼容 data URL）
   handleTrustedIpc('image:save', async (_event, base64Data: string) => {

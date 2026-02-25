@@ -37,6 +37,7 @@ const koKR = {
       dashboard: '대시보드',
       today: '오늘',
       archives: '아카이브',
+      media: '미디어 라이브러리',
       settings: '설정'
     },
     todayDiary: '오늘 일기 작성',
@@ -158,6 +159,23 @@ const koKR = {
   archivesPage: {
     empty: '아카이브를 선택하거나 새로 만드세요'
   },
+  mediaPage: {
+    title: '미디어 라이브러리',
+    subtitle: '일기와 아카이브의 모든 이미지를 둘러보세요',
+    dateFormat: '{year}년 {month}월 {day}일',
+    totalImages: '이미지 {count}개',
+    filterAll: '전체',
+    filterDiary: '일기',
+    filterArchive: '아카이브',
+    sourceDiary: '일기',
+    sourceArchive: '아카이브',
+    untitledArchive: '제목 없는 아카이브',
+    openSource: '원본 열기',
+    moreSources: '외 {count}개',
+    empty: '아직 이미지가 없습니다',
+    emptyHint: '일기 에디터 또는 아카이브 상세에 추가한 이미지가 여기에 표시됩니다',
+    loadingMore: '이미지를 더 불러오는 중...'
+  },
   dashboard: {
     welcome: '👋 안녕하세요, 오늘의 기록을 남겨보세요',
     other: '기타',
@@ -201,7 +219,8 @@ const koKR = {
     darkMode: '다크 모드',
     darkModeDescription: '다크 모드 전환',
     themeAccent: '테마 색상',
-    themeAccentDarkHint: '다크 모드에서는 기본 강조 색상을 사용합니다',
+    themeAccentDarkHint:
+      '다크 모드에서는 블랙 테마 색상을 사용할 수 없으며, 현재 블랙이면 자동으로 그린으로 전환됩니다',
     themeAccentHint: '마음에 드는 색상을 선택하세요',
     language: '언어',
     languageDescription: '앱 표시 언어를 설정합니다',

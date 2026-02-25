@@ -30,10 +30,18 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/archives/index.vue')
   },
   {
+    path: '/media',
+    name: 'Media',
+    meta: {
+      navOrder: 3
+    },
+    component: () => import('../views/media/index.vue')
+  },
+  {
     path: '/settings',
     name: 'Settings',
     meta: {
-      navOrder: 3
+      navOrder: 4
     },
     component: () => import('../views/settings/index.vue')
   }

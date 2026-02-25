@@ -75,6 +75,9 @@ const api: DiaryAPI = {
   // 清理未使用的图片
   cleanupImages: () => invoke('image:cleanup'),
 
+  // 媒体库
+  getMediaLibrary: (params) => invoke('media:list', params),
+
   // 图片选择（编辑器插入图片）
   selectImage: () => invoke('select-image'),
 

@@ -28,9 +28,9 @@
                 </span>
               </div>
 
-              <div class="accent-palette" :class="{ 'accent-palette--disabled': theme.isDark }">
+              <div class="accent-palette">
                 <button
-                  v-for="option in accentOptions"
+                  v-for="option in visibleAccentOptions"
                   :key="option.value"
                   type="button"
                   class="accent-chip"
@@ -38,7 +38,6 @@
                   :style="{ '--accent-color': option.color }"
                   :aria-label="option.label"
                   :title="option.label"
-                  :disabled="theme.isDark"
                   @click="handleAccentChange(option.value)"
                 >
                   <span class="accent-chip-dot" />
@@ -724,6 +723,11 @@ const accentOptions: AccentOption[] = [
     color: THEME_ACCENT_PALETTES[ThemeAccent.Teal].primaryColor
   }
 ]
+const visibleAccentOptions = computed(() =>
+  theme.isDark
+    ? accentOptions.filter((option) => option.value !== ThemeAccent.Black)
+    : accentOptions
+)
 const localePreferenceOptions = computed(() => [
   { label: t('settings.followSystem'), value: 'system' as LocalePreference },
   { label: '中文', value: 'zh-CN' as LocalePreference },
@@ -925,7 +929,6 @@ const handleThemeChange = (value: boolean): void => {
 }
 
 const handleAccentChange = (accent: ThemeAccent): void => {
-  if (theme.isDark) return
   theme.setAccent(accent)
 }
 
@@ -1864,10 +1867,6 @@ const handleImportData = (): void => {
   justify-content: flex-end;
 }
 
-.accent-palette--disabled {
-  opacity: 0.6;
-}
-
 .accent-chip {
   --accent-color: #18a058;
   border: 1px solid var(--n-border-color);
@@ -1886,17 +1885,13 @@ const handleImportData = (): void => {
     transform var(--motion-fast) var(--ease-standard);
 }
 
-.accent-chip:hover:not(:disabled) {
+.accent-chip:hover {
   transform: translateY(-1px);
 }
 
 .accent-chip--active {
   border-color: var(--accent-color);
   box-shadow: 0 0 0 1px var(--accent-color) inset;
-}
-
-.accent-chip:disabled {
-  cursor: not-allowed;
 }
 
 .accent-chip-dot {

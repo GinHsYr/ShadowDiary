@@ -8,7 +8,8 @@ import {
   Add,
   CloudUploadOutline,
   PencilOutline,
-  FolderOpenOutline
+  FolderOpenOutline,
+  ImagesOutline
 } from '@vicons/ionicons5'
 import { useUserStore } from '../stores/user'
 import { useRouter, useRoute } from 'vue-router'
@@ -55,6 +56,11 @@ const menuOptions = computed(() => [
     icon: () => h(NIcon, null, () => h(FolderOpenOutline))
   },
   {
+    label: t('sidebar.menu.media'),
+    key: 'media',
+    icon: () => h(NIcon, null, () => h(ImagesOutline))
+  },
+  {
     label: t('sidebar.menu.settings'),
     key: 'settings',
     icon: () => h(NIcon, null, () => h(SettingsOutline))
@@ -67,6 +73,7 @@ const activeKey = computed(() => {
   if (path.startsWith('/dashboard')) return 'dashboard'
   if (path.startsWith('/today')) return 'today'
   if (path.startsWith('/archives')) return 'archives'
+  if (path.startsWith('/media')) return 'media'
   if (path.startsWith('/settings')) return 'settings'
   return 'dashboard'
 })

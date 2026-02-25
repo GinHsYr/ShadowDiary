@@ -7,7 +7,15 @@ import {
   NInput,
   NInputOtp,
   NLayout,
-  NLayoutContent
+  NLayoutContent,
+  dateEnUS,
+  dateJaJP,
+  dateKoKR,
+  dateZhCN,
+  enUS,
+  jaJP,
+  koKR,
+  zhCN
 } from 'naive-ui'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -23,7 +31,7 @@ import {
 } from './stores/privacy'
 import { isDisguiseShortcutMatch, useDisguiseStore } from './stores/disguise'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const theme = useThemeStore()
 const privacy = usePrivacyStore()
 const disguise = useDisguiseStore()
@@ -57,6 +65,18 @@ const systemPrefersReducedMotion = ref(false)
 
 const showLockOverlay = computed(() => privacy.isInitialized && privacy.isLocked)
 const shouldReduceMotion = computed(() => systemPrefersReducedMotion.value || theme.isMotionReduced)
+const naiveLocale = computed(() => {
+  if (locale.value === 'en-US') return enUS
+  if (locale.value === 'ja-JP') return jaJP
+  if (locale.value === 'ko-KR') return koKR
+  return zhCN
+})
+const naiveDateLocale = computed(() => {
+  if (locale.value === 'en-US') return dateEnUS
+  if (locale.value === 'ja-JP') return dateJaJP
+  if (locale.value === 'ko-KR') return dateKoKR
+  return dateZhCN
+})
 
 function getNavOrder(value: unknown): number | null {
   return typeof value === 'number' ? value : null
@@ -378,7 +398,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <n-config-provider :theme="theme.getTheme" :theme-overrides="theme.themeOverrides">
+  <n-config-provider
+    :theme="theme.getTheme"
+    :theme-overrides="theme.themeOverrides"
+    :locale="naiveLocale"
+    :date-locale="naiveDateLocale"
+  >
     <n-dialog-provider>
       <div class="app-shell">
         <TitleBar />

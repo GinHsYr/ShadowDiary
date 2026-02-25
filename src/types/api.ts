@@ -4,6 +4,8 @@ import type {
   DiaryEntry,
   DiaryListResult,
   HomePageStats,
+  MediaLibraryQueryParams,
+  MediaLibraryResult,
   Mood,
   PersonMentionDetailResult,
   SearchParams,
@@ -168,6 +170,9 @@ export interface DiaryAPI {
 
   // 清理未使用的图片
   cleanupImages(): Promise<{ success: boolean; error?: string }>
+
+  // 媒体库
+  getMediaLibrary(params?: MediaLibraryQueryParams): Promise<MediaLibraryResult>
 
   // 图片选择
   selectImage(): Promise<ImageSelectResult>

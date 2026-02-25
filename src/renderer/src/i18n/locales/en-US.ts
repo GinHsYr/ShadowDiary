@@ -37,6 +37,7 @@ const enUS = {
       dashboard: 'Dashboard',
       today: 'Today',
       archives: 'Archives',
+      media: 'Media Library',
       settings: 'Settings'
     },
     todayDiary: 'Write Today',
@@ -158,6 +159,23 @@ const enUS = {
   archivesPage: {
     empty: 'Select or create an archive'
   },
+  mediaPage: {
+    title: 'Media Library',
+    subtitle: 'Browse all images from diaries and archives',
+    dateFormat: '{month}/{day}/{year}',
+    totalImages: '{count} images',
+    filterAll: 'All',
+    filterDiary: 'Diary',
+    filterArchive: 'Archive',
+    sourceDiary: 'Diary',
+    sourceArchive: 'Archive',
+    untitledArchive: 'Untitled archive',
+    openSource: 'Open source',
+    moreSources: '{count} more sources',
+    empty: 'No images yet',
+    emptyHint: 'Images inserted in diary editor or archive detail will appear here',
+    loadingMore: 'Loading more images...'
+  },
   dashboard: {
     welcome: '👋 Hi, ready to write something?',
     other: 'Other',
@@ -201,7 +219,8 @@ const enUS = {
     darkMode: 'Dark Mode',
     darkModeDescription: 'Toggle dark mode',
     themeAccent: 'Theme Accent',
-    themeAccentDarkHint: 'Dark mode uses a fixed default accent',
+    themeAccentDarkHint:
+      'Black accent is unavailable in dark mode; if currently black, it will switch to green automatically',
     themeAccentHint: 'Choose your favorite color',
     language: 'Language',
     languageDescription: 'Set app display language',

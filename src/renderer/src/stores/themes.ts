@@ -44,7 +44,7 @@ const SETTINGS_THEME_KEY = 'settings.theme'
 const SETTINGS_THEME_ACCENT_KEY = 'settings.themeAccent'
 const SETTINGS_THEME_MOTION_KEY = 'settings.themeMotion'
 const DEFAULT_THEME_ACCENT = ThemeAccent.Green
-const DEFAULT_DARK_ACCENT_COLOR = '#18a058'
+const DEFAULT_ACCENT_COLOR = '#18a058'
 
 export const THEME_ACCENT_PALETTES: Record<ThemeAccent, ThemeAccentPalette> = {
   [ThemeAccent.Green]: {
@@ -98,6 +98,13 @@ function normalizeThemeAccent(value: string | null): ThemeAccent {
   return DEFAULT_THEME_ACCENT
 }
 
+function normalizeAccentByMode(mode: ThemeMode, accent: ThemeAccent): ThemeAccent {
+  if (mode === ThemeMode.Dark && accent === ThemeAccent.Black) {
+    return DEFAULT_THEME_ACCENT
+  }
+  return accent
+}
+
 function normalizeMotionLevel(value: string | null): MotionLevel {
   return value === MotionLevel.Reduced ? MotionLevel.Reduced : MotionLevel.Full
 }
@@ -124,7 +131,7 @@ function hexToRgb(hex: string): [number, number, number] | null {
 }
 
 function createAccentStyleVars(primaryColor: string): AccentStyleVars {
-  const rgb = hexToRgb(primaryColor) ?? hexToRgb(DEFAULT_DARK_ACCENT_COLOR) ?? [24, 160, 88]
+  const rgb = hexToRgb(primaryColor) ?? hexToRgb(DEFAULT_ACCENT_COLOR) ?? [24, 160, 88]
   const [r, g, b] = rgb
 
   return {
@@ -155,8 +162,6 @@ export const useThemeStore = defineStore('theme', {
       return this.isDark ? darkTheme : null
     },
     themeOverrides(): GlobalThemeOverrides | undefined {
-      if (this.isDark) return undefined
-
       const accentPalette =
         THEME_ACCENT_PALETTES[this.accent] ?? THEME_ACCENT_PALETTES[DEFAULT_THEME_ACCENT]
       return {
@@ -169,10 +174,9 @@ export const useThemeStore = defineStore('theme', {
       }
     },
     accentStyleVars(): AccentStyleVars {
-      const primaryColor = this.isDark
-        ? DEFAULT_DARK_ACCENT_COLOR
-        : (THEME_ACCENT_PALETTES[this.accent] ?? THEME_ACCENT_PALETTES[DEFAULT_THEME_ACCENT])
-            .primaryColor
+      const primaryColor = (
+        THEME_ACCENT_PALETTES[this.accent] ?? THEME_ACCENT_PALETTES[DEFAULT_THEME_ACCENT]
+      ).primaryColor
 
       return createAccentStyleVars(primaryColor)
     },
@@ -184,6 +188,10 @@ export const useThemeStore = defineStore('theme', {
   actions: {
     setMode(mode: ThemeMode) {
       this.mode = mode
+      const nextAccent = normalizeAccentByMode(mode, this.accent)
+      if (nextAccent !== this.accent) {
+        this.setAccent(nextAccent)
+      }
       // 自动保存到数据库
       window.api
         .setSetting(SETTINGS_THEME_KEY, mode === ThemeMode.Dark ? 'dark' : 'light')
@@ -192,8 +200,11 @@ export const useThemeStore = defineStore('theme', {
         })
     },
     setAccent(accent: ThemeAccent) {
-      this.accent = accent
-      window.api.setSetting(SETTINGS_THEME_ACCENT_KEY, accent).catch((error) => {
+      const nextAccent = normalizeAccentByMode(this.mode, accent)
+      if (nextAccent === this.accent) return
+
+      this.accent = nextAccent
+      window.api.setSetting(SETTINGS_THEME_ACCENT_KEY, nextAccent).catch((error) => {
         console.error('保存主题色设置失败:', error)
       })
     },
@@ -219,7 +230,14 @@ export const useThemeStore = defineStore('theme', {
           this.mode = ThemeMode.Light
         }
 
-        this.accent = normalizeThemeAccent(accent)
+        const storedAccent = normalizeThemeAccent(accent)
+        const normalizedAccent = normalizeAccentByMode(this.mode, storedAccent)
+        this.accent = normalizedAccent
+        if (normalizedAccent !== storedAccent) {
+          window.api.setSetting(SETTINGS_THEME_ACCENT_KEY, normalizedAccent).catch((error) => {
+            console.error('保存主题色设置失败:', error)
+          })
+        }
         this.motionLevel = normalizeMotionLevel(motionLevel)
       } catch (error) {
         console.error('加载主题设置失败:', error)
