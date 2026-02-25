@@ -276,6 +276,18 @@
             </transition>
             <div v-if="downloading" class="download-progress">
               <n-progress type="line" :percentage="downloadProgress" :show-indicator="true" />
+              <div class="download-progress-meta">
+                <span class="progress-message">{{ downloadProgressText }}</span>
+                <n-button
+                  size="small"
+                  tertiary
+                  :loading="cancelingUpdateDownload"
+                  :disabled="cancelingUpdateDownload"
+                  @click="handleCancelUpdateDownload"
+                >
+                  {{ t('common.cancel') }}
+                </n-button>
+              </div>
             </div>
           </n-space>
         </n-card>
@@ -543,7 +555,11 @@ import {
 } from '@renderer/stores/privacy'
 import { useLocaleStore } from '@renderer/stores/locale'
 import type { LocalePreference } from '@renderer/i18n'
-import type { DataTransferProgress, DataTransferResult } from '../../../../types/api'
+import type {
+  DataTransferProgress,
+  DataTransferResult,
+  UpdateDownloadProgress
+} from '../../../../types/api'
 
 interface AppInfo {
   name: string
@@ -613,7 +629,10 @@ const updateMessage = ref('')
 const updateMessageType = ref<'success' | 'error' | 'info'>('info')
 const hasUpdate = ref(false)
 const downloading = ref(false)
+const cancelingUpdateDownload = ref(false)
 const downloadProgress = ref(0)
+const downloadedBytes = ref(0)
+const totalBytes = ref(0)
 const downloaded = ref(false)
 const exportingData = ref(false)
 const importingData = ref(false)
@@ -660,6 +679,12 @@ const dialog = useDialog()
 const currentPasswordValue = computed(() => currentPassword.value.join(''))
 const newPasswordValue = computed(() => newPassword.value.join(''))
 const confirmPasswordValue = computed(() => confirmPassword.value.join(''))
+const downloadProgressText = computed(() =>
+  t('settings.about.downloadProgressDetail', {
+    transferred: formatFileSize(downloadedBytes.value),
+    total: formatFileSize(totalBytes.value)
+  })
+)
 const backupPasswordModalTitle = computed(() =>
   backupPasswordMode.value === 'export'
     ? t('settings.data.exportPasswordTitle')
@@ -699,13 +724,53 @@ async function loadAppInfo(): Promise<void> {
   }
 }
 
+function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '--'
+
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = bytes
+  let unitIndex = 0
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+
+  const fractionDigits = unitIndex === 0 ? 0 : 1
+  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`
+}
+
+function isUpdateDownloadCanceledError(error: unknown): boolean {
+  const message = unwrapIpcErrorMessage(error).toLowerCase()
+  return (
+    message.includes('cancel') ||
+    message.includes('abort') ||
+    message.includes('取消') ||
+    message.includes('キャンセル') ||
+    message.includes('취소')
+  )
+}
+
 onMounted(() => {
   loadAppInfo()
 
   // 监听下载进度
   removeUpdateListeners.push(
-    window.api.onDownloadProgress((progress) => {
-      downloadProgress.value = Math.round(progress.percent)
+    window.api.onDownloadProgress((progress: UpdateDownloadProgress) => {
+      downloadProgress.value = Math.max(0, Math.min(100, Math.round(progress.percent)))
+      downloadedBytes.value = Math.max(0, Math.round(progress.transferred))
+      totalBytes.value = Math.max(0, Math.round(progress.total))
+    })
+  )
+
+  // 监听下载取消
+  removeUpdateListeners.push(
+    window.api.onUpdateDownloadCanceled(() => {
+      downloading.value = false
+      cancelingUpdateDownload.value = false
+      downloaded.value = false
+      updateMessage.value = t('settings.about.downloadCanceled')
+      updateMessageType.value = 'info'
     })
   )
 
@@ -713,6 +778,7 @@ onMounted(() => {
   removeUpdateListeners.push(
     window.api.onUpdateDownloaded(() => {
       downloading.value = false
+      cancelingUpdateDownload.value = false
       downloaded.value = true
       updateMessage.value = t('settings.about.downloaded')
       updateMessageType.value = 'success'
@@ -1092,6 +1158,11 @@ const handleCheckUpdate = async (): Promise<void> => {
   checkingUpdate.value = true
   updateMessage.value = ''
   hasUpdate.value = false
+  downloading.value = false
+  cancelingUpdateDownload.value = false
+  downloadProgress.value = 0
+  downloadedBytes.value = 0
+  totalBytes.value = 0
   downloaded.value = false
   try {
     const result = await window.api.checkForUpdates()
@@ -1133,13 +1204,47 @@ function unwrapIpcErrorMessage(error: unknown): string {
 
 const handleDownloadUpdate = async (): Promise<void> => {
   downloading.value = true
+  cancelingUpdateDownload.value = false
   downloadProgress.value = 0
+  downloadedBytes.value = 0
+  totalBytes.value = 0
+  downloaded.value = false
   updateMessage.value = t('settings.about.downloading')
   updateMessageType.value = 'info'
   try {
     await window.api.downloadUpdate()
   } catch (error) {
     downloading.value = false
+    cancelingUpdateDownload.value = false
+    if (isUpdateDownloadCanceledError(error)) {
+      updateMessage.value = t('settings.about.downloadCanceled')
+      updateMessageType.value = 'info'
+      return
+    }
+    updateMessage.value = t('settings.data.downloadUpdateFailedWithReason', {
+      reason: unwrapIpcErrorMessage(error)
+    })
+    updateMessageType.value = 'error'
+  }
+}
+
+const handleCancelUpdateDownload = async (): Promise<void> => {
+  if (!downloading.value || cancelingUpdateDownload.value) return
+
+  cancelingUpdateDownload.value = true
+  updateMessage.value = t('settings.about.cancelingDownload')
+  updateMessageType.value = 'info'
+
+  try {
+    const canceled = await window.api.cancelUpdateDownload()
+    if (!canceled) {
+      downloading.value = false
+      cancelingUpdateDownload.value = false
+      updateMessage.value = t('settings.about.downloadCanceled')
+      updateMessageType.value = 'info'
+    }
+  } catch (error) {
+    cancelingUpdateDownload.value = false
     updateMessage.value = t('settings.data.downloadUpdateFailedWithReason', {
       reason: unwrapIpcErrorMessage(error)
     })
@@ -1636,6 +1741,14 @@ const handleImportData = (): void => {
   padding: 8px 0;
 }
 
+.download-progress-meta {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .progress-message {
   font-size: 13px;
   color: var(--n-text-color-2);
@@ -1682,6 +1795,12 @@ const handleImportData = (): void => {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+  }
+
+  .download-progress-meta {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .accent-palette {

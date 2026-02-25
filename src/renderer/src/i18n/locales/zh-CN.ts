@@ -328,6 +328,9 @@ const zhCN = {
       updateFound: '发现新版本 {version}',
       latest: '当前已是最新版本',
       downloading: '正在下载更新...',
+      downloadProgressDetail: '已下载 {transferred} / 总大小 {total}',
+      cancelingDownload: '正在取消下载...',
+      downloadCanceled: '已取消更新下载',
       downloaded: '更新已下载完成，点击安装后将重启应用'
     }
   }

@@ -335,6 +335,9 @@ const enUS = {
       updateFound: 'New version found: {version}',
       latest: 'You are using the latest version',
       downloading: 'Downloading update...',
+      downloadProgressDetail: 'Downloaded {transferred} / Total {total}',
+      cancelingDownload: 'Canceling download...',
+      downloadCanceled: 'Update download canceled',
       downloaded: 'Update downloaded. Click Install to restart and apply updates'
     }
   }

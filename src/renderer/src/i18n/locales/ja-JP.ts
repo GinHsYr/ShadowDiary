@@ -337,6 +337,9 @@ const jaJP = {
       updateFound: '新しいバージョンが見つかりました: {version}',
       latest: '現在、最新バージョンを使用しています',
       downloading: 'アップデートをダウンロード中...',
+      downloadProgressDetail: 'ダウンロード済み {transferred} / 合計 {total}',
+      cancelingDownload: 'ダウンロードをキャンセル中...',
+      downloadCanceled: 'アップデートのダウンロードをキャンセルしました',
       downloaded:
         'アップデートをダウンロードしました。インストールをクリックして再起動し適用してください'
     }

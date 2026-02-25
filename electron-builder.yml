@@ -3,7 +3,7 @@ productName: 影迹
 directories:
   buildResources: build
 files:
-  - out/main/**
+  - out/**
   - package.json
 asarUnpack:
   - '**/*.node'

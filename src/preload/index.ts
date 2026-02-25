@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DataTransferProgress, DiaryAPI } from '../types/api'
+import type { DataTransferProgress, DiaryAPI, UpdateDownloadProgress } from '../types/api'
 
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => {
   return ipcRenderer.invoke(channel, ...args) as Promise<T>
@@ -93,13 +93,24 @@ const api: DiaryAPI = {
   getAppInfo: () => invoke('app:getInfo'),
   checkForUpdates: (options) => invoke('app:checkForUpdates', options),
   downloadUpdate: () => invoke('app:downloadUpdate'),
+  cancelUpdateDownload: () => invoke('app:cancelUpdateDownload'),
   installUpdate: () => invoke('app:installUpdate'),
   onDownloadProgress: (callback) => {
-    const listener = (_event: Electron.IpcRendererEvent, progress: { percent: number }): void => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      progress: UpdateDownloadProgress
+    ): void => {
       callback(progress)
     }
     ipcRenderer.on('update:download-progress', listener)
     return () => ipcRenderer.removeListener('update:download-progress', listener)
+  },
+  onUpdateDownloadCanceled: (callback) => {
+    const listener = (): void => {
+      callback()
+    }
+    ipcRenderer.on('update:download-canceled', listener)
+    return () => ipcRenderer.removeListener('update:download-canceled', listener)
   },
   onUpdateDownloaded: (callback) => {
     const listener = (): void => {

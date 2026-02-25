@@ -11,6 +11,7 @@ import {
 } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import { CancellationError, CancellationToken } from 'builder-util-runtime'
 import type { AppUpdateInfo, CheckForUpdatesResult, UpdateCheckOptions } from '../types/api'
 
 let mainWindow: BrowserWindow | null = null
@@ -81,6 +82,7 @@ const UPDATE_CACHE_TTL_MS = 5 * 60 * 1000
 const UPDATE_CHECK_RETRY_COUNT = 1
 const APP_QUIT_PREPARE_TIMEOUT_MS = 3000
 let cachedUpdateCheck: CheckForUpdatesResult | null = null
+let activeUpdateDownloadToken: CancellationToken | null = null
 let isQuitInProgress = false
 let hasClosedDatabase = false
 let pendingQuitAckIds: Set<number> | null = null
@@ -464,6 +466,12 @@ function normalizeUpdateErrorMessage(error: unknown): string {
   return message || '未知错误'
 }
 
+function isUpdateDownloadCanceledError(error: unknown): boolean {
+  if (error instanceof CancellationError) return true
+  const message = getErrorMessage(error).toUpperCase()
+  return message.includes('CANCEL') || message.includes('ABORT')
+}
+
 function broadcastToAllWindows(channel: string): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) {
@@ -694,6 +702,9 @@ app
 
     // Register custom protocol for images
     registerDiaryImageProtocol()
+
+    // 手动触发下载，避免检查更新后自动开始下载导致状态不可控
+    autoUpdater.autoDownload = false
 
     void migrateLegacyAvatarSetting()
 
@@ -1125,9 +1136,20 @@ function registerIpcHandlers(): void {
 
   // 下载更新
   handleTrustedIpc('app:downloadUpdate', async () => {
+    if (activeUpdateDownloadToken && !activeUpdateDownloadToken.cancelled) {
+      return
+    }
+
+    const cancellationToken = new CancellationToken()
+    activeUpdateDownloadToken = cancellationToken
+
     try {
-      await autoUpdater.downloadUpdate()
+      await autoUpdater.downloadUpdate(cancellationToken)
     } catch (error) {
+      if (isUpdateDownloadCanceledError(error)) {
+        throw new Error('已取消更新下载')
+      }
+
       const message = getErrorMessage(error)
       if (!message.includes('Please check update first')) {
         throw new Error(normalizeUpdateErrorMessage(error))
@@ -1141,8 +1163,21 @@ function registerIpcHandlers(): void {
         throw new Error('当前已是最新版本，无需下载更新')
       }
 
-      await autoUpdater.downloadUpdate()
+      await autoUpdater.downloadUpdate(cancellationToken)
+    } finally {
+      if (activeUpdateDownloadToken === cancellationToken) {
+        activeUpdateDownloadToken = null
+      }
+      cancellationToken.dispose()
     }
+  })
+
+  handleTrustedIpc('app:cancelUpdateDownload', () => {
+    const token = activeUpdateDownloadToken
+    if (!token || token.cancelled) return false
+
+    token.cancel()
+    return true
   })
 
   // 安装更新
@@ -1152,7 +1187,16 @@ function registerIpcHandlers(): void {
 
   // 更新下载进度事件
   autoUpdater.on('download-progress', (progress) => {
-    mainWindow?.webContents.send('update:download-progress', progress)
+    mainWindow?.webContents.send('update:download-progress', {
+      percent: progress.percent,
+      transferred: progress.transferred,
+      total: progress.total,
+      bytesPerSecond: progress.bytesPerSecond
+    })
+  })
+
+  autoUpdater.on('update-cancelled', () => {
+    mainWindow?.webContents.send('update:download-canceled')
   })
 
   // 更新下载完成事件

@@ -249,7 +249,8 @@ const koKR = {
         disableTitle: '개인정보 보호 비활성화',
         resetTitle: '개인정보 비밀번호 재설정',
         setupDesc: '6자리 PIN을 설정하세요',
-        setupSwitchDesc: '먼저 6자리 PIN을 설정하세요. 저장하면 잠금 해제 방식이 PIN으로 변경됩니다',
+        setupSwitchDesc:
+          '먼저 6자리 PIN을 설정하세요. 저장하면 잠금 해제 방식이 PIN으로 변경됩니다',
         disableDesc: '개인정보 보호를 끄려면 현재 비밀번호를 입력하세요',
         resetDesc: '새 비밀번호를 설정하기 전에 현재 비밀번호를 확인하세요',
         windowsEnableTitle: '개인정보 보호 활성화',
@@ -314,8 +315,7 @@ const koKR = {
       unknownError: '알 수 없는 오류',
       wrongBackupPassword: '백업 비밀번호가 올바르지 않습니다. 다시 시도하세요',
       backupPasswordTooShort: '백업 비밀번호는 최소 {count}자여야 합니다',
-      unsupportedBackup:
-        '지원되지 않는 백업 형식입니다. 현재 앱 버전에서 생성한 백업만 지원됩니다',
+      unsupportedBackup: '지원되지 않는 백업 형식입니다. 현재 앱 버전에서 생성한 백업만 지원됩니다',
       missingEnvelope: '백업에 키 파일이 없어 가져올 수 없습니다',
       transferInProgress: '다른 가져오기/내보내기 작업이 이미 진행 중입니다',
       importConfirmTitle: '가져오기 확인',
@@ -323,10 +323,10 @@ const koKR = {
         'ZIP 백업을 가져오면 현재 로컬 데이터가 덮어써집니다. 먼저 데이터를 내보내 백업해 두는 것을 권장합니다. 계속하시겠습니까?',
       continueImport: '가져오기 계속'
     },
-  about: {
-    card: '정보',
-    version: '버전',
-    source: '오픈소스',
+    about: {
+      card: '정보',
+      version: '버전',
+      source: '오픈소스',
       checkUpdate: '새 버전 확인',
       checkUpdateButton: '업데이트 확인',
       downloadUpdate: '업데이트 다운로드',
@@ -334,6 +334,9 @@ const koKR = {
       updateFound: '새 버전을 찾았습니다: {version}',
       latest: '최신 버전을 사용 중입니다',
       downloading: '업데이트 다운로드 중...',
+      downloadProgressDetail: '다운로드됨 {transferred} / 전체 {total}',
+      cancelingDownload: '다운로드 취소 중...',
+      downloadCanceled: '업데이트 다운로드를 취소했습니다',
       downloaded: '업데이트가 다운로드되었습니다. 설치를 눌러 재시작 후 적용하세요'
     }
   }

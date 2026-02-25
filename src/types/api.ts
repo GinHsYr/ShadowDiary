@@ -55,6 +55,13 @@ export interface CheckForUpdatesResult {
   fromCache: boolean
 }
 
+export interface UpdateDownloadProgress {
+  percent: number
+  transferred: number
+  total: number
+  bytesPerSecond: number
+}
+
 export interface ImageSaveResult {
   success: boolean
   id?: string
@@ -172,8 +179,10 @@ export interface DiaryAPI {
   getAppInfo(): Promise<AppInfo>
   checkForUpdates(options?: UpdateCheckOptions): Promise<CheckForUpdatesResult>
   downloadUpdate(): Promise<void>
+  cancelUpdateDownload(): Promise<boolean>
   installUpdate(): Promise<void>
-  onDownloadProgress(callback: (progress: { percent: number }) => void): () => void
+  onDownloadProgress(callback: (progress: UpdateDownloadProgress) => void): () => void
+  onUpdateDownloadCanceled(callback: () => void): () => void
   onUpdateDownloaded(callback: () => void): () => void
   onSystemLock(callback: () => void): () => void
   onAppBeforeQuit(callback: () => void | Promise<void>): () => void
