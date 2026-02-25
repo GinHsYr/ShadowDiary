@@ -239,8 +239,29 @@ const koKR = {
       manualLockShortcut: '수동 잠금 단축키',
       manualLockShortcutDescription:
         '개인정보 보호가 활성화되면 이 단축키로 즉시 잠글 수 있습니다 (입력칸을 선택한 뒤 새 조합을 누르세요)',
+      disguiseEnabled: '위장 모드',
+      disguiseEnabledDescription:
+        '활성화하면 앱 전체가 편집 가능한 가짜 데이터 화면으로 전환됩니다',
+      disguiseAutoEnableOnLaunch: '앱 시작 시 위장 모드 자동 진입',
+      disguiseAutoEnableOnLaunchDescription:
+        '활성화 시 마지막 상태를 기준으로 다음 실행 때 위장 모드를 자동 적용합니다',
+      disguiseShortcut: '위장 모드 단축키',
+      disguiseShortcutDescription: '이 단축키로 위장 모드를 빠르게 전환할 수 있습니다',
+      resetDisguiseShortcut: '기본값 복원',
+      regenerateDisguiseData: '위장 데이터 재생성',
+      regenerateDisguiseDataDescription:
+        '새 가짜 데이터 세트를 다시 생성합니다 (위장 모드에만 적용)',
+      regenerateDisguiseDataAction: '재생성',
       enabledSuccess: '개인정보 보호가 활성화되었습니다',
       disabledSuccess: '개인정보 보호가 비활성화되었습니다',
+      disguiseEnabledSuccess: '위장 모드가 활성화되었습니다. 페이지를 새로고침합니다',
+      disguiseDisabledSuccess: '위장 모드가 비활성화되었습니다. 실제 데이터로 복원합니다',
+      disguiseAutoEnableUpdated: '위장 모드 시작 동작이 업데이트되었습니다',
+      disguiseShortcutUpdated: '위장 모드 단축키가 {shortcut}(으)로 업데이트되었습니다',
+      disguiseShortcutInvalid:
+        '잘못된 단축키입니다. Ctrl/Alt/Shift/Meta + 문자 또는 숫자를 사용하세요',
+      disguiseShortcutConflict: '위장 모드 단축키는 수동 잠금 단축키와 동일하게 설정할 수 없습니다',
+      disguiseDataRegenerated: '위장 데이터를 재생성했습니다. 페이지를 새로고침합니다',
       switchToWindows: '잠금 해제 방식이 Windows 비밀번호로 변경되었습니다',
       switchToPin: '잠금 해제 방식이 PIN으로 변경되었습니다',
       idleLockUpdated: '자동 잠금 시간이 업데이트되었습니다',

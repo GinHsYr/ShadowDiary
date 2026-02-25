@@ -21,10 +21,12 @@ import {
   isValidPrivacyPassword,
   usePrivacyStore
 } from './stores/privacy'
+import { isDisguiseShortcutMatch, useDisguiseStore } from './stores/disguise'
 
 const { t } = useI18n()
 const theme = useThemeStore()
 const privacy = usePrivacyStore()
+const disguise = useDisguiseStore()
 const route = useRoute()
 const OTP_LENGTH = 6
 const USER_ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'] as const
@@ -42,6 +44,7 @@ let removeSystemLockListener: (() => void) | null = null
 let removeBeforeQuitListener: (() => void) | null = null
 let isHandlingBeforeQuit = false
 let removeReducedMotionListener: (() => void) | null = null
+const switchingDisguiseMode = ref(false)
 
 type FlushableRouteView = {
   flushSave?: () => Promise<void>
@@ -186,6 +189,25 @@ function handleManualLockShortcut(event: KeyboardEvent): void {
   clearIdleTimer()
 }
 
+function handleDisguiseModeShortcut(event: KeyboardEvent): void {
+  if (event.defaultPrevented || event.repeat || privacy.isLocked) return
+  if (!disguise.isInitialized || switchingDisguiseMode.value) return
+  if (!isDisguiseShortcutMatch(event, disguise.shortcut)) return
+
+  event.preventDefault()
+  switchingDisguiseMode.value = true
+
+  void disguise
+    .setEnabled(!disguise.isEnabled)
+    .then(() => {
+      window.location.reload()
+    })
+    .catch((error) => {
+      console.error('切换伪装模式失败:', error)
+      switchingDisguiseMode.value = false
+    })
+}
+
 async function flushBeforeQuit(): Promise<void> {
   if (isHandlingBeforeQuit) return
   isHandlingBeforeQuit = true
@@ -315,6 +337,7 @@ onMounted(() => {
   window.addEventListener('focus', handleWindowFocus)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   document.addEventListener('keydown', handleManualLockShortcut)
+  document.addEventListener('keydown', handleDisguiseModeShortcut)
 
   removeSystemLockListener = window.api.onSystemLock(() => {
     if (!canAutoLockByPrivacy() || privacy.isLocked) return
@@ -340,6 +363,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', handleWindowFocus)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   document.removeEventListener('keydown', handleManualLockShortcut)
+  document.removeEventListener('keydown', handleDisguiseModeShortcut)
   clearIdleTimer()
 
   if (removeSystemLockListener) {

@@ -42,7 +42,13 @@ import {
   deleteAttachmentFiles,
   getAttachments
 } from './database/attachments'
-import { getSetting, setSetting, getAllSettings } from './database/settings'
+import {
+  getSetting,
+  setSetting,
+  getAllSettings,
+  getRealSetting,
+  setRealSetting
+} from './database/settings'
 import {
   collectImageIdsFromText,
   collectImageIdsFromTexts,
@@ -67,6 +73,12 @@ import {
   importAppData,
   type DataTransferProgress
 } from './utils/dataTransfer'
+import {
+  disableDisguiseMode,
+  enableDisguiseMode,
+  isDisguiseModeEnabled,
+  regenerateDisguiseModeData
+} from './privacy/disguiseSession'
 
 const IMAGE_MIME_MAP: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -81,6 +93,11 @@ const IMAGE_MIME_MAP: Record<string, string> = {
 const UPDATE_CACHE_TTL_MS = 5 * 60 * 1000
 const UPDATE_CHECK_RETRY_COUNT = 1
 const APP_QUIT_PREPARE_TIMEOUT_MS = 3000
+const DISGUISE_AUTO_ENABLE_ON_LAUNCH_KEY = 'disguise.autoEnableOnLaunch'
+const DISGUISE_SHORTCUT_KEY = 'disguise.shortcut'
+const DISGUISE_LAST_ENABLED_KEY = 'disguise.lastEnabled'
+const DEFAULT_DISGUISE_SHORTCUT = 'Ctrl+Shift+M'
+const DISGUISE_RESTRICTED_ERROR = '伪装模式下不可用'
 let cachedUpdateCheck: CheckForUpdatesResult | null = null
 let activeUpdateDownloadToken: CancellationToken | null = null
 let isQuitInProgress = false
@@ -356,6 +373,51 @@ async function migrateLegacyAvatarSetting(): Promise<void> {
   } catch (error) {
     console.error('迁移历史头像失败:', error)
   }
+}
+
+function parseBooleanSetting(value: string | null | undefined, defaultValue = false): boolean {
+  const normalized = value?.trim().toLowerCase()
+  if (!normalized) return defaultValue
+  return normalized === '1' || normalized === 'true'
+}
+
+function normalizeDisguiseShortcut(value: string | null | undefined): string {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : DEFAULT_DISGUISE_SHORTCUT
+}
+
+function getDisguiseConfig(): {
+  enabled: boolean
+  autoEnableOnLaunch: boolean
+  shortcut: string
+} {
+  return {
+    enabled: isDisguiseModeEnabled(),
+    autoEnableOnLaunch: parseBooleanSetting(getRealSetting(DISGUISE_AUTO_ENABLE_ON_LAUNCH_KEY)),
+    shortcut: normalizeDisguiseShortcut(getRealSetting(DISGUISE_SHORTCUT_KEY))
+  }
+}
+
+function setDisguiseLastEnabled(enabled: boolean): void {
+  setRealSetting(DISGUISE_LAST_ENABLED_KEY, enabled ? '1' : '0')
+}
+
+function applyDisguiseModeOnLaunch(): void {
+  const autoEnableOnLaunch = parseBooleanSetting(getRealSetting(DISGUISE_AUTO_ENABLE_ON_LAUNCH_KEY))
+  const lastEnabled = parseBooleanSetting(getRealSetting(DISGUISE_LAST_ENABLED_KEY))
+  if (!autoEnableOnLaunch || !lastEnabled) return
+
+  try {
+    enableDisguiseMode()
+  } catch (error) {
+    console.error('启动伪装模式失败:', error)
+    setDisguiseLastEnabled(false)
+  }
+}
+
+function assertDisguiseAvailable(action: string): void {
+  if (!isDisguiseModeEnabled()) return
+  throw new Error(`${DISGUISE_RESTRICTED_ERROR}：${action}`)
 }
 
 function registerDiaryImageProtocol(): void {
@@ -687,7 +749,7 @@ function createWindow(): void {
 
 app
   .whenReady()
-  .then(() => {
+  .then(async () => {
     electronApp.setAppUserModelId('com.hsyr.shadowdiary')
 
     app.on('browser-window-created', (_, window) => {
@@ -706,7 +768,8 @@ app
     // 手动触发下载，避免检查更新后自动开始下载导致状态不可控
     autoUpdater.autoDownload = false
 
-    void migrateLegacyAvatarSetting()
+    await migrateLegacyAvatarSetting()
+    applyDisguiseModeOnLaunch()
 
     // Register IPC handlers
     registerIpcHandlers()
@@ -755,11 +818,13 @@ function registerIpcHandlers(): void {
   handleTrustedIpc('diary:save', async (_event, entry: Parameters<typeof saveDiaryEntry>[0]) => {
     const previous = entry.id ? getDiaryEntry(entry.id) : null
     const saved = saveDiaryEntry(entry)
-    const releasedIds = syncImageRefs(
-      collectImageIdsFromText(previous?.content),
-      collectImageIdsFromText(saved.content)
-    )
-    await cleanupReleasedImages(releasedIds)
+    if (!isDisguiseModeEnabled()) {
+      const releasedIds = syncImageRefs(
+        collectImageIdsFromText(previous?.content),
+        collectImageIdsFromText(saved.content)
+      )
+      await cleanupReleasedImages(releasedIds)
+    }
     invalidatePersonMentionCache()
     return saved
   })
@@ -769,10 +834,14 @@ function registerIpcHandlers(): void {
     const attachments = getAttachments(id)
     const result = deleteDiaryEntry(id)
     if (result) {
-      const releasedIds = syncImageRefs(collectImageIdsFromText(previous?.content), [])
-      await cleanupReleasedImages(releasedIds)
+      if (!isDisguiseModeEnabled()) {
+        const releasedIds = syncImageRefs(collectImageIdsFromText(previous?.content), [])
+        await cleanupReleasedImages(releasedIds)
+      }
       invalidatePersonMentionCache()
-      await deleteAttachmentFiles(attachments.map((attachment) => attachment.filePath))
+      if (!isDisguiseModeEnabled()) {
+        await deleteAttachmentFiles(attachments.map((attachment) => attachment.filePath))
+      }
     }
     return result
   })
@@ -804,11 +873,13 @@ function registerIpcHandlers(): void {
     async (_event, archive: Parameters<typeof archives.save>[0]) => {
       const previous = archive.id ? archives.get(archive.id) : null
       const saved = await archives.save(archive)
-      const releasedIds = syncImageRefs(
-        collectArchiveImageIds(previous ?? {}),
-        collectArchiveImageIds(saved)
-      )
-      await cleanupReleasedImages(releasedIds)
+      if (!isDisguiseModeEnabled()) {
+        const releasedIds = syncImageRefs(
+          collectArchiveImageIds(previous ?? {}),
+          collectArchiveImageIds(saved)
+        )
+        await cleanupReleasedImages(releasedIds)
+      }
       invalidatePersonMentionCache()
       return saved
     }
@@ -817,8 +888,10 @@ function registerIpcHandlers(): void {
   handleTrustedIpc('archives:delete', async (_event, id: string) => {
     const previous = archives.get(id)
     archives.delete(id)
-    const releasedIds = syncImageRefs(collectArchiveImageIds(previous ?? {}), [])
-    await cleanupReleasedImages(releasedIds)
+    if (!isDisguiseModeEnabled()) {
+      const releasedIds = syncImageRefs(collectArchiveImageIds(previous ?? {}), [])
+      await cleanupReleasedImages(releasedIds)
+    }
     invalidatePersonMentionCache()
   })
 
@@ -829,14 +902,17 @@ function registerIpcHandlers(): void {
 
   // 附件
   handleTrustedIpc('attachment:add', async (_event, diaryId: string) => {
+    assertDisguiseAvailable('附件添加')
     return await addAttachment(diaryId)
   })
 
   handleTrustedIpc('attachment:delete', async (_event, id: string) => {
+    assertDisguiseAvailable('附件删除')
     return await deleteAttachment(id)
   })
 
   handleTrustedIpc('attachment:list', (_event, diaryId: string) => {
+    assertDisguiseAvailable('附件读取')
     return getAttachments(diaryId)
   })
 
@@ -846,13 +922,49 @@ function registerIpcHandlers(): void {
   })
 
   handleTrustedIpc('settings:set', async (_event, key: string, value: string) => {
+    if (key.startsWith('disguise.')) {
+      throw new Error('请使用专用伪装设置接口')
+    }
     const releasedIds = setSetting(key, value)
-    await cleanupReleasedImages(releasedIds)
+    if (!isDisguiseModeEnabled()) {
+      await cleanupReleasedImages(releasedIds)
+    }
     return true
   })
 
   handleTrustedIpc('settings:getAll', () => {
     return getAllSettings()
+  })
+
+  handleTrustedIpc('disguise:getConfig', () => {
+    return getDisguiseConfig()
+  })
+
+  handleTrustedIpc('disguise:setEnabled', (_event, enabled: boolean) => {
+    if (enabled) {
+      enableDisguiseMode()
+    } else {
+      disableDisguiseMode()
+    }
+    setDisguiseLastEnabled(Boolean(enabled))
+    invalidatePersonMentionCache()
+    return true
+  })
+
+  handleTrustedIpc('disguise:setAutoEnableOnLaunch', (_event, enabled: boolean) => {
+    setRealSetting(DISGUISE_AUTO_ENABLE_ON_LAUNCH_KEY, enabled ? '1' : '0')
+    return true
+  })
+
+  handleTrustedIpc('disguise:setShortcut', (_event, shortcut: string) => {
+    setRealSetting(DISGUISE_SHORTCUT_KEY, normalizeDisguiseShortcut(shortcut))
+    return true
+  })
+
+  handleTrustedIpc('disguise:regenerateData', () => {
+    regenerateDisguiseModeData()
+    invalidatePersonMentionCache()
+    return true
   })
 
   handleTrustedIpc('privacy:getAuthSupport', () => {
@@ -866,6 +978,7 @@ function registerIpcHandlers(): void {
 
   // 数据导入/导出
   handleTrustedIpc('data:export', async (event, options?: { backupPassword?: string }) => {
+    assertDisguiseAvailable('数据导出')
     const win = BrowserWindow.fromWebContents(event.sender)
     return await exportAppData(
       win,
@@ -877,6 +990,7 @@ function registerIpcHandlers(): void {
   })
 
   handleTrustedIpc('data:import', async (event, options?: { backupPassword?: string }) => {
+    assertDisguiseAvailable('数据导入')
     const win = BrowserWindow.fromWebContents(event.sender)
     const result = await importAppData(
       win,
@@ -892,6 +1006,7 @@ function registerIpcHandlers(): void {
   })
 
   handleTrustedIpc('data:cancel', () => {
+    assertDisguiseAvailable('数据传输取消')
     return cancelDataTransfer()
   })
 
@@ -913,6 +1028,7 @@ function registerIpcHandlers(): void {
 
   // 保存图片（兼容 data URL）
   handleTrustedIpc('image:save', async (_event, base64Data: string) => {
+    assertDisguiseAvailable('图片保存')
     try {
       const result = await saveImage(base64Data)
       return { success: true, ...result }
@@ -924,6 +1040,7 @@ function registerIpcHandlers(): void {
 
   // 保存图片（文件路径）
   handleTrustedIpc('image:save-file', async (_event, filePath: string) => {
+    assertDisguiseAvailable('图片保存')
     try {
       const result = await saveImageFromFile(filePath)
       return { success: true, ...result }
@@ -937,6 +1054,7 @@ function registerIpcHandlers(): void {
   handleTrustedIpc(
     'image:save-bytes',
     async (_event, payload: { bytes: Uint8Array; mimeType: string }) => {
+      assertDisguiseAvailable('图片保存')
       try {
         if (
           !payload ||
@@ -958,6 +1076,7 @@ function registerIpcHandlers(): void {
 
   // 清理未使用的图片
   handleTrustedIpc('image:cleanup', async () => {
+    assertDisguiseAvailable('图片清理')
     try {
       await cleanupUnusedImages(getAllReferencedImageIds())
       return { success: true }
@@ -969,6 +1088,7 @@ function registerIpcHandlers(): void {
 
   // 图片选择（用于编辑器插入图片）
   handleTrustedIpc('select-image', async (event) => {
+    assertDisguiseAvailable('图片选择')
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       const dialogOptions = {
@@ -997,6 +1117,7 @@ function registerIpcHandlers(): void {
 
   // 档案头像选择（自动 1:1 裁切，仅保存 webp 缩略图）
   handleTrustedIpc('select-archive-avatar', async (event) => {
+    assertDisguiseAvailable('头像选择')
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       const dialogOptions = {
@@ -1023,6 +1144,7 @@ function registerIpcHandlers(): void {
 
   // 复制图片到剪贴板（接收 base64 dataUrl）
   handleTrustedIpc('image:copy', async (_event, dataUrl: string) => {
+    assertDisguiseAvailable('图片复制')
     try {
       const payload = await resolveImagePayload(dataUrl)
       if (!payload) return { success: false }
@@ -1037,6 +1159,7 @@ function registerIpcHandlers(): void {
 
   // 另存为图片文件
   handleTrustedIpc('image:save-as', async (event, dataUrl: string) => {
+    assertDisguiseAvailable('图片另存为')
     try {
       const payload = await resolveImagePayload(dataUrl)
       if (!payload) return { success: false }
@@ -1061,6 +1184,7 @@ function registerIpcHandlers(): void {
 
   // 头像选择
   handleTrustedIpc('select-avatar', async (event) => {
+    assertDisguiseAvailable('头像选择')
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       const dialogOptions = {

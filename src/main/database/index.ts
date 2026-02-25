@@ -12,6 +12,8 @@ import {
 } from '../security/dbKey'
 
 let db: Database.Database | null = null
+let disguiseDb: Database.Database | null = null
+let activeDatabaseKind: 'real' | 'disguise' = 'real'
 
 export type WalCheckpointMode = 'PASSIVE' | 'FULL' | 'RESTART' | 'TRUNCATE'
 
@@ -37,6 +39,12 @@ function applySqlCipherKey(currentDb: Database.Database, dbKeyHex: string): void
 function configureDatabasePragmas(currentDb: Database.Database): void {
   // Performance & integrity pragmas
   currentDb.pragma('journal_mode = WAL')
+  currentDb.pragma('foreign_keys = ON')
+  currentDb.pragma('busy_timeout = 5000')
+}
+
+function configureInMemoryDatabasePragmas(currentDb: Database.Database): void {
+  currentDb.pragma('journal_mode = MEMORY')
   currentDb.pragma('foreign_keys = ON')
   currentDb.pragma('busy_timeout = 5000')
 }
@@ -140,10 +148,60 @@ function resolveDatabaseKey(dbPath: string): string {
 }
 
 export function getDatabase(): Database.Database {
+  if (activeDatabaseKind === 'disguise' && disguiseDb) {
+    return disguiseDb
+  }
+
   if (!db) {
     throw new Error('Database not initialized. Call initDatabase() first.')
   }
   return db
+}
+
+export function getRealDatabase(): Database.Database {
+  if (!db) {
+    throw new Error('Real database not initialized. Call initDatabase() first.')
+  }
+  return db
+}
+
+export function isDisguiseDatabaseActive(): boolean {
+  return activeDatabaseKind === 'disguise' && disguiseDb !== null
+}
+
+export function createInMemoryDatabase(): Database.Database {
+  const memoryDb = new Database(':memory:')
+  configureInMemoryDatabasePragmas(memoryDb)
+  runMigrations(memoryDb)
+  return memoryDb
+}
+
+export function activateDisguiseDatabase(nextDisguiseDb: Database.Database): void {
+  if (!db) {
+    throw new Error('Database not initialized. Call initDatabase() first.')
+  }
+
+  if (disguiseDb && disguiseDb !== nextDisguiseDb) {
+    try {
+      disguiseDb.close()
+    } catch (error) {
+      console.error('关闭旧的伪装数据库失败:', error)
+    }
+  }
+
+  disguiseDb = nextDisguiseDb
+  activeDatabaseKind = 'disguise'
+}
+
+export function deactivateDisguiseDatabase(): void {
+  activeDatabaseKind = 'real'
+
+  if (!disguiseDb) return
+  try {
+    disguiseDb.close()
+  } finally {
+    disguiseDb = null
+  }
 }
 
 export function initDatabase(): void {
@@ -159,6 +217,8 @@ export function initDatabase(): void {
 }
 
 export function closeDatabase(): void {
+  deactivateDisguiseDatabase()
+
   if (db) {
     db.close()
     db = null

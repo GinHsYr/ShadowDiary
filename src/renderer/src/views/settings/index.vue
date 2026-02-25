@@ -146,6 +146,74 @@
               </div>
             </div>
 
+            <div class="setting-item setting-item-top">
+              <div class="setting-info">
+                <label class="setting-label">{{ t('settings.privacy.disguiseEnabled') }}</label>
+                <span class="setting-description">
+                  {{ t('settings.privacy.disguiseEnabledDescription') }}
+                </span>
+              </div>
+              <n-switch
+                :value="disguise.isEnabled"
+                :loading="disguiseLoading"
+                @update:value="handleDisguiseToggle"
+              />
+            </div>
+
+            <div class="setting-item setting-item-top">
+              <div class="setting-info">
+                <label class="setting-label">
+                  {{ t('settings.privacy.disguiseAutoEnableOnLaunch') }}
+                </label>
+                <span class="setting-description">
+                  {{ t('settings.privacy.disguiseAutoEnableOnLaunchDescription') }}
+                </span>
+              </div>
+              <n-switch
+                :value="disguise.autoEnableOnLaunch"
+                :disabled="disguiseLoading"
+                @update:value="handleDisguiseAutoEnableOnLaunchToggle"
+              />
+            </div>
+
+            <div class="setting-item setting-item-top">
+              <div class="setting-info">
+                <label class="setting-label">{{ t('settings.privacy.disguiseShortcut') }}</label>
+                <span class="setting-description">
+                  {{ t('settings.privacy.disguiseShortcutDescription') }}
+                </span>
+              </div>
+
+              <div class="privacy-actions privacy-actions--end privacy-actions--shortcut">
+                <n-input
+                  :value="disguise.shortcut"
+                  class="privacy-shortcut-input"
+                  readonly
+                  :disabled="disguiseLoading"
+                  @keydown="handleDisguiseShortcutInput"
+                />
+                <n-button :disabled="disguiseLoading" @click="handleResetDisguiseShortcut">
+                  {{ t('settings.privacy.resetDisguiseShortcut') }}
+                </n-button>
+              </div>
+            </div>
+
+            <div v-if="disguise.isEnabled" class="setting-item setting-item-top">
+              <div class="setting-info">
+                <label class="setting-label">
+                  {{ t('settings.privacy.regenerateDisguiseData') }}
+                </label>
+                <span class="setting-description">
+                  {{ t('settings.privacy.regenerateDisguiseDataDescription') }}
+                </span>
+              </div>
+              <div class="privacy-actions privacy-actions--end">
+                <n-button :loading="disguiseLoading" @click="handleRegenerateDisguiseData">
+                  {{ t('settings.privacy.regenerateDisguiseDataAction') }}
+                </n-button>
+              </div>
+            </div>
+
             <div
               v-if="privacy.isEnabled && privacy.authMethod === 'pin'"
               class="setting-item setting-item-top"
@@ -573,11 +641,18 @@ import {
   buildPrivacyManualLockShortcutFromEvent,
   DEFAULT_PRIVACY_MANUAL_LOCK_SHORTCUT,
   isModifierOnlyKey,
+  normalizePrivacyManualLockShortcut,
   isValidPrivacyPassword,
   type PrivacyAuthMethod,
   PRIVACY_IDLE_LOCK_MINUTE_OPTIONS,
   usePrivacyStore
 } from '@renderer/stores/privacy'
+import {
+  buildDisguiseShortcutFromEvent,
+  DEFAULT_DISGUISE_SHORTCUT,
+  isModifierOnlyKey as isDisguiseModifierOnlyKey,
+  useDisguiseStore
+} from '@renderer/stores/disguise'
 import { useLocaleStore } from '@renderer/stores/locale'
 import type { LocalePreference } from '@renderer/i18n'
 import type {
@@ -602,13 +677,16 @@ interface AccentOption {
 
 const theme = useThemeStore()
 const privacy = usePrivacyStore()
+const disguise = useDisguiseStore()
 const localeStore = useLocaleStore()
 const { t } = useI18n()
 const OTP_LENGTH = 6
-const privacyIdleMinuteOptions = PRIVACY_IDLE_LOCK_MINUTE_OPTIONS.map((minutes) => ({
-  label: t('common.minutes', { count: minutes }),
-  value: minutes
-}))
+const privacyIdleMinuteOptions = computed(() =>
+  PRIVACY_IDLE_LOCK_MINUTE_OPTIONS.map((minutes) => ({
+    label: t('common.minutes', { count: minutes }),
+    value: minutes
+  }))
+)
 const accentOptions: AccentOption[] = [
   {
     value: ThemeAccent.Green,
@@ -688,6 +766,7 @@ const backupPasswordStatus = ref<'error' | undefined>(undefined)
 const confirmBackupPasswordStatus = ref<'error' | undefined>(undefined)
 const backupPasswordSubmitting = ref(false)
 const privacyLoading = ref(false)
+const disguiseLoading = ref(false)
 const privacyMessage = ref('')
 const privacyMessageType = ref<'success' | 'error' | 'info'>('info')
 const showPasswordModal = ref(false)
@@ -1093,6 +1172,116 @@ const handleManualLockShortcutInput = (event: KeyboardEvent): void => {
 
 const handleResetManualLockShortcut = (): void => {
   void updateManualLockShortcut(DEFAULT_PRIVACY_MANUAL_LOCK_SHORTCUT)
+}
+
+function reloadForDisguiseMode(): void {
+  window.location.reload()
+}
+
+const handleDisguiseToggle = async (value: boolean): Promise<void> => {
+  if (disguiseLoading.value || value === disguise.isEnabled) return
+
+  disguiseLoading.value = true
+  try {
+    await disguise.setEnabled(value)
+    privacyMessage.value = value
+      ? t('settings.privacy.disguiseEnabledSuccess')
+      : t('settings.privacy.disguiseDisabledSuccess')
+    privacyMessageType.value = 'success'
+    reloadForDisguiseMode()
+  } catch (error) {
+    console.error('切换伪装模式失败:', error)
+    privacyMessage.value = t('settings.data.updateFailedWithReason', {
+      reason: unwrapIpcErrorMessage(error)
+    })
+    privacyMessageType.value = 'error'
+  } finally {
+    disguiseLoading.value = false
+  }
+}
+
+const handleDisguiseAutoEnableOnLaunchToggle = async (value: boolean): Promise<void> => {
+  if (disguiseLoading.value || value === disguise.autoEnableOnLaunch) return
+
+  disguiseLoading.value = true
+  try {
+    await disguise.setAutoEnableOnLaunch(value)
+    privacyMessage.value = t('settings.privacy.disguiseAutoEnableUpdated')
+    privacyMessageType.value = 'success'
+  } catch (error) {
+    console.error('更新伪装模式自动启动失败:', error)
+    privacyMessage.value = t('settings.data.updateFailedWithReason', {
+      reason: unwrapIpcErrorMessage(error)
+    })
+    privacyMessageType.value = 'error'
+  } finally {
+    disguiseLoading.value = false
+  }
+}
+
+const updateDisguiseShortcut = async (shortcut: string): Promise<void> => {
+  if (disguiseLoading.value || shortcut === disguise.shortcut) return
+
+  if (shortcut === normalizePrivacyManualLockShortcut(privacy.manualLockShortcut)) {
+    privacyMessage.value = t('settings.privacy.disguiseShortcutConflict')
+    privacyMessageType.value = 'error'
+    return
+  }
+
+  disguiseLoading.value = true
+  try {
+    await disguise.setShortcut(shortcut)
+    privacyMessage.value = t('settings.privacy.disguiseShortcutUpdated', { shortcut })
+    privacyMessageType.value = 'success'
+  } catch (error) {
+    console.error('更新伪装模式快捷键失败:', error)
+    privacyMessage.value = t('settings.data.updateFailedWithReason', {
+      reason: unwrapIpcErrorMessage(error)
+    })
+    privacyMessageType.value = 'error'
+  } finally {
+    disguiseLoading.value = false
+  }
+}
+
+const handleDisguiseShortcutInput = (event: KeyboardEvent): void => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  const shortcut = buildDisguiseShortcutFromEvent(event)
+  if (!shortcut) {
+    if (!isDisguiseModifierOnlyKey(event.key)) {
+      privacyMessage.value = t('settings.privacy.disguiseShortcutInvalid')
+      privacyMessageType.value = 'error'
+    }
+    return
+  }
+
+  void updateDisguiseShortcut(shortcut)
+}
+
+const handleResetDisguiseShortcut = (): void => {
+  void updateDisguiseShortcut(DEFAULT_DISGUISE_SHORTCUT)
+}
+
+const handleRegenerateDisguiseData = async (): Promise<void> => {
+  if (disguiseLoading.value || !disguise.isEnabled) return
+
+  disguiseLoading.value = true
+  try {
+    await disguise.regenerateData()
+    privacyMessage.value = t('settings.privacy.disguiseDataRegenerated')
+    privacyMessageType.value = 'success'
+    reloadForDisguiseMode()
+  } catch (error) {
+    console.error('重建伪装数据失败:', error)
+    privacyMessage.value = t('settings.data.updateFailedWithReason', {
+      reason: unwrapIpcErrorMessage(error)
+    })
+    privacyMessageType.value = 'error'
+  } finally {
+    disguiseLoading.value = false
+  }
 }
 
 const handleSubmitPasswordModal = async (): Promise<void> => {

@@ -239,8 +239,29 @@ const jaJP = {
       manualLockShortcut: '手動ロックショートカット',
       manualLockShortcutDescription:
         'プライバシー保護が有効なとき、このショートカットで即時ロックできます（入力欄を選択して新しい組み合わせを押してください）',
+      disguiseEnabled: '偽装モード',
+      disguiseEnabledDescription:
+        '有効にすると、アプリ全体が編集可能なダミーデータ表示に切り替わります',
+      disguiseAutoEnableOnLaunch: '起動時に自動で偽装モードへ',
+      disguiseAutoEnableOnLaunchDescription:
+        '有効時は前回状態に基づき、次回起動時に偽装モードを自動適用します',
+      disguiseShortcut: '偽装モードショートカット',
+      disguiseShortcutDescription: 'このショートカットで偽装モードを素早く切り替えます',
+      resetDisguiseShortcut: 'デフォルトに戻す',
+      regenerateDisguiseData: '偽装データを再生成',
+      regenerateDisguiseDataDescription: '新しいダミーデータを再生成します（偽装モードのみ）',
+      regenerateDisguiseDataAction: '再生成',
       enabledSuccess: 'プライバシー保護を有効にしました',
       disabledSuccess: 'プライバシー保護を無効にしました',
+      disguiseEnabledSuccess: '偽装モードを有効にしました。ページを再読み込みします',
+      disguiseDisabledSuccess: '偽装モードを無効にしました。実データへ戻します',
+      disguiseAutoEnableUpdated: '偽装モードの起動動作を更新しました',
+      disguiseShortcutUpdated: '偽装モードショートカットを {shortcut} に更新しました',
+      disguiseShortcutInvalid:
+        '無効なショートカットです。Ctrl/Alt/Shift/Meta + 英字または数字を使用してください',
+      disguiseShortcutConflict:
+        '偽装モードショートカットは手動ロックショートカットと同じにできません',
+      disguiseDataRegenerated: '偽装データを再生成しました。ページを再読み込みします',
       switchToWindows: 'Windows パスワードでの解除に切り替えました',
       switchToPin: 'PIN での解除に切り替えました',
       idleLockUpdated: 'アイドルロック時間を更新しました',

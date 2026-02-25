@@ -5,6 +5,7 @@ import { useUserStore } from './stores/user'
 import { useThemeStore } from './stores/themes'
 import { usePrivacyStore } from './stores/privacy'
 import { useLocaleStore } from './stores/locale'
+import { useDisguiseStore } from './stores/disguise'
 import router from './router'
 import { i18n } from './i18n'
 import './assets/motion.css'
@@ -30,6 +31,7 @@ const userStore = useUserStore()
 const themeStore = useThemeStore()
 const privacyStore = usePrivacyStore()
 const localeStore = useLocaleStore()
+const disguiseStore = useDisguiseStore()
 
 let appDataInitialized = false
 
@@ -71,6 +73,7 @@ router.beforeEach(async (to) => {
 async function bootstrap(): Promise<void> {
   await localeStore.initFromStorage()
   await privacyStore.initFromStorage()
+  await disguiseStore.initFromMain()
   if (!privacyStore.isLocked) {
     await initUnlockedAppData()
   }

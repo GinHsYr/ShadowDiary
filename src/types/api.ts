@@ -37,6 +37,12 @@ export interface PrivacyAuthSupport {
   windowsPassword: boolean
 }
 
+export interface DisguiseConfig {
+  enabled: boolean
+  autoEnableOnLaunch: boolean
+  shortcut: string
+}
+
 export interface AppUpdateInfo {
   version: string
   releaseDate?: string
@@ -136,6 +142,11 @@ export interface DiaryAPI {
   getAllSettings(): Promise<Record<string, string>>
   getPrivacyAuthSupport(): Promise<PrivacyAuthSupport>
   verifyWindowsPassword(password: string): Promise<boolean>
+  getDisguiseConfig(): Promise<DisguiseConfig>
+  setDisguiseEnabled(enabled: boolean): Promise<void>
+  setDisguiseAutoEnableOnLaunch(enabled: boolean): Promise<void>
+  setDisguiseShortcut(shortcut: string): Promise<void>
+  regenerateDisguiseData(): Promise<void>
   exportData(options: DataTransferOptions): Promise<DataTransferResult>
   importData(options: DataTransferOptions): Promise<DataTransferResult>
   cancelDataTransfer(): Promise<boolean>
