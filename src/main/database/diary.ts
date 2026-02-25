@@ -32,6 +32,7 @@ interface TagGroupRow {
 }
 
 interface PersonArchiveRow {
+  id: string
   name: string
   alias: string | null
 }
@@ -243,7 +244,9 @@ export function saveDiaryEntry(entry: {
   const save = db.transaction(() => {
     if (entry.id) {
       // Check if exists
-      const existing = db.prepare('SELECT id FROM diary_entries WHERE id = ?').get(entry.id)
+      const existing = db
+        .prepare('SELECT id, plain_content FROM diary_entries WHERE id = ?')
+        .get(entry.id) as { id: string; plain_content: string } | undefined
       if (existing) {
         // Update
         db.prepare(
@@ -258,6 +261,7 @@ export function saveDiaryEntry(entry: {
           entry.id
         )
         syncTags(entry.id, entry.tags ?? [])
+        syncPersonMentionStatsForDiaryTextChange(db, existing.plain_content || '', plainContent)
         return entry.id
       }
     }
@@ -278,6 +282,7 @@ export function saveDiaryEntry(entry: {
       now
     )
     syncTags(id, entry.tags ?? [])
+    syncPersonMentionStatsForDiaryTextChange(db, '', plainContent)
     return id
   })
 
@@ -288,8 +293,20 @@ export function saveDiaryEntry(entry: {
 
 export function deleteDiaryEntry(id: string): boolean {
   const db = getDatabase()
-  const result = db.prepare('DELETE FROM diary_entries WHERE id = ?').run(id)
-  const deleted = result.changes > 0
+  const remove = db.transaction(() => {
+    const existing = db.prepare('SELECT plain_content FROM diary_entries WHERE id = ?').get(id) as
+      | { plain_content: string }
+      | undefined
+    if (!existing) return false
+
+    const result = db.prepare('DELETE FROM diary_entries WHERE id = ?').run(id)
+    if (result.changes <= 0) return false
+
+    syncPersonMentionStatsForDiaryTextChange(db, existing.plain_content || '', '')
+    return true
+  })
+
+  const deleted = remove()
   if (deleted) {
     invalidatePersonMentionCache()
   }
@@ -579,6 +596,7 @@ export function getAllDiaryContents(): string[] {
 }
 
 interface PersonMentionMatcher {
+  personIds: string[]
   personNames: string[]
   personTokens: string[][]
   tokenOwners: Map<string, Set<number>>
@@ -600,7 +618,14 @@ function splitAliases(alias: string | null): string[] {
     .filter(Boolean)
 }
 
+function getPersonArchives(db: ReturnType<typeof getDatabase>): PersonArchiveRow[] {
+  return db
+    .prepare('SELECT id, name, alias FROM archives WHERE type = ? ORDER BY id')
+    .all('person') as PersonArchiveRow[]
+}
+
 function buildPersonMentionMatcher(personArchives: PersonArchiveRow[]): PersonMentionMatcher {
+  const personIds = personArchives.map((p) => p.id)
   const personNames = personArchives.map((p) => p.name)
   const personTokens: string[][] = []
   const tokenOwners = new Map<string, Set<number>>()
@@ -650,6 +675,7 @@ function buildPersonMentionMatcher(personArchives: PersonArchiveRow[]): PersonMe
   })
 
   return {
+    personIds,
     personNames,
     personTokens,
     tokenOwners,
@@ -708,6 +734,114 @@ function countMentionsForPerson(
   }
 
   return { count, matchedKeys }
+}
+
+function countMentionsByPerson(text: string, matcher: PersonMentionMatcher): number[] {
+  const counts = new Array<number>(matcher.personNames.length).fill(0)
+  if (!text || !matcher.mentionRegex) return counts
+
+  matcher.mentionRegex.lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = matcher.mentionRegex.exec(text)) !== null) {
+    const key = match[0].toLocaleLowerCase()
+    const owners = matcher.tokenOwners.get(key)
+    if (!owners || owners.size !== 1) continue
+
+    const ownerIndex = owners.values().next().value
+    if (typeof ownerIndex !== 'number') continue
+
+    const tokenMeta = matcher.tokenMetaByKey.get(key)
+    if (!tokenMeta || tokenMeta.personIndex !== ownerIndex) continue
+    if (!isSingleCharAliasStandaloneMatch(text, match, tokenMeta)) continue
+
+    counts[ownerIndex]++
+  }
+
+  return counts
+}
+
+function upsertPersonMentionStatRows(
+  db: ReturnType<typeof getDatabase>,
+  personArchives: PersonArchiveRow[],
+  timestamp: number
+): void {
+  const ensureRow = db.prepare(
+    `INSERT INTO person_mention_stats (archive_id, mention_count, updated_at)
+     VALUES (?, 0, ?)
+     ON CONFLICT(archive_id) DO NOTHING`
+  )
+
+  for (const archive of personArchives) {
+    ensureRow.run(archive.id, timestamp)
+  }
+}
+
+function syncPersonMentionStatsForDiaryTextChange(
+  db: ReturnType<typeof getDatabase>,
+  previousText: string,
+  nextText: string
+): void {
+  const personArchives = getPersonArchives(db)
+  if (personArchives.length === 0) return
+
+  const matcher = buildPersonMentionMatcher(personArchives)
+  const now = Date.now()
+  upsertPersonMentionStatRows(db, personArchives, now)
+
+  const previousCounts = countMentionsByPerson(previousText, matcher)
+  const nextCounts = countMentionsByPerson(nextText, matcher)
+
+  const applyDelta = db.prepare(
+    `UPDATE person_mention_stats
+     SET mention_count = CASE WHEN mention_count + ? > 0 THEN mention_count + ? ELSE 0 END,
+         updated_at = ?
+     WHERE archive_id = ?`
+  )
+
+  for (let i = 0; i < personArchives.length; i++) {
+    const delta = nextCounts[i] - previousCounts[i]
+    if (delta === 0) continue
+    applyDelta.run(delta, delta, now, personArchives[i].id)
+  }
+}
+
+export function rebuildPersonMentionStatsIndex(): void {
+  const db = getDatabase()
+  const personArchives = getPersonArchives(db)
+  const now = Date.now()
+
+  const rebuild = db.transaction(() => {
+    db.prepare('DELETE FROM person_mention_stats').run()
+    if (personArchives.length === 0) return
+
+    const matcher = buildPersonMentionMatcher(personArchives)
+    const counts = new Array<number>(personArchives.length).fill(0)
+
+    if (matcher.mentionRegex) {
+      const diaryRows = db
+        .prepare('SELECT plain_content FROM diary_entries')
+        .iterate() as Iterable<{
+        plain_content: string
+      }>
+
+      for (const row of diaryRows) {
+        const rowCounts = countMentionsByPerson(row.plain_content || '', matcher)
+        for (let i = 0; i < rowCounts.length; i++) {
+          counts[i] += rowCounts[i]
+        }
+      }
+    }
+
+    const insertStat = db.prepare(
+      'INSERT INTO person_mention_stats (archive_id, mention_count, updated_at) VALUES (?, ?, ?)'
+    )
+    for (let i = 0; i < personArchives.length; i++) {
+      insertStat.run(personArchives[i].id, counts[i], now)
+    }
+  })
+
+  rebuild()
 }
 
 interface PersonMentionCacheEntry {
@@ -916,48 +1050,27 @@ function buildPersonMentionPageEntries(
 
 export function getPersonMentionStats(): { name: string; count: number }[] {
   const db = getDatabase()
-
-  // 获取所有 type='person' 的档案
-  const personArchives = db
-    .prepare('SELECT name, alias FROM archives WHERE type = ?')
-    .all('person') as PersonArchiveRow[]
-
+  const personArchives = getPersonArchives(db)
   if (personArchives.length === 0) return []
 
-  const matcher = buildPersonMentionMatcher(personArchives)
-  if (!matcher.mentionRegex) return []
-
-  const mentionCounts = new Array<number>(personArchives.length).fill(0)
-  const diaryRows = db.prepare('SELECT plain_content FROM diary_entries').iterate() as Iterable<{
-    plain_content: string
-  }>
-
-  for (const row of diaryRows) {
-    const text = row.plain_content || ''
-    if (!text) continue
-
-    matcher.mentionRegex.lastIndex = 0
-    let match: RegExpExecArray | null
-    while ((match = matcher.mentionRegex.exec(text)) !== null) {
-      const key = match[0].toLocaleLowerCase()
-      const owners = matcher.tokenOwners.get(key)
-      if (!owners || owners.size !== 1) continue
-
-      const ownerIndex = owners.values().next().value
-      if (typeof ownerIndex !== 'number') continue
-
-      const tokenMeta = matcher.tokenMetaByKey.get(key)
-      if (!tokenMeta || tokenMeta.personIndex !== ownerIndex) continue
-      if (!isSingleCharAliasStandaloneMatch(text, match, tokenMeta)) continue
-
-      mentionCounts[ownerIndex]++
-    }
+  const indexedCount = (
+    db.prepare('SELECT COUNT(*) as count FROM person_mention_stats').get() as { count: number }
+  ).count
+  if (indexedCount !== personArchives.length) {
+    rebuildPersonMentionStatsIndex()
   }
 
-  return matcher.personNames
-    .map((name, index) => ({ name, count: mentionCounts[index] }))
-    .filter((item) => item.count > 0)
-    .sort((a, b) => b.count - a.count)
+  const rows = db
+    .prepare(
+      `SELECT a.name as name, COALESCE(pms.mention_count, 0) as count
+       FROM archives a
+       LEFT JOIN person_mention_stats pms ON pms.archive_id = a.id
+       WHERE a.type = ? AND COALESCE(pms.mention_count, 0) > 0
+       ORDER BY count DESC, a.name COLLATE NOCASE ASC`
+    )
+    .all('person') as { name: string; count: number }[]
+
+  return rows
 }
 
 export function getPersonMentionDetails(
@@ -970,9 +1083,7 @@ export function getPersonMentionDetails(
   const limit = Math.max(1, Math.min(100, Math.floor(requestedLimit)))
   const offset = Math.max(0, Math.floor(requestedOffset))
 
-  const personArchives = db
-    .prepare('SELECT name, alias FROM archives WHERE type = ?')
-    .all('person') as PersonArchiveRow[]
+  const personArchives = getPersonArchives(db)
 
   if (personArchives.length === 0) {
     return { personName, keywords: [personName], entries: [], total: 0 }

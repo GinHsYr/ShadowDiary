@@ -540,8 +540,16 @@ body {
 .startup-skeleton {
   height: 100%;
   background:
-    radial-gradient(120% 70% at 15% -20%, var(--app-accent-12, rgba(24, 160, 88, 0.12)) 0%, transparent 60%),
-    radial-gradient(110% 80% at 100% 120%, var(--app-accent-08, rgba(24, 160, 88, 0.08)) 0%, transparent 58%),
+    radial-gradient(
+      120% 70% at 15% -20%,
+      var(--app-accent-12, rgba(24, 160, 88, 0.12)) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      110% 80% at 100% 120%,
+      var(--app-accent-08, rgba(24, 160, 88, 0.08)) 0%,
+      transparent 58%
+    ),
     var(--n-body-color, #f5f7fa);
 }
 

@@ -307,38 +307,46 @@ export async function deleteImage(filename: string): Promise<void> {
 }
 
 export async function deleteImageById(imageId: string): Promise<void> {
-  const normalizedId = imageId.trim().toLowerCase()
-  if (!IMAGE_ID_RE.test(normalizedId)) return
+  await deleteImageByIds([imageId])
+}
+
+export async function deleteImageByIds(imageIds: Iterable<string>): Promise<void> {
+  const normalizedIds = new Set<string>()
+  for (const rawId of imageIds) {
+    const normalizedId = rawId.trim().toLowerCase()
+    if (!IMAGE_ID_RE.test(normalizedId)) continue
+    normalizedIds.add(normalizedId)
+  }
+
+  if (normalizedIds.size === 0) return
 
   await ensureImageDirs()
 
-  const [imageFiles, thumbnailFiles] = await Promise.all([
-    readdir(getImageDir()),
-    readdir(getThumbnailDir())
-  ])
+  const imageDir = getImageDir()
+  const thumbnailDir = getThumbnailDir()
+  const [imageFiles, thumbnailFiles] = await Promise.all([readdir(imageDir), readdir(thumbnailDir)])
 
-  const imageDeletes = imageFiles
-    .filter((file) => file.startsWith(`${normalizedId}.`))
-    .map(async (file) => {
-      const path = join(getImageDir(), file)
-      if (existsSync(path)) {
-        await unlink(path)
-      }
-    })
+  const pendingDeletes: Promise<void>[] = []
+  for (const file of imageFiles) {
+    const match = file.match(/^([a-f0-9-]+)\.[a-z0-9]+$/i)
+    if (!match) continue
+    const id = match[1].toLowerCase()
+    if (!normalizedIds.has(id)) continue
+    pendingDeletes.push(unlink(join(imageDir, file)))
+  }
 
-  const thumbnailDeletes = thumbnailFiles
-    .filter((file) => file === `${normalizedId}_thumb.webp`)
-    .map(async (file) => {
-      const path = join(getThumbnailDir(), file)
-      if (existsSync(path)) {
-        await unlink(path)
-      }
-    })
+  for (const file of thumbnailFiles) {
+    const match = file.match(/^([a-f0-9-]+)_thumb\.webp$/i)
+    if (!match) continue
+    const id = match[1].toLowerCase()
+    if (!normalizedIds.has(id)) continue
+    pendingDeletes.push(unlink(join(thumbnailDir, file)))
+  }
 
   try {
-    await Promise.all([...imageDeletes, ...thumbnailDeletes])
+    await Promise.all(pendingDeletes)
   } catch (error) {
-    console.error('按 ID 删除图片失败:', error)
+    console.error('按 ID 批量删除图片失败:', error)
   }
 }
 

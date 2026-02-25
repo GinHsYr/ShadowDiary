@@ -32,10 +32,19 @@ import {
   getStats,
   getPersonMentionStats,
   getPersonMentionDetails,
-  invalidatePersonMentionCache
+  invalidatePersonMentionCache,
+  rebuildPersonMentionStatsIndex
 } from './database/diary'
 import { archives } from './database/archives'
-import { getMediaLibrary, invalidateMediaLibraryCache } from './database/media'
+import {
+  getMediaLibrary,
+  invalidateMediaLibraryCache,
+  removeArchiveMediaSource,
+  removeDiaryMediaSource,
+  rebuildMediaSourceIndex,
+  syncArchiveMediaSource,
+  syncDiaryMediaSource
+} from './database/media'
 import { getAllTags } from './database/tags'
 import {
   addAttachment,
@@ -65,7 +74,7 @@ import {
   getImage,
   ensureImageDirs,
   cleanupUnusedImages,
-  deleteImageById,
+  deleteImageByIds,
   parseImageDataUrl
 } from './utils/imageStorage'
 import {
@@ -360,7 +369,7 @@ async function cleanupReleasedImages(imageIds: Iterable<string>): Promise<void> 
 
   if (uniqueIds.size === 0) return
 
-  await Promise.allSettled([...uniqueIds].map((imageId) => deleteImageById(imageId)))
+  await deleteImageByIds(uniqueIds)
 }
 
 async function migrateLegacyAvatarSetting(): Promise<void> {
@@ -819,6 +828,7 @@ function registerIpcHandlers(): void {
   handleTrustedIpc('diary:save', async (_event, entry: Parameters<typeof saveDiaryEntry>[0]) => {
     const previous = entry.id ? getDiaryEntry(entry.id) : null
     const saved = saveDiaryEntry(entry)
+    syncDiaryMediaSource(saved)
     if (!isDisguiseModeEnabled()) {
       const releasedIds = syncImageRefs(
         collectImageIdsFromText(previous?.content),
@@ -836,6 +846,7 @@ function registerIpcHandlers(): void {
     const attachments = getAttachments(id)
     const result = deleteDiaryEntry(id)
     if (result) {
+      removeDiaryMediaSource(id)
       if (!isDisguiseModeEnabled()) {
         const releasedIds = syncImageRefs(collectImageIdsFromText(previous?.content), [])
         await cleanupReleasedImages(releasedIds)
@@ -876,6 +887,10 @@ function registerIpcHandlers(): void {
     async (_event, archive: Parameters<typeof archives.save>[0]) => {
       const previous = archive.id ? archives.get(archive.id) : null
       const saved = await archives.save(archive)
+      syncArchiveMediaSource(saved)
+      if (previous?.type === 'person' || saved.type === 'person') {
+        rebuildPersonMentionStatsIndex()
+      }
       if (!isDisguiseModeEnabled()) {
         const releasedIds = syncImageRefs(
           collectArchiveImageIds(previous ?? {}),
@@ -892,6 +907,10 @@ function registerIpcHandlers(): void {
   handleTrustedIpc('archives:delete', async (_event, id: string) => {
     const previous = archives.get(id)
     archives.delete(id)
+    removeArchiveMediaSource(id)
+    if (previous?.type === 'person') {
+      rebuildPersonMentionStatsIndex()
+    }
     if (!isDisguiseModeEnabled()) {
       const releasedIds = syncImageRefs(collectArchiveImageIds(previous ?? {}), [])
       await cleanupReleasedImages(releasedIds)
@@ -952,6 +971,8 @@ function registerIpcHandlers(): void {
       disableDisguiseMode()
     }
     setDisguiseLastEnabled(Boolean(enabled))
+    rebuildPersonMentionStatsIndex()
+    rebuildMediaSourceIndex()
     invalidatePersonMentionCache()
     invalidateMediaLibraryCache()
     return true
@@ -969,6 +990,8 @@ function registerIpcHandlers(): void {
 
   handleTrustedIpc('disguise:regenerateData', () => {
     regenerateDisguiseModeData()
+    rebuildPersonMentionStatsIndex()
+    rebuildMediaSourceIndex()
     invalidatePersonMentionCache()
     invalidateMediaLibraryCache()
     return true
@@ -1007,6 +1030,8 @@ function registerIpcHandlers(): void {
       }
     )
     if (result.success) {
+      rebuildPersonMentionStatsIndex()
+      rebuildMediaSourceIndex()
       invalidatePersonMentionCache()
       invalidateMediaLibraryCache()
     }

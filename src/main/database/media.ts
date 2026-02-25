@@ -1,5 +1,7 @@
-import { getDatabase, isDisguiseDatabaseActive } from './index'
+import { getDatabase } from './index'
 import type {
+  Archive,
+  DiaryEntry,
   MediaLibraryItem,
   MediaLibraryQueryParams,
   MediaLibraryResult,
@@ -7,55 +9,52 @@ import type {
   MediaLibrarySourceType
 } from '../../types/model'
 
-interface DiaryMediaRow {
-  id: string
-  title: string
-  content: string
-  created_at: number
-  updated_at: number
-}
-
-interface ArchiveMediaRow {
-  id: string
-  name: string
-  main_image: string | null
-  images: string | null
-  created_at: number
-  updated_at: number
-}
-
 interface ImagePathCandidate {
   imagePath?: string
   previewPath?: string
 }
 
-interface MediaAccumulator {
-  id: string
-  imagePath: string
-  previewPath: string
-  latestAt: number
-  hasDiarySource: boolean
-  hasArchiveSource: boolean
-  sourceMap: Map<string, MediaLibrarySourceRef>
+interface MediaAggregateRow {
+  image_id: string
+  latest_at: number
+  has_diary: number
+  has_archive: number
 }
 
-interface MediaLibrarySnapshot {
-  items: MediaLibraryItem[]
-  mode: 'real' | 'disguise'
-  builtAt: number
+interface MediaSourceRow {
+  image_id: string
+  source_type: MediaLibrarySourceType
+  source_id: string
+  source_title: string
+  source_created_at: number
+  source_updated_at: number
+  image_path: string
+  preview_path: string
+}
+
+interface DiaryMediaSourcePayload {
+  id: string
+  title: string
+  content: string
+  createdAt: number
+  updatedAt: number
+}
+
+interface ArchiveMediaSourcePayload {
+  id: string
+  name: string
+  mainImage?: string
+  images: string[]
+  createdAt: number
+  updatedAt: number
 }
 
 const DIARY_IMAGE_PATH_RE = /diary-image:\/\/([a-f0-9-]+)(?:(_thumb))?\.[a-z0-9]+/gi
 const DIARY_IMAGE_PATH_FULL_RE = /^diary-image:\/\/([a-f0-9-]+)(?:(_thumb))?\.[a-z0-9]+$/i
-const MEDIA_CACHE_TTL_MS = 2 * 60 * 1000
 const DEFAULT_PAGE_SIZE = 72
 const MAX_PAGE_SIZE = 200
 
-let mediaSnapshot: MediaLibrarySnapshot | null = null
-
-function getActiveMode(): 'real' | 'disguise' {
-  return isDisguiseDatabaseActive() ? 'disguise' : 'real'
-}
+type NormalizedMediaSource = 'all' | MediaLibrarySourceType
 
 function normalizePageSize(limit: number | undefined): number {
   if (typeof limit !== 'number' || Number.isNaN(limit)) return DEFAULT_PAGE_SIZE
@@ -71,15 +70,17 @@ function normalizeOffset(offset: number | undefined): number {
   return rounded
 }
 
-function normalizeSource(
-  source: MediaLibraryQueryParams['source']
-): 'all' | MediaLibrarySourceType {
+function normalizeSource(source: MediaLibraryQueryParams['source']): NormalizedMediaSource {
   if (source === 'diary' || source === 'archive') return source
   return 'all'
 }
 
 function createFallbackPreviewPath(imageId: string): string {
   return `diary-image://${imageId}_thumb.webp`
+}
+
+function isThumbnailPath(path: string): boolean {
+  return /_thumb\.[a-z0-9]+$/i.test(path)
 }
 
 function parseImagePath(path: string | null | undefined): {
@@ -107,8 +108,8 @@ function collectImageCandidatesFromText(
   const candidates = new Map<string, ImagePathCandidate>()
   if (!text) return candidates
 
-  let match: RegExpExecArray | null
   DIARY_IMAGE_PATH_RE.lastIndex = 0
+  let match: RegExpExecArray | null
   while ((match = DIARY_IMAGE_PATH_RE.exec(text)) !== null) {
     const imageId = match[1].toLowerCase()
     const fullPath = match[0]
@@ -130,27 +131,18 @@ function collectImageCandidatesFromText(
   return candidates
 }
 
-function collectArchiveImageCandidates(row: ArchiveMediaRow): Map<string, ImagePathCandidate> {
+function collectArchiveImageCandidates(
+  payload: Pick<ArchiveMediaSourcePayload, 'mainImage' | 'images'>
+): Map<string, ImagePathCandidate> {
   const candidates = new Map<string, ImagePathCandidate>()
   const paths: string[] = []
 
-  if (row.main_image) {
-    paths.push(row.main_image)
+  if (payload.mainImage) {
+    paths.push(payload.mainImage)
   }
 
-  if (row.images) {
-    try {
-      const parsed: unknown = JSON.parse(row.images)
-      if (Array.isArray(parsed)) {
-        for (const item of parsed) {
-          if (typeof item === 'string') {
-            paths.push(item)
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('解析档案媒体图片失败:', error)
-    }
+  for (const image of payload.images) {
+    paths.push(image)
   }
 
   for (const path of paths) {
@@ -171,52 +163,118 @@ function collectArchiveImageCandidates(row: ArchiveMediaRow): Map<string, ImageP
   return candidates
 }
 
-function upsertMediaAccumulator(
-  accumulators: Map<string, MediaAccumulator>,
-  imageId: string,
-  candidate: ImagePathCandidate,
-  source: MediaLibrarySourceRef
+function replaceSourceMediaRefs(
+  sourceType: MediaLibrarySourceType,
+  sourceId: string,
+  sourceTitle: string,
+  sourceCreatedAt: number,
+  sourceUpdatedAt: number,
+  candidates: Map<string, ImagePathCandidate>
 ): void {
-  const sourceKey = `${source.type}:${source.id}`
-  const fallbackPreviewPath = createFallbackPreviewPath(imageId)
-  const sourceImagePath = candidate.imagePath || candidate.previewPath || fallbackPreviewPath
-  const sourcePreviewPath = candidate.previewPath || fallbackPreviewPath
-  const existing = accumulators.get(imageId)
+  const db = getDatabase()
+  const apply = db.transaction(() => {
+    db.prepare('DELETE FROM media_source_refs WHERE source_type = ? AND source_id = ?').run(
+      sourceType,
+      sourceId
+    )
 
-  if (!existing) {
-    accumulators.set(imageId, {
-      id: imageId,
-      imagePath: sourceImagePath,
-      previewPath: sourcePreviewPath,
-      latestAt: source.updatedAt,
-      hasDiarySource: source.type === 'diary',
-      hasArchiveSource: source.type === 'archive',
-      sourceMap: new Map([[sourceKey, source]])
-    })
-    return
-  }
+    if (candidates.size === 0) return
 
-  if (candidate.imagePath && existing.imagePath === existing.previewPath) {
-    existing.imagePath = candidate.imagePath
-  }
+    const insertRef = db.prepare(
+      `INSERT INTO media_source_refs (
+         image_id,
+         source_type,
+         source_id,
+         source_title,
+         source_created_at,
+         source_updated_at,
+         image_path,
+         preview_path
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
 
-  if (candidate.previewPath && !existing.previewPath.includes('_thumb.')) {
-    existing.previewPath = candidate.previewPath
-  }
+    for (const [imageId, candidate] of candidates) {
+      const fallbackPreviewPath = createFallbackPreviewPath(imageId)
+      const imagePath = candidate.imagePath || candidate.previewPath || fallbackPreviewPath
+      const previewPath = candidate.previewPath || fallbackPreviewPath
+      insertRef.run(
+        imageId,
+        sourceType,
+        sourceId,
+        sourceTitle,
+        sourceCreatedAt,
+        sourceUpdatedAt,
+        imagePath,
+        previewPath
+      )
+    }
+  })
 
-  existing.latestAt = Math.max(existing.latestAt, source.updatedAt)
-  existing.hasDiarySource = existing.hasDiarySource || source.type === 'diary'
-  existing.hasArchiveSource = existing.hasArchiveSource || source.type === 'archive'
-
-  const previousSource = existing.sourceMap.get(sourceKey)
-  if (!previousSource || source.updatedAt >= previousSource.updatedAt) {
-    existing.sourceMap.set(sourceKey, source)
-  }
+  apply()
 }
 
-function buildMediaItems(): MediaLibraryItem[] {
+export function syncDiaryMediaSource(
+  entry: Pick<DiaryEntry, 'id' | 'title' | 'content' | 'createdAt' | 'updatedAt'>
+): void {
+  const payload: DiaryMediaSourcePayload = {
+    id: entry.id,
+    title: entry.title,
+    content: entry.content,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt
+  }
+
+  replaceSourceMediaRefs(
+    'diary',
+    payload.id,
+    payload.title || '',
+    payload.createdAt,
+    payload.updatedAt,
+    collectImageCandidatesFromText(payload.content)
+  )
+}
+
+export function removeDiaryMediaSource(diaryId: string): void {
   const db = getDatabase()
-  const accumulators = new Map<string, MediaAccumulator>()
+  db.prepare('DELETE FROM media_source_refs WHERE source_type = ? AND source_id = ?').run(
+    'diary',
+    diaryId
+  )
+}
+
+export function syncArchiveMediaSource(
+  archive: Pick<Archive, 'id' | 'name' | 'mainImage' | 'images' | 'createdAt' | 'updatedAt'>
+): void {
+  const payload: ArchiveMediaSourcePayload = {
+    id: archive.id,
+    name: archive.name,
+    mainImage: archive.mainImage,
+    images: archive.images,
+    createdAt: archive.createdAt,
+    updatedAt: archive.updatedAt
+  }
+
+  replaceSourceMediaRefs(
+    'archive',
+    payload.id,
+    payload.name || '',
+    payload.createdAt,
+    payload.updatedAt,
+    collectArchiveImageCandidates(payload)
+  )
+}
+
+export function removeArchiveMediaSource(archiveId: string): void {
+  const db = getDatabase()
+  db.prepare('DELETE FROM media_source_refs WHERE source_type = ? AND source_id = ?').run(
+    'archive',
+    archiveId
+  )
+}
+
+export function rebuildMediaSourceIndex(): void {
+  const db = getDatabase()
+  db.prepare('DELETE FROM media_source_refs').run()
 
   const diaryRows = db
     .prepare(
@@ -224,21 +282,23 @@ function buildMediaItems(): MediaLibraryItem[] {
        FROM diary_entries
        WHERE content LIKE '%diary-image://%'`
     )
-    .all() as DiaryMediaRow[]
+    .iterate() as Iterable<{
+    id: string
+    title: string
+    content: string
+    created_at: number
+    updated_at: number
+  }>
 
   for (const row of diaryRows) {
-    const source: MediaLibrarySourceRef = {
-      type: 'diary',
-      id: row.id,
-      title: row.title,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
-
-    const candidates = collectImageCandidatesFromText(row.content)
-    for (const [imageId, candidate] of candidates) {
-      upsertMediaAccumulator(accumulators, imageId, candidate, source)
-    }
+    replaceSourceMediaRefs(
+      'diary',
+      row.id,
+      row.title || '',
+      row.created_at,
+      row.updated_at,
+      collectImageCandidatesFromText(row.content)
+    )
   }
 
   const archiveRows = db
@@ -247,87 +307,191 @@ function buildMediaItems(): MediaLibraryItem[] {
        FROM archives
        WHERE main_image LIKE '%diary-image://%' OR images LIKE '%diary-image://%'`
     )
-    .all() as ArchiveMediaRow[]
+    .iterate() as Iterable<{
+    id: string
+    name: string
+    main_image: string | null
+    images: string | null
+    created_at: number
+    updated_at: number
+  }>
 
   for (const row of archiveRows) {
-    const source: MediaLibrarySourceRef = {
-      type: 'archive',
-      id: row.id,
-      title: row.name,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }
-
-    const candidates = collectArchiveImageCandidates(row)
-    for (const [imageId, candidate] of candidates) {
-      upsertMediaAccumulator(accumulators, imageId, candidate, source)
-    }
-  }
-
-  return [...accumulators.values()]
-    .map((item): MediaLibraryItem => {
-      const sourceTypes: MediaLibrarySourceType[] = []
-      if (item.hasDiarySource) sourceTypes.push('diary')
-      if (item.hasArchiveSource) sourceTypes.push('archive')
-
-      const sources = [...item.sourceMap.values()].sort((a, b) => {
-        if (b.updatedAt !== a.updatedAt) return b.updatedAt - a.updatedAt
-        return a.id.localeCompare(b.id)
-      })
-
-      return {
-        id: item.id,
-        imagePath: item.imagePath,
-        previewPath: item.previewPath || item.imagePath,
-        latestAt: item.latestAt,
-        sourceTypes,
-        sources
+    let images: string[] = []
+    if (row.images) {
+      try {
+        const parsed: unknown = JSON.parse(row.images)
+        if (Array.isArray(parsed)) {
+          images = parsed.filter((item): item is string => typeof item === 'string')
+        }
+      } catch {
+        images = []
       }
-    })
-    .sort((a, b) => {
-      if (b.latestAt !== a.latestAt) return b.latestAt - a.latestAt
-      return a.id.localeCompare(b.id)
-    })
+    }
+
+    replaceSourceMediaRefs(
+      'archive',
+      row.id,
+      row.name || '',
+      row.created_at,
+      row.updated_at,
+      collectArchiveImageCandidates({
+        mainImage: row.main_image ?? undefined,
+        images
+      })
+    )
+  }
 }
 
-function getOrBuildSnapshot(): MediaLibrarySnapshot {
-  const now = Date.now()
-  const mode = getActiveMode()
-  if (
-    mediaSnapshot &&
-    mediaSnapshot.mode === mode &&
-    now - mediaSnapshot.builtAt < MEDIA_CACHE_TTL_MS
-  ) {
-    return mediaSnapshot
+function buildSourceHavingClause(source: NormalizedMediaSource): string {
+  if (source === 'diary') {
+    return "HAVING SUM(CASE WHEN source_type = 'diary' THEN 1 ELSE 0 END) > 0"
+  }
+  if (source === 'archive') {
+    return "HAVING SUM(CASE WHEN source_type = 'archive' THEN 1 ELSE 0 END) > 0"
+  }
+  return ''
+}
+
+function getMediaTotal(source: NormalizedMediaSource): number {
+  const db = getDatabase()
+  const havingClause = buildSourceHavingClause(source)
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) as count
+       FROM (
+         SELECT image_id
+         FROM media_source_refs
+         GROUP BY image_id
+         ${havingClause}
+       ) grouped`
+    )
+    .get() as { count: number }
+
+  return row.count
+}
+
+function getMediaAggregatePage(
+  source: NormalizedMediaSource,
+  limit: number,
+  offset: number
+): MediaAggregateRow[] {
+  const db = getDatabase()
+  const havingClause = buildSourceHavingClause(source)
+
+  return db
+    .prepare(
+      `SELECT image_id,
+              MAX(source_updated_at) as latest_at,
+              MAX(CASE WHEN source_type = 'diary' THEN 1 ELSE 0 END) as has_diary,
+              MAX(CASE WHEN source_type = 'archive' THEN 1 ELSE 0 END) as has_archive
+       FROM media_source_refs
+       GROUP BY image_id
+       ${havingClause}
+       ORDER BY latest_at DESC, image_id ASC
+       LIMIT ? OFFSET ?`
+    )
+    .all(limit, offset) as MediaAggregateRow[]
+}
+
+function getMediaSourcesForImages(imageIds: string[]): MediaSourceRow[] {
+  if (imageIds.length === 0) return []
+
+  const db = getDatabase()
+  const placeholders = imageIds.map(() => '?').join(',')
+  return db
+    .prepare(
+      `SELECT image_id,
+              source_type,
+              source_id,
+              source_title,
+              source_created_at,
+              source_updated_at,
+              image_path,
+              preview_path
+       FROM media_source_refs
+       WHERE image_id IN (${placeholders})
+       ORDER BY source_updated_at DESC, source_id ASC`
+    )
+    .all(...imageIds) as MediaSourceRow[]
+}
+
+function buildMediaItem(
+  imageId: string,
+  aggregate: MediaAggregateRow,
+  sourceRows: MediaSourceRow[]
+): MediaLibraryItem {
+  const fallbackPreviewPath = createFallbackPreviewPath(imageId)
+  let imagePath = sourceRows[0]?.image_path || sourceRows[0]?.preview_path || fallbackPreviewPath
+  let previewPath = sourceRows[0]?.preview_path || fallbackPreviewPath
+
+  for (const row of sourceRows) {
+    if (isThumbnailPath(imagePath) && row.image_path && !isThumbnailPath(row.image_path)) {
+      imagePath = row.image_path
+    }
+    if (!isThumbnailPath(previewPath) && row.preview_path && isThumbnailPath(row.preview_path)) {
+      previewPath = row.preview_path
+    }
   }
 
-  const snapshot: MediaLibrarySnapshot = {
-    items: buildMediaItems(),
-    mode,
-    builtAt: now
+  const sourceTypes: MediaLibrarySourceType[] = []
+  if (aggregate.has_diary > 0) sourceTypes.push('diary')
+  if (aggregate.has_archive > 0) sourceTypes.push('archive')
+
+  const sources: MediaLibrarySourceRef[] = sourceRows.map((row) => ({
+    type: row.source_type,
+    id: row.source_id,
+    title: row.source_title,
+    createdAt: row.source_created_at,
+    updatedAt: row.source_updated_at
+  }))
+
+  return {
+    id: imageId,
+    imagePath,
+    previewPath,
+    latestAt: aggregate.latest_at,
+    sourceTypes,
+    sources
   }
-  mediaSnapshot = snapshot
-  return snapshot
 }
 
 export function invalidateMediaLibraryCache(): void {
-  mediaSnapshot = null
+  // No-op: media list now comes from incremental DB index and paged query.
 }
 
 export function getMediaLibrary(params: MediaLibraryQueryParams = {}): MediaLibraryResult {
   const source = normalizeSource(params.source)
   const limit = normalizePageSize(params.limit)
   const offset = normalizeOffset(params.offset)
-  const snapshot = getOrBuildSnapshot()
 
-  const filteredItems =
-    source === 'all'
-      ? snapshot.items
-      : snapshot.items.filter((item) => item.sourceTypes.includes(source))
+  const total = getMediaTotal(source)
+  if (total === 0 || offset >= total) {
+    return { items: [], total, hasMore: false }
+  }
 
-  const total = filteredItems.length
-  const items = filteredItems.slice(offset, offset + limit)
+  const aggregateRows = getMediaAggregatePage(source, limit, offset)
+  if (aggregateRows.length === 0) {
+    return { items: [], total, hasMore: false }
+  }
+
+  const imageIds = aggregateRows.map((row) => row.image_id)
+  const sources = getMediaSourcesForImages(imageIds)
+  const sourceRowsByImage = new Map<string, MediaSourceRow[]>()
+  for (const row of sources) {
+    const current = sourceRowsByImage.get(row.image_id)
+    if (current) {
+      current.push(row)
+    } else {
+      sourceRowsByImage.set(row.image_id, [row])
+    }
+  }
+
+  const items = aggregateRows.map((aggregate) => {
+    const sourceRows = sourceRowsByImage.get(aggregate.image_id) ?? []
+    return buildMediaItem(aggregate.image_id, aggregate, sourceRows)
+  })
+
   const hasMore = offset + items.length < total
-
   return { items, total, hasMore }
 }

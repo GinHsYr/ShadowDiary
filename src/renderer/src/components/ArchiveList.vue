@@ -57,8 +57,8 @@
           <div class="item-info">
             <div class="item-name">
               <span class="item-name-text">{{
-                  archive.name || t('archiveList.untitledDraft')
-                }}</span>
+                archive.name || t('archiveList.untitledDraft')
+              }}</span>
               <n-tag
                 v-if="isDraftArchive(archive)"
                 size="tiny"

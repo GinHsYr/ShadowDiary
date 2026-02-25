@@ -22,6 +22,13 @@ export function stripHtmlToPlain(html: string): string {
 }
 
 const DIARY_IMAGE_ID_RE = /diary-image:\/\/([a-f0-9-]+)(?:_thumb)?\.[a-z0-9]+/gi
+const DIARY_IMAGE_PATH_RE = /diary-image:\/\/([a-f0-9-]+)(?:(_thumb))?\.[a-z0-9]+/gi
+const DIARY_IMAGE_PATH_FULL_RE = /^diary-image:\/\/([a-f0-9-]+)(?:(_thumb))?\.[a-z0-9]+$/i
+
+interface MigrationImagePathCandidate {
+  imagePath?: string
+  previewPath?: string
+}
 
 function extractImageIdsForMigration(value: string | null | undefined): Set<string> {
   const imageIds = new Set<string>()
@@ -35,6 +42,97 @@ function extractImageIdsForMigration(value: string | null | undefined): Set<stri
   DIARY_IMAGE_ID_RE.lastIndex = 0
 
   return imageIds
+}
+
+function createFallbackPreviewPathForMigration(imageId: string): string {
+  return `diary-image://${imageId}_thumb.webp`
+}
+
+function parseImagePathForMigration(path: string | null | undefined): {
+  imageId: string
+  isThumbnail: boolean
+  normalizedPath: string
+} | null {
+  if (!path) return null
+  const trimmed = path.trim()
+  if (!trimmed) return null
+
+  const match = DIARY_IMAGE_PATH_FULL_RE.exec(trimmed)
+  if (!match) return null
+
+  return {
+    imageId: match[1].toLowerCase(),
+    isThumbnail: Boolean(match[2]),
+    normalizedPath: trimmed
+  }
+}
+
+function collectImageCandidatesFromTextForMigration(
+  text: string | null | undefined
+): Map<string, MigrationImagePathCandidate> {
+  const candidates = new Map<string, MigrationImagePathCandidate>()
+  if (!text) return candidates
+
+  DIARY_IMAGE_PATH_RE.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = DIARY_IMAGE_PATH_RE.exec(text)) !== null) {
+    const imageId = match[1].toLowerCase()
+    const fullPath = match[0]
+    const isThumbnail = Boolean(match[2])
+    const current = candidates.get(imageId) ?? {}
+
+    if (isThumbnail) {
+      if (!current.previewPath) current.previewPath = fullPath
+    } else if (!current.imagePath) {
+      current.imagePath = fullPath
+    }
+    candidates.set(imageId, current)
+  }
+  DIARY_IMAGE_PATH_RE.lastIndex = 0
+
+  return candidates
+}
+
+function collectArchiveImageCandidatesForMigration(
+  mainImage: string | null,
+  imagesJson: string | null
+): Map<string, MigrationImagePathCandidate> {
+  const candidates = new Map<string, MigrationImagePathCandidate>()
+  const paths: string[] = []
+
+  if (mainImage) {
+    paths.push(mainImage)
+  }
+
+  if (imagesJson) {
+    try {
+      const parsed: unknown = JSON.parse(imagesJson)
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (typeof item === 'string') {
+            paths.push(item)
+          }
+        }
+      }
+    } catch {
+      // Ignore malformed archive image JSON during backfill.
+    }
+  }
+
+  for (const path of paths) {
+    const parsed = parseImagePathForMigration(path)
+    if (!parsed) continue
+
+    const current = candidates.get(parsed.imageId) ?? {}
+    if (parsed.isThumbnail) {
+      if (!current.previewPath) current.previewPath = parsed.normalizedPath
+    } else if (!current.imagePath) {
+      current.imagePath = parsed.normalizedPath
+    }
+    candidates.set(parsed.imageId, current)
+  }
+
+  return candidates
 }
 
 const migrations: Migration[] = [
@@ -284,6 +382,113 @@ const migrations: Migration[] = [
 
     for (const [imageId, refCount] of imageRefCounts) {
       insertRef.run(imageId, refCount, now)
+    }
+  },
+
+  // Version 8: Add incremental mention/media indexes
+  (db) => {
+    db.exec(`
+      CREATE TABLE person_mention_stats (
+        archive_id   TEXT PRIMARY KEY REFERENCES archives(id) ON DELETE CASCADE,
+        mention_count INTEGER NOT NULL DEFAULT 0 CHECK (mention_count >= 0),
+        updated_at   INTEGER NOT NULL
+      );
+
+      CREATE INDEX idx_person_mention_stats_count ON person_mention_stats(mention_count DESC);
+
+      CREATE TABLE media_source_refs (
+        image_id          TEXT NOT NULL,
+        source_type       TEXT NOT NULL CHECK (source_type IN ('diary', 'archive')),
+        source_id         TEXT NOT NULL,
+        source_title      TEXT NOT NULL DEFAULT '',
+        source_created_at INTEGER NOT NULL,
+        source_updated_at INTEGER NOT NULL,
+        image_path        TEXT NOT NULL,
+        preview_path      TEXT NOT NULL,
+        PRIMARY KEY (image_id, source_type, source_id)
+      );
+
+      CREATE INDEX idx_media_source_refs_updated ON media_source_refs(source_updated_at DESC, image_id);
+      CREATE INDEX idx_media_source_refs_source ON media_source_refs(source_type, source_id);
+      CREATE INDEX idx_media_source_refs_image ON media_source_refs(image_id);
+    `)
+
+    const insertMediaRef = db.prepare(
+      `INSERT INTO media_source_refs (
+         image_id,
+         source_type,
+         source_id,
+         source_title,
+         source_created_at,
+         source_updated_at,
+         image_path,
+         preview_path
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+
+    const diaryRows = db
+      .prepare(
+        `SELECT id, title, content, created_at, updated_at
+         FROM diary_entries
+         WHERE content LIKE '%diary-image://%'`
+      )
+      .iterate() as Iterable<{
+      id: string
+      title: string
+      content: string
+      created_at: number
+      updated_at: number
+    }>
+    for (const row of diaryRows) {
+      const candidates = collectImageCandidatesFromTextForMigration(row.content)
+      for (const [imageId, candidate] of candidates) {
+        const fallbackPreviewPath = createFallbackPreviewPathForMigration(imageId)
+        const imagePath = candidate.imagePath || candidate.previewPath || fallbackPreviewPath
+        const previewPath = candidate.previewPath || fallbackPreviewPath
+        insertMediaRef.run(
+          imageId,
+          'diary',
+          row.id,
+          row.title || '',
+          row.created_at,
+          row.updated_at,
+          imagePath,
+          previewPath
+        )
+      }
+    }
+
+    const archiveRows = db
+      .prepare(
+        `SELECT id, name, main_image, images, created_at, updated_at
+         FROM archives
+         WHERE main_image LIKE '%diary-image://%' OR images LIKE '%diary-image://%'`
+      )
+      .iterate() as Iterable<{
+      id: string
+      name: string
+      main_image: string | null
+      images: string | null
+      created_at: number
+      updated_at: number
+    }>
+    for (const row of archiveRows) {
+      const candidates = collectArchiveImageCandidatesForMigration(row.main_image, row.images)
+      for (const [imageId, candidate] of candidates) {
+        const fallbackPreviewPath = createFallbackPreviewPathForMigration(imageId)
+        const imagePath = candidate.imagePath || candidate.previewPath || fallbackPreviewPath
+        const previewPath = candidate.previewPath || fallbackPreviewPath
+        insertMediaRef.run(
+          imageId,
+          'archive',
+          row.id,
+          row.name || '',
+          row.created_at,
+          row.updated_at,
+          imagePath,
+          previewPath
+        )
+      }
     }
   }
 ]
