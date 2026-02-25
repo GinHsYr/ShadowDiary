@@ -9,6 +9,7 @@ import {
   protocol,
   powerMonitor
 } from 'electron'
+import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { AppUpdateInfo, CheckForUpdatesResult, UpdateCheckOptions } from '../types/api'
 
@@ -85,6 +86,107 @@ let hasClosedDatabase = false
 let pendingQuitAckIds: Set<number> | null = null
 let quitPrepareTimer: ReturnType<typeof setTimeout> | null = null
 let resolveQuitPreparation: (() => void) | null = null
+const trustedRendererOrigins = new Set<string>()
+
+const rendererDevUrl = process.env['ELECTRON_RENDERER_URL']
+if (rendererDevUrl) {
+  try {
+    trustedRendererOrigins.add(new URL(rendererDevUrl).origin)
+  } catch {
+    console.warn('无效的 ELECTRON_RENDERER_URL，将忽略该信任源')
+  }
+}
+
+function isHttpProtocolUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function isTrustedRendererUrl(url: string): boolean {
+  if (!url) return false
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol === 'file:') return true
+    if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && is.dev) {
+      return trustedRendererOrigins.has(parsed.origin)
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+type TrustedIpcEvent = IpcMainEvent | IpcMainInvokeEvent
+
+function isTrustedIpcEvent(event: TrustedIpcEvent): boolean {
+  const sender = event.sender
+  if (!sender || sender.isDestroyed()) return false
+
+  const ownerWindow = BrowserWindow.fromWebContents(sender)
+  if (!ownerWindow || ownerWindow.isDestroyed()) return false
+  if (mainWindow && ownerWindow !== mainWindow) return false
+
+  const senderUrl = sender.getURL()
+  if (!isTrustedRendererUrl(senderUrl)) return false
+
+  const frameUrl = event.senderFrame?.url
+  if (frameUrl && !isTrustedRendererUrl(frameUrl)) return false
+
+  return true
+}
+
+function assertTrustedIpcEvent(event: TrustedIpcEvent, channel: string): void {
+  if (isTrustedIpcEvent(event)) return
+
+  const sourceUrl = event.senderFrame?.url || event.sender.getURL() || 'unknown'
+  console.warn(`[SECURITY] Blocked IPC channel "${channel}" from "${sourceUrl}"`)
+  throw new Error(`Blocked IPC channel: ${channel}`)
+}
+
+function onTrustedIpc<TArgs extends unknown[]>(
+  channel: string,
+  handler: (event: IpcMainEvent, ...args: TArgs) => void
+): void {
+  ipcMain.on(channel, (event, ...args) => {
+    try {
+      assertTrustedIpcEvent(event, channel)
+      handler(event, ...(args as TArgs))
+    } catch (error) {
+      console.error(error)
+    }
+  })
+}
+
+function handleTrustedIpc<TArgs extends unknown[], TResult>(
+  channel: string,
+  handler: (event: IpcMainInvokeEvent, ...args: TArgs) => TResult | Promise<TResult>
+): void {
+  ipcMain.handle(channel, async (event, ...args) => {
+    assertTrustedIpcEvent(event, channel)
+    return await handler(event, ...(args as TArgs))
+  })
+}
+
+function blockUntrustedNavigation(targetWindow: BrowserWindow): void {
+  const blockNavigation = (event: Electron.Event, url: string): void => {
+    if (isTrustedRendererUrl(url)) return
+
+    event.preventDefault()
+    if (isHttpProtocolUrl(url)) {
+      void shell.openExternal(url)
+      return
+    }
+
+    console.warn(`[SECURITY] Blocked navigation to "${url}"`)
+  }
+
+  targetWindow.webContents.on('will-navigate', blockNavigation)
+  targetWindow.webContents.on('will-redirect', blockNavigation)
+}
 
 function closeDatabaseSafely(): void {
   if (hasClosedDatabase) return
@@ -559,14 +661,11 @@ function createWindow(): void {
     requestAppQuit()
   })
 
+  blockUntrustedNavigation(mainWindow)
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    try {
-      const url = new URL(details.url)
-      if (url.protocol === 'https:' || url.protocol === 'http:') {
-        shell.openExternal(details.url)
-      }
-    } catch {
-      // 无效 URL，忽略
+    if (isHttpProtocolUrl(details.url)) {
+      void shell.openExternal(details.url)
     }
     return { action: 'deny' }
   })
@@ -629,20 +728,20 @@ app.on('before-quit', (event) => {
 // ========== IPC Handlers ==========
 
 function registerIpcHandlers(): void {
-  ipcMain.on('app:before-quit-done', (event) => {
+  onTrustedIpc('app:before-quit-done', (event) => {
     acknowledgeQuitPreparation(event.sender.id)
   })
 
   // 日记 CRUD
-  ipcMain.handle('diary:list', (_event, params) => {
+  handleTrustedIpc('diary:list', (_event, params: Parameters<typeof getDiaryEntries>[0]) => {
     return getDiaryEntries(params ?? {})
   })
 
-  ipcMain.handle('diary:get', (_event, id: string) => {
+  handleTrustedIpc('diary:get', (_event, id: string) => {
     return getDiaryEntry(id)
   })
 
-  ipcMain.handle('diary:save', async (_event, entry) => {
+  handleTrustedIpc('diary:save', async (_event, entry: Parameters<typeof saveDiaryEntry>[0]) => {
     const previous = entry.id ? getDiaryEntry(entry.id) : null
     const saved = saveDiaryEntry(entry)
     const releasedIds = syncImageRefs(
@@ -654,7 +753,7 @@ function registerIpcHandlers(): void {
     return saved
   })
 
-  ipcMain.handle('diary:delete', async (_event, id: string) => {
+  handleTrustedIpc('diary:delete', async (_event, id: string) => {
     const previous = getDiaryEntry(id)
     const attachments = getAttachments(id)
     const result = deleteDiaryEntry(id)
@@ -667,41 +766,44 @@ function registerIpcHandlers(): void {
     return result
   })
 
-  ipcMain.handle('diary:getByDate', (_event, dateStr: string) => {
+  handleTrustedIpc('diary:getByDate', (_event, dateStr: string) => {
     return getDiaryByDate(dateStr)
   })
 
-  ipcMain.handle('diary:getDates', (_event, yearMonth: string) => {
+  handleTrustedIpc('diary:getDates', (_event, yearMonth: string) => {
     return getDiaryDates(yearMonth)
   })
 
   // 搜索
-  ipcMain.handle('diary:search', (_event, params) => {
+  handleTrustedIpc('diary:search', (_event, params: Parameters<typeof searchDiaries>[0]) => {
     return searchDiaries(params)
   })
 
   // 档案
-  ipcMain.handle('archives:list', (_event, params) => {
+  handleTrustedIpc('archives:list', (_event, params: Parameters<typeof archives.list>[0]) => {
     return archives.list(params)
   })
 
-  ipcMain.handle('archives:get', (_event, id: string) => {
+  handleTrustedIpc('archives:get', (_event, id: string) => {
     return archives.get(id)
   })
 
-  ipcMain.handle('archives:save', async (_event, archive) => {
-    const previous = archive.id ? archives.get(archive.id) : null
-    const saved = await archives.save(archive)
-    const releasedIds = syncImageRefs(
-      collectArchiveImageIds(previous ?? {}),
-      collectArchiveImageIds(saved)
-    )
-    await cleanupReleasedImages(releasedIds)
-    invalidatePersonMentionCache()
-    return saved
-  })
+  handleTrustedIpc(
+    'archives:save',
+    async (_event, archive: Parameters<typeof archives.save>[0]) => {
+      const previous = archive.id ? archives.get(archive.id) : null
+      const saved = await archives.save(archive)
+      const releasedIds = syncImageRefs(
+        collectArchiveImageIds(previous ?? {}),
+        collectArchiveImageIds(saved)
+      )
+      await cleanupReleasedImages(releasedIds)
+      invalidatePersonMentionCache()
+      return saved
+    }
+  )
 
-  ipcMain.handle('archives:delete', async (_event, id: string) => {
+  handleTrustedIpc('archives:delete', async (_event, id: string) => {
     const previous = archives.get(id)
     archives.delete(id)
     const releasedIds = syncImageRefs(collectArchiveImageIds(previous ?? {}), [])
@@ -710,49 +812,49 @@ function registerIpcHandlers(): void {
   })
 
   // 标签
-  ipcMain.handle('tags:list', () => {
+  handleTrustedIpc('tags:list', () => {
     return getAllTags()
   })
 
   // 附件
-  ipcMain.handle('attachment:add', async (_event, diaryId: string) => {
+  handleTrustedIpc('attachment:add', async (_event, diaryId: string) => {
     return await addAttachment(diaryId)
   })
 
-  ipcMain.handle('attachment:delete', async (_event, id: string) => {
+  handleTrustedIpc('attachment:delete', async (_event, id: string) => {
     return await deleteAttachment(id)
   })
 
-  ipcMain.handle('attachment:list', (_event, diaryId: string) => {
+  handleTrustedIpc('attachment:list', (_event, diaryId: string) => {
     return getAttachments(diaryId)
   })
 
   // 设置
-  ipcMain.handle('settings:get', (_event, key: string) => {
+  handleTrustedIpc('settings:get', (_event, key: string) => {
     return getSetting(key)
   })
 
-  ipcMain.handle('settings:set', async (_event, key: string, value: string) => {
+  handleTrustedIpc('settings:set', async (_event, key: string, value: string) => {
     const releasedIds = setSetting(key, value)
     await cleanupReleasedImages(releasedIds)
     return true
   })
 
-  ipcMain.handle('settings:getAll', () => {
+  handleTrustedIpc('settings:getAll', () => {
     return getAllSettings()
   })
 
-  ipcMain.handle('privacy:getAuthSupport', () => {
+  handleTrustedIpc('privacy:getAuthSupport', () => {
     return { windowsPassword: isWindowsPasswordSupported() }
   })
 
-  ipcMain.handle('privacy:verifyWindowsPassword', async (_event, password: string) => {
+  handleTrustedIpc('privacy:verifyWindowsPassword', async (_event, password: string) => {
     if (typeof password !== 'string') return false
     return await verifyWindowsPassword(password)
   })
 
   // 数据导入/导出
-  ipcMain.handle('data:export', async (event, options?: { backupPassword?: string }) => {
+  handleTrustedIpc('data:export', async (event, options?: { backupPassword?: string }) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     return await exportAppData(
       win,
@@ -763,7 +865,7 @@ function registerIpcHandlers(): void {
     )
   })
 
-  ipcMain.handle('data:import', async (event, options?: { backupPassword?: string }) => {
+  handleTrustedIpc('data:import', async (event, options?: { backupPassword?: string }) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const result = await importAppData(
       win,
@@ -778,20 +880,20 @@ function registerIpcHandlers(): void {
     return result
   })
 
-  ipcMain.handle('data:cancel', () => {
+  handleTrustedIpc('data:cancel', () => {
     return cancelDataTransfer()
   })
 
   // 统计
-  ipcMain.handle('stats:get', () => {
+  handleTrustedIpc('stats:get', () => {
     return getStats()
   })
 
-  ipcMain.handle('stats:personMentions', () => {
+  handleTrustedIpc('stats:personMentions', () => {
     return getPersonMentionStats()
   })
 
-  ipcMain.handle(
+  handleTrustedIpc(
     'stats:personMentionDetails',
     (_event, personName: string, params?: { limit?: number; offset?: number }) => {
       return getPersonMentionDetails(personName, params)
@@ -799,7 +901,7 @@ function registerIpcHandlers(): void {
   )
 
   // 保存图片（兼容 data URL）
-  ipcMain.handle('image:save', async (_event, base64Data: string) => {
+  handleTrustedIpc('image:save', async (_event, base64Data: string) => {
     try {
       const result = await saveImage(base64Data)
       return { success: true, ...result }
@@ -810,7 +912,7 @@ function registerIpcHandlers(): void {
   })
 
   // 保存图片（文件路径）
-  ipcMain.handle('image:save-file', async (_event, filePath: string) => {
+  handleTrustedIpc('image:save-file', async (_event, filePath: string) => {
     try {
       const result = await saveImageFromFile(filePath)
       return { success: true, ...result }
@@ -821,7 +923,7 @@ function registerIpcHandlers(): void {
   })
 
   // 保存图片（二进制）
-  ipcMain.handle(
+  handleTrustedIpc(
     'image:save-bytes',
     async (_event, payload: { bytes: Uint8Array; mimeType: string }) => {
       try {
@@ -844,7 +946,7 @@ function registerIpcHandlers(): void {
   )
 
   // 清理未使用的图片
-  ipcMain.handle('image:cleanup', async () => {
+  handleTrustedIpc('image:cleanup', async () => {
     try {
       await cleanupUnusedImages(getAllReferencedImageIds())
       return { success: true }
@@ -855,7 +957,7 @@ function registerIpcHandlers(): void {
   })
 
   // 图片选择（用于编辑器插入图片）
-  ipcMain.handle('select-image', async (event) => {
+  handleTrustedIpc('select-image', async (event) => {
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       const dialogOptions = {
@@ -883,7 +985,7 @@ function registerIpcHandlers(): void {
   })
 
   // 档案头像选择（自动 1:1 裁切，仅保存 webp 缩略图）
-  ipcMain.handle('select-archive-avatar', async (event) => {
+  handleTrustedIpc('select-archive-avatar', async (event) => {
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       const dialogOptions = {
@@ -909,7 +1011,7 @@ function registerIpcHandlers(): void {
   })
 
   // 复制图片到剪贴板（接收 base64 dataUrl）
-  ipcMain.handle('image:copy', async (_event, dataUrl: string) => {
+  handleTrustedIpc('image:copy', async (_event, dataUrl: string) => {
     try {
       const payload = await resolveImagePayload(dataUrl)
       if (!payload) return { success: false }
@@ -923,7 +1025,7 @@ function registerIpcHandlers(): void {
   })
 
   // 另存为图片文件
-  ipcMain.handle('image:save-as', async (event, dataUrl: string) => {
+  handleTrustedIpc('image:save-as', async (event, dataUrl: string) => {
     try {
       const payload = await resolveImagePayload(dataUrl)
       if (!payload) return { success: false }
@@ -947,7 +1049,7 @@ function registerIpcHandlers(): void {
   })
 
   // 头像选择
-  ipcMain.handle('select-avatar', async (event) => {
+  handleTrustedIpc('select-avatar', async (event) => {
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       const dialogOptions = {
@@ -982,12 +1084,12 @@ function registerIpcHandlers(): void {
   })
 
   // 窗口控制
-  ipcMain.handle('window:minimize', (event) => {
+  handleTrustedIpc('window:minimize', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     win?.minimize()
   })
 
-  ipcMain.handle('window:maximize', (event) => {
+  handleTrustedIpc('window:maximize', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (win?.isMaximized()) {
       win.unmaximize()
@@ -996,17 +1098,17 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('window:close', () => {
+  handleTrustedIpc('window:close', () => {
     requestAppQuit()
   })
 
-  ipcMain.handle('window:isMaximized', (event) => {
+  handleTrustedIpc('window:isMaximized', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     return win?.isMaximized() ?? false
   })
 
   // 应用信息
-  ipcMain.handle('app:getInfo', () => {
+  handleTrustedIpc('app:getInfo', () => {
     return {
       name: app.getName(),
       version: app.getVersion(),
@@ -1017,12 +1119,12 @@ function registerIpcHandlers(): void {
   })
 
   // 检查更新
-  ipcMain.handle('app:checkForUpdates', async (_event, options?: UpdateCheckOptions) => {
+  handleTrustedIpc('app:checkForUpdates', async (_event, options?: UpdateCheckOptions) => {
     return await getUpdateCheckResult(options)
   })
 
   // 下载更新
-  ipcMain.handle('app:downloadUpdate', async () => {
+  handleTrustedIpc('app:downloadUpdate', async () => {
     try {
       await autoUpdater.downloadUpdate()
     } catch (error) {
@@ -1044,7 +1146,7 @@ function registerIpcHandlers(): void {
   })
 
   // 安装更新
-  ipcMain.handle('app:installUpdate', () => {
+  handleTrustedIpc('app:installUpdate', () => {
     autoUpdater.quitAndInstall()
   })
 

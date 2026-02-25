@@ -46,6 +46,13 @@ const mentionEntries = ref<PersonMentionDetailItem[]>([])
 const mentionTotal = ref(0)
 const mentionPage = ref(1)
 const mentionPageSize = 20
+const monthGridTransitionName = ref<'month-grid-next' | 'month-grid-prev' | 'month-grid-fade'>(
+  'month-grid-fade'
+)
+const monthGridKey = ref('')
+const statsEntered = ref(false)
+const skipStatsEnterAnimation = ref(false)
+const STATS_ANIMATED_SESSION_KEY = 'dashboard.stats-entered'
 const mentionPageCount = computed(() =>
   Math.max(1, Math.ceil(mentionTotal.value / mentionPageSize))
 )
@@ -172,6 +179,17 @@ onMounted(() => {
   loadRecentEntries()
   loadDiaryDates()
   loadPersonMentions()
+
+  if (sessionStorage.getItem(STATS_ANIMATED_SESSION_KEY) === '1') {
+    skipStatsEnterAnimation.value = true
+    statsEntered.value = true
+    return
+  }
+
+  requestAnimationFrame(() => {
+    statsEntered.value = true
+    sessionStorage.setItem(STATS_ANIMATED_SESSION_KEY, '1')
+  })
 })
 
 interface PieClickParams {
@@ -305,6 +323,20 @@ function openMentionDiary(entry: PersonMentionDetailItem): void {
 
 // ========== 日历相关 ==========
 const currentMonth = ref(new Date())
+monthGridKey.value = `${currentMonth.value.getFullYear()}-${currentMonth.value.getMonth() + 1}`
+
+function setCurrentMonth(targetDate: Date, direction: 'next' | 'prev' | 'fade'): void {
+  monthGridTransitionName.value =
+    direction === 'next'
+      ? 'month-grid-next'
+      : direction === 'prev'
+        ? 'month-grid-prev'
+        : 'month-grid-fade'
+  currentMonth.value = targetDate
+  monthGridKey.value = `${targetDate.getFullYear()}-${targetDate.getMonth() + 1}`
+  void loadDiaryDates()
+}
+
 const selectedMonthTotalDays = computed(() => {
   const year = currentMonth.value.getFullYear()
   const month = currentMonth.value.getMonth()
@@ -392,20 +424,17 @@ const calendarDays = computed((): CalendarDay[] => {
 const prevMonth = (): void => {
   const d = new Date(currentMonth.value)
   d.setMonth(d.getMonth() - 1)
-  currentMonth.value = d
-  loadDiaryDates()
+  setCurrentMonth(d, 'prev')
 }
 
 const nextMonth = (): void => {
   const d = new Date(currentMonth.value)
   d.setMonth(d.getMonth() + 1)
-  currentMonth.value = d
-  loadDiaryDates()
+  setCurrentMonth(d, 'next')
 }
 
 const goToToday = (): void => {
-  currentMonth.value = new Date()
-  loadDiaryDates()
+  setCurrentMonth(new Date(), 'fade')
 }
 
 // ========== 年月快速跳转 ==========
@@ -435,9 +464,10 @@ const isNowYearMonth = (monthIdx: number): boolean => {
 }
 
 const selectMonth = (monthIdx: number): void => {
-  currentMonth.value = new Date(pickerYear.value, monthIdx, 1)
+  const previousMonth = currentMonth.value.getMonth()
+  const direction = monthIdx > previousMonth ? 'next' : monthIdx < previousMonth ? 'prev' : 'fade'
+  setCurrentMonth(new Date(pickerYear.value, monthIdx, 1), direction)
   showYearMonthPicker.value = false
-  loadDiaryDates()
 }
 
 const openYearMonthPicker = (): void => {
@@ -584,22 +614,24 @@ const jumpToLastMonth = (): void => {
       </div>
 
       <!-- 日期格子 -->
-      <div class="days-grid">
-        <div
-          v-for="(day, idx) in calendarDays"
-          :key="idx"
-          class="day-cell"
-          :class="{
-            'other-month': !day.isCurrentMonth,
-            'is-today': day.isToday,
-            'has-diary': day.hasDiary && day.isCurrentMonth
-          }"
-          @click="handleDateClick(day)"
-        >
-          <span class="day-number">{{ day.date }}</span>
-          <span v-if="day.hasDiary && day.isCurrentMonth" class="diary-dot"></span>
+      <transition :name="monthGridTransitionName" mode="out-in">
+        <div :key="monthGridKey" class="days-grid">
+          <div
+            v-for="(day, idx) in calendarDays"
+            :key="idx"
+            class="day-cell"
+            :class="{
+              'other-month': !day.isCurrentMonth,
+              'is-today': day.isToday,
+              'has-diary': day.hasDiary && day.isCurrentMonth
+            }"
+            @click="handleDateClick(day)"
+          >
+            <span class="day-number">{{ day.date }}</span>
+            <span v-if="day.hasDiary && day.isCurrentMonth" class="diary-dot"></span>
+          </div>
         </div>
-      </div>
+      </transition>
 
       <!-- 图例 -->
       <div class="calendar-legend">
@@ -615,9 +647,17 @@ const jumpToLastMonth = (): void => {
     </n-card>
 
     <!-- 统计 -->
-    <n-grid :x-gap="24" :cols="3" class="stats-grid">
+    <n-grid
+      :x-gap="24"
+      :cols="3"
+      class="stats-grid"
+      :class="{
+        'stats-grid--entered': statsEntered,
+        'stats-grid--skip-enter': skipStatsEnterAnimation
+      }"
+    >
       <n-gi>
-        <n-card embedded :bordered="false" class="stat-card">
+        <n-card embedded :bordered="false" class="stat-card" style="--stat-index: 0">
           <n-statistic :label="t('dashboard.stats.totalEntriesLabel')" tabular-nums>
             <n-number-animation :from="0" :to="totalEntries" />
             <template #suffix> {{ t('dashboard.stats.totalEntriesSuffix') }} </template>
@@ -625,7 +665,7 @@ const jumpToLastMonth = (): void => {
         </n-card>
       </n-gi>
       <n-gi>
-        <n-card embedded :bordered="false" class="stat-card">
+        <n-card embedded :bordered="false" class="stat-card" style="--stat-index: 1">
           <n-statistic :label="t('dashboard.stats.streakLabel')" tabular-nums>
             <n-number-animation :from="0" :to="currentStreak" />
             <template #suffix>{{ t('dashboard.stats.streakSuffix') }}</template>
@@ -633,7 +673,7 @@ const jumpToLastMonth = (): void => {
         </n-card>
       </n-gi>
       <n-gi>
-        <n-card embedded :bordered="false" class="stat-card">
+        <n-card embedded :bordered="false" class="stat-card" style="--stat-index: 2">
           <n-statistic :label="t('dashboard.stats.charsLabel')" tabular-nums>
             <n-number-animation :from="0" :to="totalCharacters" />
             <template #suffix>{{ t('dashboard.stats.charsSuffix') }}</template>
@@ -883,13 +923,15 @@ const jumpToLastMonth = (): void => {
   border-radius: 8px;
   cursor: pointer;
   transition:
-    background 0.2s,
-    color 0.2s;
+    background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
   gap: 2px;
 }
 
 .day-cell:hover {
   background: var(--n-color-hover, rgba(0, 0, 0, 0.04));
+  transform: translateY(-1px);
 }
 
 .day-cell.other-month {
@@ -966,6 +1008,19 @@ const jumpToLastMonth = (): void => {
 
 .stat-card {
   border-radius: 12px;
+  opacity: 0;
+  transform: translateY(var(--motion-distance-sm));
+}
+
+.stats-grid--entered .stat-card {
+  animation: stats-card-in var(--motion-normal) var(--ease-enter) both;
+  animation-delay: calc(var(--stat-index, 0) * 60ms);
+}
+
+.stats-grid--skip-enter .stat-card {
+  opacity: 1;
+  transform: none;
+  animation: none;
 }
 
 /* ===== 饼图 ===== */
@@ -1100,5 +1155,52 @@ const jumpToLastMonth = (): void => {
   margin-top: 12px;
   display: flex;
   justify-content: flex-end;
+}
+
+.month-grid-next-enter-active,
+.month-grid-next-leave-active,
+.month-grid-prev-enter-active,
+.month-grid-prev-leave-active,
+.month-grid-fade-enter-active,
+.month-grid-fade-leave-active {
+  transition:
+    opacity var(--motion-normal) var(--ease-enter),
+    transform var(--motion-normal) var(--ease-enter);
+}
+
+.month-grid-next-enter-from {
+  opacity: 0;
+  transform: translateX(var(--motion-distance-md));
+}
+
+.month-grid-next-leave-to {
+  opacity: 0;
+  transform: translateX(calc(var(--motion-distance-md) * -1));
+}
+
+.month-grid-prev-enter-from {
+  opacity: 0;
+  transform: translateX(calc(var(--motion-distance-md) * -1));
+}
+
+.month-grid-prev-leave-to {
+  opacity: 0;
+  transform: translateX(var(--motion-distance-md));
+}
+
+.month-grid-fade-enter-from,
+.month-grid-fade-leave-to {
+  opacity: 0;
+}
+
+@keyframes stats-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-distance-sm));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

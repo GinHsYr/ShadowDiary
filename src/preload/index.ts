@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
 import type { DataTransferProgress, DiaryAPI } from '../types/api'
 
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => {
@@ -130,16 +129,13 @@ const api: DiaryAPI = {
 
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
     console.error(error)
   }
 } else {
   const globalWindow = globalThis as typeof globalThis & {
-    electron: typeof electronAPI
     api: DiaryAPI
   }
-  globalWindow.electron = electronAPI
   globalWindow.api = api
 }

@@ -92,17 +92,19 @@
         </template>
         {{ t('archiveDetail.deleteConfirm') }}
       </n-popconfirm>
-      <div class="save-status">
-        <span v-if="saving" class="status-text">{{ t('archiveDetail.saving') }}</span>
-        <span v-else-if="isDirty" class="status-text">{{ t('archiveDetail.unsaved') }}</span>
-        <span v-else-if="archiveId" class="status-text saved">{{ t('archiveDetail.saved') }}</span>
+      <div
+        class="save-status"
+        :class="[`is-${saveState}`, { 'is-dirty': isDirty, 'is-visible': !!saveStatusText }]"
+      >
+        <span class="status-icon" aria-hidden="true">{{ saveStatusIcon }}</span>
+        <span class="status-text">{{ saveStatusText }}</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   NInput,
   NRadioGroup,
@@ -151,8 +153,49 @@ const form = reactive<FormData>({
 
 const saving = ref(false)
 const isDirty = ref(false)
+type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+const saveState = ref<SaveState>('idle')
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let currentEditingId: string | null = null
+let saveStateTimer: ReturnType<typeof setTimeout> | null = null
+
+const saveStatusText = computed(() => {
+  if (saveState.value === 'saving') return t('archiveDetail.saving')
+  if (saveState.value === 'error') return t('sidebar.saveFailed')
+  if (isDirty.value) return t('archiveDetail.unsaved')
+  if (saveState.value === 'saved' || currentEditingId || props.archiveId) {
+    return t('archiveDetail.saved')
+  }
+  return ''
+})
+
+const saveStatusIcon = computed(() => {
+  if (saveState.value === 'saving') return '●'
+  if (saveState.value === 'saved') return '✓'
+  if (saveState.value === 'error') return '!'
+  if (isDirty.value) return '●'
+  return '✓'
+})
+
+function clearSaveStateTimer(): void {
+  if (saveStateTimer) {
+    clearTimeout(saveStateTimer)
+    saveStateTimer = null
+  }
+}
+
+function setSaveState(nextState: SaveState, resetDelay = 0): void {
+  clearSaveStateTimer()
+  saveState.value = nextState
+  if (resetDelay > 0) {
+    saveStateTimer = setTimeout(() => {
+      if (saveState.value === nextState) {
+        saveState.value = 'idle'
+      }
+      saveStateTimer = null
+    }, resetDelay)
+  }
+}
 
 function resetForm(): void {
   form.name = ''
@@ -162,6 +205,7 @@ function resetForm(): void {
   form.mainImage = ''
   form.images = []
   isDirty.value = false
+  setSaveState('idle')
 }
 
 async function loadArchive(): Promise<void> {
@@ -192,9 +236,12 @@ async function loadArchive(): Promise<void> {
 
 function scheduleSave(): void {
   isDirty.value = true
+  if (saveState.value === 'saved') {
+    saveState.value = 'idle'
+  }
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
-    doSave()
+    void doSave()
   }, 1500)
 }
 
@@ -202,6 +249,7 @@ async function doSave(targetId?: string | null): Promise<void> {
   if (!form.name.trim()) return
   if (saving.value) return
 
+  setSaveState('saving')
   saving.value = true
   try {
     const data: Partial<Archive> = {
@@ -222,8 +270,10 @@ async function doSave(targetId?: string | null): Promise<void> {
     isDirty.value = false
     currentEditingId = saved.id
     emit('saved', saved)
+    setSaveState('saved', 800)
   } catch (error) {
     console.error('保存档案失败:', error)
+    setSaveState('error', 1200)
   } finally {
     saving.value = false
   }
@@ -298,8 +348,12 @@ watch(
 
 onMounted(() => {
   if (props.archiveId) {
-    loadArchive()
+    void loadArchive()
   }
+})
+
+onBeforeUnmount(() => {
+  clearSaveStateTimer()
 })
 
 defineExpose({ flushSave })
@@ -327,7 +381,7 @@ defineExpose({ flushSave })
 
 .image-upload {
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: opacity var(--motion-fast) var(--ease-standard);
 }
 
 .image-upload:hover {
@@ -407,7 +461,7 @@ defineExpose({ flushSave })
   top: 4px;
   right: 4px;
   opacity: 0;
-  transition: opacity 0.2s;
+  transition: opacity var(--motion-fast) var(--ease-standard);
 }
 
 .image-item:hover .remove-btn {
@@ -424,12 +478,16 @@ defineExpose({ flushSave })
   justify-content: center;
   cursor: pointer;
   color: var(--n-text-color-3, #999);
-  transition: all 0.2s;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
 }
 
 .image-add:hover {
-  border-color: #10b981;
-  color: #10b981;
+  border-color: var(--app-accent-color, #10b981);
+  color: var(--app-accent-color, #10b981);
+  transform: translateY(-1px);
 }
 
 .detail-footer {
@@ -442,14 +500,87 @@ defineExpose({ flushSave })
 
 .save-status {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  color: var(--n-text-color-3, #999);
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.save-status.is-visible {
+  opacity: 1;
+}
+
+.save-status.is-saving,
+.save-status.is-saved,
+.save-status.is-dirty {
+  color: var(--app-accent-color, #18a058);
+}
+
+.save-status.is-error {
+  color: var(--n-error-color, #d03050);
+  animation: save-status-shake var(--motion-fast) var(--ease-standard) 2;
+}
+
+.status-icon {
+  width: 12px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  transform-origin: center;
+}
+
+.save-status.is-saving .status-icon {
+  animation: save-status-pulse 0.9s var(--ease-standard) infinite;
+}
+
+.save-status.is-saved .status-icon {
+  animation: save-status-pop var(--motion-normal) var(--ease-enter);
 }
 
 .status-text {
   font-size: 12px;
-  color: var(--n-text-color-3, #999);
 }
 
-.status-text.saved {
-  color: #18a058;
+@keyframes save-status-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.7;
+  }
+}
+
+@keyframes save-status-pop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.4;
+  }
+  60% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes save-status-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
 }
 </style>

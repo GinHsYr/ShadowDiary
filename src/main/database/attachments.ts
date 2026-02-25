@@ -3,8 +3,7 @@ import { getDatabase } from './index'
 import { app, dialog } from 'electron'
 import { join } from 'path'
 import { promises as fs } from 'fs'
-
-const ATTACHMENTS_DIR = 'attachments'
+import { ATTACHMENTS_DIR_NAME, resolveAttachmentPathFromUserData } from '../utils/attachmentPath'
 
 interface AttachmentRow {
   id: string
@@ -39,7 +38,7 @@ function rowToAttachment(row: AttachmentRow): AttachmentInfo {
 }
 
 async function ensureAttachmentsDir(): Promise<string> {
-  const dir = join(app.getPath('userData'), ATTACHMENTS_DIR)
+  const dir = join(app.getPath('userData'), ATTACHMENTS_DIR_NAME)
   await fs.mkdir(dir, { recursive: true })
   return dir
 }
@@ -68,7 +67,7 @@ export async function addAttachment(diaryId: string): Promise<AttachmentInfo | n
 
   await fs.copyFile(sourcePath, destPath)
 
-  const relativePath = `${ATTACHMENTS_DIR}/${storedName}`
+  const relativePath = `${ATTACHMENTS_DIR_NAME}/${storedName}`
   const mimeType = getMimeType(ext)
   const now = Date.now()
 
@@ -111,11 +110,17 @@ export function getAttachments(diaryId: string): AttachmentInfo[] {
 
 export async function deleteAttachmentFiles(filePaths: string[]): Promise<void> {
   if (filePaths.length === 0) return
+  const userDataDir = app.getPath('userData')
 
   await Promise.all(
     filePaths.map(async (filePath) => {
+      const fullPath = resolveAttachmentPathFromUserData(userDataDir, filePath)
+      if (!fullPath) {
+        console.warn(`忽略非法附件路径: ${filePath}`)
+        return
+      }
+
       try {
-        const fullPath = join(app.getPath('userData'), filePath)
         await fs.unlink(fullPath)
       } catch {
         // File may already be deleted, continue

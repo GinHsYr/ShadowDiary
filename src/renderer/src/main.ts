@@ -7,6 +7,7 @@ import { usePrivacyStore } from './stores/privacy'
 import { useLocaleStore } from './stores/locale'
 import router from './router'
 import { i18n } from './i18n'
+import './assets/motion.css'
 
 // Prevent browser default file-drop navigation; editor components handle file drop explicitly.
 const preventFileDropDefault = (event: DragEvent): void => {

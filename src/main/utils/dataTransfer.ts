@@ -5,6 +5,7 @@ import {
   type OpenDialogOptions,
   type SaveDialogOptions
 } from 'electron'
+import Database from 'better-sqlite3-multiple-ciphers'
 import { join } from 'path'
 import { execFile, type ExecFileOptions } from 'child_process'
 import { promises as fs } from 'fs'
@@ -27,6 +28,7 @@ import {
   unwrapBackupKeyEnvelope,
   type BackupKeyEnvelope
 } from '../security/dbKey'
+import { isAttachmentRelativePathSafe } from './attachmentPath'
 import { ensureImageDirs } from './imageStorage'
 
 const BACKUP_FILE_PREFIX = 'shadow-diary-backup'
@@ -96,6 +98,11 @@ interface BackupMetadata {
 interface ImportBackupMetadata {
   imageArchiveFileName: string
   imageArchiveIncluded: boolean
+}
+
+interface AttachmentPathRow {
+  id: string
+  file_path: string
 }
 
 interface TransferController {
@@ -209,6 +216,41 @@ async function pathExists(path: string): Promise<boolean> {
     return true
   } catch {
     return false
+  }
+}
+
+function applySqlCipherKeyForImport(db: Database.Database, dbKeyHex: string): void {
+  db.pragma(`key = "x'${dbKeyHex}'"`)
+  db.pragma('cipher_page_size = 4096')
+  db.pragma('kdf_iter = 256000')
+  db.pragma('cipher_hmac_algorithm = HMAC_SHA512')
+  db.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA512')
+}
+
+function assertBackupAttachmentPathsSafe(backupDatabasePath: string, dbKeyHex: string): void {
+  const backupDb = new Database(backupDatabasePath, { readonly: true, fileMustExist: true })
+  try {
+    applySqlCipherKeyForImport(backupDb, dbKeyHex)
+    backupDb.prepare('SELECT COUNT(*) as count FROM sqlite_master').get()
+
+    const rows = backupDb
+      .prepare('SELECT id, file_path FROM attachments')
+      .iterate() as Iterable<AttachmentPathRow>
+    for (const row of rows) {
+      if (!isAttachmentRelativePathSafe(row.file_path)) {
+        throw new DataTransferError(
+          'INVALID_BACKUP',
+          `备份包含非法附件路径（附件 ID: ${row.id}），导入已中止`
+        )
+      }
+    }
+  } catch (error) {
+    if (error instanceof DataTransferError) {
+      throw error
+    }
+    throw new DataTransferError('INVALID_BACKUP', `备份附件路径校验失败：${String(error)}`)
+  } finally {
+    backupDb.close()
   }
 }
 
@@ -822,6 +864,7 @@ export async function importAppData(
       importMetadata = await resolveImportMetadata(backupRoot, extractedDir)
       importDbKeyHex = await resolveImportDbKey(backupRoot, extractedDir, options.backupPassword)
       verifyDatabaseFileWithKey(backupDatabasePath, importDbKeyHex)
+      assertBackupAttachmentPathsSafe(backupDatabasePath, importDbKeyHex)
     } catch (error) {
       await removePathIfExists(tempImportRoot)
       if (isTransferCanceledError(error)) {

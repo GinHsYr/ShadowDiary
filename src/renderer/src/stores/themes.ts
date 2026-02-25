@@ -16,6 +16,11 @@ export enum ThemeAccent {
   Teal = 'teal'
 }
 
+export enum MotionLevel {
+  Full = 'full',
+  Reduced = 'reduced'
+}
+
 interface ThemeAccentPalette {
   primaryColor: string
   primaryColorHover: string
@@ -36,6 +41,7 @@ type AccentStyleVars = Record<
 
 const SETTINGS_THEME_KEY = 'settings.theme'
 const SETTINGS_THEME_ACCENT_KEY = 'settings.themeAccent'
+const SETTINGS_THEME_MOTION_KEY = 'settings.themeMotion'
 const DEFAULT_THEME_ACCENT = ThemeAccent.Green
 const DEFAULT_DARK_ACCENT_COLOR = '#18a058'
 
@@ -85,6 +91,10 @@ function normalizeThemeAccent(value: string | null): ThemeAccent {
   return DEFAULT_THEME_ACCENT
 }
 
+function normalizeMotionLevel(value: string | null): MotionLevel {
+  return value === MotionLevel.Reduced ? MotionLevel.Reduced : MotionLevel.Full
+}
+
 function hexToRgb(hex: string): [number, number, number] | null {
   const normalized = hex.trim().replace(/^#/, '')
 
@@ -124,7 +134,8 @@ function createAccentStyleVars(primaryColor: string): AccentStyleVars {
 export const useThemeStore = defineStore('theme', {
   state: () => ({
     mode: ThemeMode.Light,
-    accent: DEFAULT_THEME_ACCENT as ThemeAccent
+    accent: DEFAULT_THEME_ACCENT as ThemeAccent,
+    motionLevel: MotionLevel.Full as MotionLevel
   }),
 
   getters: {
@@ -157,6 +168,9 @@ export const useThemeStore = defineStore('theme', {
             .primaryColor
 
       return createAccentStyleVars(primaryColor)
+    },
+    isMotionReduced(): boolean {
+      return this.motionLevel === MotionLevel.Reduced
     }
   },
 
@@ -176,13 +190,20 @@ export const useThemeStore = defineStore('theme', {
         console.error('保存主题色设置失败:', error)
       })
     },
+    setMotionLevel(level: MotionLevel) {
+      this.motionLevel = level
+      window.api.setSetting(SETTINGS_THEME_MOTION_KEY, level).catch((error) => {
+        console.error('保存动效偏好设置失败:', error)
+      })
+    },
 
     // 从数据库加载主题设置
     async initFromStorage() {
       try {
-        const [theme, accent] = await Promise.all([
+        const [theme, accent, motionLevel] = await Promise.all([
           window.api.getSetting(SETTINGS_THEME_KEY),
-          window.api.getSetting(SETTINGS_THEME_ACCENT_KEY)
+          window.api.getSetting(SETTINGS_THEME_ACCENT_KEY),
+          window.api.getSetting(SETTINGS_THEME_MOTION_KEY)
         ])
 
         if (theme === 'dark') {
@@ -192,6 +213,7 @@ export const useThemeStore = defineStore('theme', {
         }
 
         this.accent = normalizeThemeAccent(accent)
+        this.motionLevel = normalizeMotionLevel(motionLevel)
       } catch (error) {
         console.error('加载主题设置失败:', error)
       }

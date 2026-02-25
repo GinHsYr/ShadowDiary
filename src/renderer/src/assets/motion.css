@@ -1,0 +1,31 @@
+:root {
+  --motion-fast: 0.16s;
+  --motion-normal: 0.24s;
+  --motion-slow: 0.36s;
+  --motion-stagger: 22ms;
+  --motion-distance-sm: 6px;
+  --motion-distance-md: 10px;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+
+:root.reduced-motion {
+  --motion-fast: 0.08s;
+  --motion-normal: 0.1s;
+  --motion-slow: 0.12s;
+  --motion-stagger: 0ms;
+  --motion-distance-sm: 0px;
+  --motion-distance-md: 0px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0.08s;
+    --motion-normal: 0.1s;
+    --motion-slow: 0.12s;
+    --motion-stagger: 0ms;
+    --motion-distance-sm: 0px;
+    --motion-distance-md: 0px;
+  }
+}

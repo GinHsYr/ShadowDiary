@@ -11,7 +11,11 @@
     </div>
 
     <!-- 可拖拽分割线 -->
-    <div class="resize-handle" @mousedown="startResize" />
+    <div
+      class="resize-handle"
+      :class="{ 'is-resizing': isResizing, 'just-released': isResizeJustReleased }"
+      @mousedown="startResize"
+    />
 
     <!-- 右侧详情区 -->
     <div class="right-panel">
@@ -72,11 +76,22 @@ onMounted(() => {
 const leftWidth = ref(280)
 const MIN_LEFT = 200
 const MAX_LEFT = 480
+const isResizing = ref(false)
+const isResizeJustReleased = ref(false)
+let resizeReleaseTimer: ReturnType<typeof setTimeout> | null = null
 
 let resizeMoveHandler: ((ev: MouseEvent) => void) | null = null
 let resizeUpHandler: (() => void) | null = null
 
+function clearResizeReleaseTimer(): void {
+  if (resizeReleaseTimer) {
+    clearTimeout(resizeReleaseTimer)
+    resizeReleaseTimer = null
+  }
+}
+
 function cleanupResizeListeners(): void {
+  const wasResizing = isResizing.value
   if (resizeMoveHandler) {
     document.removeEventListener('mousemove', resizeMoveHandler)
     resizeMoveHandler = null
@@ -87,6 +102,16 @@ function cleanupResizeListeners(): void {
   }
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
+  isResizing.value = false
+
+  if (wasResizing) {
+    clearResizeReleaseTimer()
+    isResizeJustReleased.value = true
+    resizeReleaseTimer = setTimeout(() => {
+      isResizeJustReleased.value = false
+      resizeReleaseTimer = null
+    }, 140)
+  }
 }
 
 function startResize(e: MouseEvent): void {
@@ -105,6 +130,8 @@ function startResize(e: MouseEvent): void {
     cleanupResizeListeners()
   }
 
+  isResizing.value = true
+  isResizeJustReleased.value = false
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
   document.addEventListener('mousemove', resizeMoveHandler)
@@ -150,7 +177,9 @@ onBeforeUnmount(() => {
   void flushSave().catch((error) => {
     console.error('页面卸载时保存档案失败:', error)
   })
+  clearResizeReleaseTimer()
   cleanupResizeListeners()
+  clearResizeReleaseTimer()
 })
 
 defineExpose({ flushSave })
@@ -176,7 +205,7 @@ defineExpose({ flushSave })
   background: transparent;
   position: relative;
   flex-shrink: 0;
-  transition: background 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard);
 }
 
 .resize-handle::after {
@@ -187,14 +216,31 @@ defineExpose({ flushSave })
   left: 1px;
   width: 2px;
   background: var(--n-border-color, rgba(0, 0, 0, 0.09));
-  transition: background 0.15s;
+  transition:
+    left var(--motion-fast) var(--ease-standard),
+    width var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .resize-handle:hover::after,
 .resize-handle:active::after {
-  background: #10b981;
+  background: var(--app-accent-color, #10b981);
   width: 3px;
   left: 0;
+}
+
+.resize-handle.is-resizing::after {
+  background: var(--app-accent-color, #10b981);
+  width: 3px;
+  left: 0;
+  box-shadow:
+    0 0 0 1px var(--app-accent-20, rgba(24, 160, 88, 0.2)),
+    0 0 12px var(--app-accent-40, rgba(24, 160, 88, 0.4));
+}
+
+.resize-handle.just-released::after {
+  animation: resize-handle-release var(--motion-normal) var(--ease-exit);
 }
 
 .right-panel {
@@ -211,6 +257,15 @@ defineExpose({ flushSave })
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+@keyframes resize-handle-release {
+  0% {
+    transform: scaleX(1.16);
+  }
+  100% {
+    transform: scaleX(1);
+  }
 }
 
 @media (max-width: 768px) {

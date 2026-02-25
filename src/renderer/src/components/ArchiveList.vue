@@ -31,33 +31,35 @@
 
     <!-- 档案列表 -->
     <div class="list-body">
-      <div
-        v-for="archive in archives"
-        :key="archive.id"
-        class="archive-item"
-        :class="{ active: archive.id === selectedId }"
-        @click="$emit('select', archive)"
-      >
-        <n-avatar
-          :src="archive.mainImage || undefined"
-          :size="40"
-          round
-          :style="{ background: archive.mainImage ? 'transparent' : '#10b98120' }"
+      <transition-group name="archive-item-motion" tag="div" class="archive-item-group">
+        <div
+          v-for="archive in archives"
+          :key="archive.id"
+          class="archive-item"
+          :class="{ active: archive.id === selectedId }"
+          @click="$emit('select', archive)"
         >
-          <template v-if="!archive.mainImage">
-            {{ archive.name.charAt(0) }}
-          </template>
-        </n-avatar>
-        <div class="item-info">
-          <div class="item-name">{{ archive.name }}</div>
-          <div v-if="archive.aliases?.length" class="item-alias">
-            {{ archive.aliases.join('、') }}
+          <n-avatar
+            :src="archive.mainImage || undefined"
+            :size="40"
+            round
+            :style="{ background: archive.mainImage ? 'transparent' : '#10b98120' }"
+          >
+            <template v-if="!archive.mainImage">
+              {{ archive.name.charAt(0) }}
+            </template>
+          </n-avatar>
+          <div class="item-info">
+            <div class="item-name">{{ archive.name }}</div>
+            <div v-if="archive.aliases?.length" class="item-alias">
+              {{ archive.aliases.join('、') }}
+            </div>
           </div>
+          <n-tag :type="typeTagMap[archive.type]" size="tiny" round>
+            {{ typeLabels[archive.type] }}
+          </n-tag>
         </div>
-        <n-tag :type="typeTagMap[archive.type]" size="tiny" round>
-          {{ typeLabels[archive.type] }}
-        </n-tag>
-      </div>
+      </transition-group>
 
       <div v-if="archives.length === 0 && !loading" class="list-empty">
         <n-empty size="small" :description="t('archiveList.empty')" />
@@ -78,7 +80,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { NAvatar, NButton, NEmpty, NIcon, NInput, NSpin, NTag } from 'naive-ui'
 import { SearchOutline } from '@vicons/ionicons5'
 import { useI18n } from 'vue-i18n'
@@ -120,32 +122,50 @@ const searchKeyword = ref('')
 const selectedType = ref<ArchiveType | 'all'>('all')
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+let pendingReload = false
 
 function handleSearch(): void {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
-    loadArchives()
+    void loadArchives()
   }, 300)
 }
 
 function handleTypeFilter(type: ArchiveType | 'all'): void {
   selectedType.value = type
-  loadArchives()
+  void loadArchives()
 }
 
 async function loadArchives(): Promise<void> {
-  if (loading.value) return
+  if (loading.value) {
+    pendingReload = true
+    return
+  }
 
   loading.value = true
+  const requestSearch = searchKeyword.value || undefined
+  const requestType = selectedType.value === 'all' ? undefined : selectedType.value
+
   try {
-    archives.value = await window.api.getArchives({
-      search: searchKeyword.value || undefined,
-      type: selectedType.value === 'all' ? undefined : selectedType.value
+    const result = await window.api.getArchives({
+      search: requestSearch,
+      type: requestType
     })
+    const latestSearch = searchKeyword.value || undefined
+    const latestType = selectedType.value === 'all' ? undefined : selectedType.value
+    if (requestSearch !== latestSearch || requestType !== latestType) {
+      pendingReload = true
+      return
+    }
+    archives.value = result
   } catch (error) {
     console.error('加载档案列表失败:', error)
   } finally {
     loading.value = false
+    if (pendingReload) {
+      pendingReload = false
+      void loadArchives()
+    }
   }
 }
 
@@ -154,7 +174,14 @@ async function refresh(): Promise<void> {
 }
 
 onMounted(() => {
-  loadArchives()
+  void loadArchives()
+})
+
+onBeforeUnmount(() => {
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
 })
 
 defineExpose({ refresh })
@@ -187,13 +214,16 @@ defineExpose({ refresh })
 }
 
 .archive-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px;
   border-radius: 10px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
   margin-bottom: 4px;
 }
 
@@ -201,9 +231,29 @@ defineExpose({ refresh })
   background: var(--app-accent-06, rgba(24, 160, 88, 0.06));
 }
 
+.archive-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--app-accent-color, #18a058);
+  opacity: 0;
+  transform: scaleY(0.5);
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+}
+
 .archive-item.active {
   background: var(--app-accent-12, rgba(24, 160, 88, 0.12));
-  box-shadow: inset 3px 0 0 var(--app-accent-color, #18a058);
+}
+
+.archive-item.active::before {
+  opacity: 1;
+  transform: scaleY(1);
 }
 
 .item-info {
@@ -242,5 +292,26 @@ defineExpose({ refresh })
 .list-footer {
   padding: 12px;
   border-top: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
+}
+
+.archive-item-motion-enter-active,
+.archive-item-motion-leave-active {
+  transition:
+    transform var(--motion-normal) var(--ease-enter),
+    opacity var(--motion-normal) var(--ease-standard);
+}
+
+.archive-item-motion-enter-from {
+  opacity: 0;
+  transform: translateY(var(--motion-distance-sm));
+}
+
+.archive-item-motion-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.archive-item-motion-move {
+  transition: transform var(--motion-normal) var(--ease-standard);
 }
 </style>

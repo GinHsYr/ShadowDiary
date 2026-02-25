@@ -12,7 +12,11 @@
     </div>
 
     <!-- 可拖拽分割线 -->
-    <div class="resize-handle" @mousedown="startResize" />
+    <div
+      class="resize-handle"
+      :class="{ 'is-resizing': isResizing, 'just-released': isResizeJustReleased }"
+      @mousedown="startResize"
+    />
 
     <!-- 右侧编辑区 -->
     <div class="right-panel">
@@ -25,7 +29,16 @@
             :placeholder="t('today.titlePlaceholder')"
             @input="scheduleSave"
           />
-          <span class="date-label">{{ currentDate }}</span>
+          <div class="title-meta">
+            <div
+              class="save-status"
+              :class="[`is-${saveState}`, { 'is-dirty': isDirty, 'is-visible': !!saveStatusText }]"
+            >
+              <span class="save-status-icon" aria-hidden="true">{{ saveStatusIcon }}</span>
+              <span class="save-status-text">{{ saveStatusText }}</span>
+            </div>
+            <span class="date-label">{{ currentDate }}</span>
+          </div>
         </div>
 
         <!-- 心情选择 -->
@@ -87,17 +100,69 @@ const diaryTitle = ref('')
 const diaryContent = ref('')
 const existingEntryId = ref<string | null>(null)
 const selectedDate = ref<Date>(new Date())
+type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+const saveState = ref<SaveState>('idle')
+const isDirty = ref(false)
+const isReady = ref(false)
 
 // ========== 可拖拽分割线 ==========
 const leftWidth = ref(280)
 const MIN_LEFT = 200
 const MAX_LEFT = 480
+const isResizing = ref(false)
+const isResizeJustReleased = ref(false)
 
 // 用于清理的事件处理函数引用
 let resizeMoveHandler: ((ev: MouseEvent) => void) | null = null
 let resizeUpHandler: (() => void) | null = null
+let resizeReleaseTimer: ReturnType<typeof setTimeout> | null = null
+let saveStateTimer: ReturnType<typeof setTimeout> | null = null
+
+const saveStatusText = computed(() => {
+  if (saveState.value === 'saving') return t('archiveDetail.saving')
+  if (saveState.value === 'error') return t('sidebar.saveFailed')
+  if (isDirty.value) return t('archiveDetail.unsaved')
+  if (saveState.value === 'saved' || existingEntryId.value) return t('archiveDetail.saved')
+  return ''
+})
+
+const saveStatusIcon = computed(() => {
+  if (saveState.value === 'saving') return '●'
+  if (saveState.value === 'saved') return '✓'
+  if (saveState.value === 'error') return '!'
+  if (isDirty.value) return '●'
+  return '✓'
+})
+
+function clearResizeReleaseTimer(): void {
+  if (resizeReleaseTimer) {
+    clearTimeout(resizeReleaseTimer)
+    resizeReleaseTimer = null
+  }
+}
+
+function clearSaveStateTimer(): void {
+  if (saveStateTimer) {
+    clearTimeout(saveStateTimer)
+    saveStateTimer = null
+  }
+}
+
+function setSaveState(nextState: SaveState, resetDelay = 0): void {
+  clearSaveStateTimer()
+  saveState.value = nextState
+  if (resetDelay > 0) {
+    saveStateTimer = setTimeout(() => {
+      if (saveState.value === nextState) {
+        saveState.value = 'idle'
+      }
+      saveStateTimer = null
+    }, resetDelay)
+  }
+}
 
 function cleanupResizeListeners(): void {
+  const wasResizing = isResizing.value
   if (resizeMoveHandler) {
     document.removeEventListener('mousemove', resizeMoveHandler)
     resizeMoveHandler = null
@@ -108,6 +173,16 @@ function cleanupResizeListeners(): void {
   }
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
+  isResizing.value = false
+
+  if (wasResizing) {
+    clearResizeReleaseTimer()
+    isResizeJustReleased.value = true
+    resizeReleaseTimer = setTimeout(() => {
+      isResizeJustReleased.value = false
+      resizeReleaseTimer = null
+    }, 140)
+  }
 }
 
 function startResize(e: MouseEvent): void {
@@ -127,6 +202,8 @@ function startResize(e: MouseEvent): void {
     cleanupResizeListeners()
   }
 
+  isResizing.value = true
+  isResizeJustReleased.value = false
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
   document.addEventListener('mousemove', resizeMoveHandler)
@@ -136,8 +213,6 @@ function startResize(e: MouseEvent): void {
 // ========== 自动保存 ==========
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 const AUTO_SAVE_DELAY = 1500
-const isDirty = ref(false)
-const isReady = ref(false)
 
 function syncListEntry(): void {
   if (existingEntryId.value) {
@@ -159,10 +234,13 @@ function toPlainPreviewText(content: string): string {
 function scheduleSave(): void {
   if (!isReady.value) return
   isDirty.value = true
+  if (saveState.value === 'saved') {
+    saveState.value = 'idle'
+  }
   syncListEntry()
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
-    doSave()
+    void doSave()
   }, AUTO_SAVE_DELAY)
 }
 
@@ -175,6 +253,7 @@ async function doSave(): Promise<void> {
   if (!isDirty.value) return
   if (!diaryTitle.value.trim() && (!diaryContent.value || diaryContent.value === '<p></p>')) return
 
+  setSaveState('saving')
   try {
     const wasNewEntry = !existingEntryId.value
     const d = new Date(selectedDate.value)
@@ -203,8 +282,10 @@ async function doSave(): Promise<void> {
         console.error('刷新日记列表失败:', error)
       })
     }
+    setSaveState('saved', 800)
   } catch (error) {
     console.error('自动保存失败:', error)
+    setSaveState('error', 1200)
   }
 }
 
@@ -235,6 +316,7 @@ function resetEditorState(date: Date = new Date()): void {
   selectedMood.value = 'calm'
   selectedDate.value = date
   isDirty.value = false
+  setSaveState('idle')
 }
 
 async function handleSelectEntry(entry: DiaryEntry): Promise<void> {
@@ -256,6 +338,7 @@ async function handleSelectEntry(entry: DiaryEntry): Promise<void> {
   selectedMood.value = targetEntry.mood
   selectedDate.value = new Date(targetEntry.createdAt)
   isDirty.value = false
+  setSaveState('idle')
 }
 
 async function handleCreate(dateStr?: string): Promise<void> {
@@ -338,6 +421,7 @@ async function loadOrCreateForDate(dateStr: string): Promise<void> {
       selectedMood.value = entry.mood
       selectedDate.value = new Date(entry.createdAt)
       isDirty.value = false
+      setSaveState('idle')
     } else {
       resetEditorState(targetDate)
     }
@@ -376,8 +460,11 @@ watch(
 
 onBeforeUnmount(() => {
   if (saveTimer) clearTimeout(saveTimer)
+  clearSaveStateTimer()
+  clearResizeReleaseTimer()
   // 清理可能残留的 resize 事件监听器
   cleanupResizeListeners()
+  clearResizeReleaseTimer()
   // 离开页面时异步保存
   void flushSave().catch((error) => {
     console.error('离开页面保存失败:', error)
@@ -407,7 +494,7 @@ defineExpose({ flushSave })
   background: transparent;
   position: relative;
   flex-shrink: 0;
-  transition: background 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard);
 }
 
 .resize-handle::after {
@@ -418,14 +505,31 @@ defineExpose({ flushSave })
   left: 1px;
   width: 2px;
   background: var(--n-border-color, rgba(0, 0, 0, 0.09));
-  transition: background 0.15s;
+  transition:
+    left var(--motion-fast) var(--ease-standard),
+    width var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .resize-handle:hover::after,
 .resize-handle:active::after {
-  background: #10b981;
+  background: var(--app-accent-color, #10b981);
   width: 3px;
   left: 0;
+}
+
+.resize-handle.is-resizing::after {
+  background: var(--app-accent-color, #10b981);
+  width: 3px;
+  left: 0;
+  box-shadow:
+    0 0 0 1px var(--app-accent-20, rgba(24, 160, 88, 0.2)),
+    0 0 12px var(--app-accent-40, rgba(24, 160, 88, 0.4));
+}
+
+.resize-handle.just-released::after {
+  animation: resize-handle-release var(--motion-normal) var(--ease-exit);
 }
 
 .right-panel {
@@ -449,6 +553,12 @@ defineExpose({ flushSave })
   align-items: center;
   gap: 16px;
   padding: 28px 48px 0;
+}
+
+.title-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .title-input {
@@ -478,6 +588,58 @@ html.dark .title-input::placeholder {
   font-weight: 500;
 }
 
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--n-text-color-3, #999);
+  opacity: 0;
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.save-status.is-visible {
+  opacity: 1;
+}
+
+.save-status.is-saving,
+.save-status.is-saved,
+.save-status.is-dirty {
+  color: var(--app-accent-color, #18a058);
+}
+
+.save-status.is-error {
+  color: var(--n-error-color, #d03050);
+}
+
+.save-status-icon {
+  width: 12px;
+  text-align: center;
+  font-weight: 700;
+  transform-origin: center;
+}
+
+.save-status.is-saving .save-status-icon {
+  animation: save-status-pulse 0.9s var(--ease-standard) infinite;
+}
+
+.save-status.is-saved .save-status-icon {
+  animation: save-status-pop var(--motion-normal) var(--ease-enter);
+}
+
+.save-status.is-error {
+  animation: save-status-shake var(--motion-fast) var(--ease-standard) 2;
+}
+
+.save-status-text {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mood-row {
   display: flex;
   gap: 6px;
@@ -493,11 +655,16 @@ html.dark .title-input::placeholder {
   cursor: pointer;
   font-size: 13px;
   color: var(--n-text-color-2, #666);
-  transition: all 0.15s ease;
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
 .mood-btn:hover {
   background: var(--app-accent-08, rgba(24, 160, 88, 0.08));
+  transform: translateY(-1px);
 }
 
 .mood-btn.active {
@@ -528,6 +695,54 @@ html.dark .title-input::placeholder {
   min-height: 0;
 }
 
+@keyframes save-status-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.7;
+  }
+}
+
+@keyframes save-status-pop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.4;
+  }
+  60% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes save-status-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes resize-handle-release {
+  0% {
+    transform: scaleX(1.16);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
 @media (max-width: 768px) {
   .today-page {
     flex-direction: column;
@@ -548,6 +763,16 @@ html.dark .title-input::placeholder {
   .mood-row {
     padding-left: 20px;
     padding-right: 20px;
+  }
+
+  .title-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .title-meta {
+    width: 100%;
+    justify-content: space-between;
   }
 }
 </style>

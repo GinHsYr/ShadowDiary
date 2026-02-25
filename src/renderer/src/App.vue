@@ -11,6 +11,7 @@ import {
 } from 'naive-ui'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import TitleBar from './components/TitleBar.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import AppHeader from './components/AppHeader.vue'
@@ -20,6 +21,7 @@ import { isValidPrivacyPassword, usePrivacyStore } from './stores/privacy'
 const { t } = useI18n()
 const theme = useThemeStore()
 const privacy = usePrivacyStore()
+const route = useRoute()
 const OTP_LENGTH = 6
 const USER_ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'] as const
 const password = ref<string[]>([])
@@ -35,19 +37,47 @@ let lastActivityAt = Date.now()
 let removeSystemLockListener: (() => void) | null = null
 let removeBeforeQuitListener: (() => void) | null = null
 let isHandlingBeforeQuit = false
+let removeReducedMotionListener: (() => void) | null = null
 
 type FlushableRouteView = {
   flushSave?: () => Promise<void>
 }
 
 const activeRouteViewRef = ref<FlushableRouteView | null>(null)
+const routeTransitionName = ref('page-fade')
+const previousNavOrder = ref<number | null>(null)
+const systemPrefersReducedMotion = ref(false)
 
 const showLockOverlay = computed(() => privacy.isInitialized && privacy.isLocked)
+const shouldReduceMotion = computed(() => systemPrefersReducedMotion.value || theme.isMotionReduced)
+
+function getNavOrder(value: unknown): number | null {
+  return typeof value === 'number' ? value : null
+}
 
 function applyAccentStyleVars(vars: Record<string, string>): void {
   for (const [key, value] of Object.entries(vars)) {
     document.documentElement.style.setProperty(key, value)
   }
+}
+
+function setupReducedMotionListener(): void {
+  const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+  const updateReducedMotionPreference = (): void => {
+    systemPrefersReducedMotion.value = mediaQuery.matches
+  }
+
+  updateReducedMotionPreference()
+
+  if (typeof mediaQuery.addEventListener === 'function') {
+    mediaQuery.addEventListener('change', updateReducedMotionPreference)
+    removeReducedMotionListener = () =>
+      mediaQuery.removeEventListener('change', updateReducedMotionPreference)
+    return
+  }
+
+  mediaQuery.addListener(updateReducedMotionPreference)
+  removeReducedMotionListener = () => mediaQuery.removeListener(updateReducedMotionPreference)
 }
 
 function allowDigitInput(char: string): boolean {
@@ -212,6 +242,14 @@ watch(
 )
 
 watch(
+  () => shouldReduceMotion.value,
+  (reduced) => {
+    document.documentElement.classList.toggle('reduced-motion', reduced)
+  },
+  { immediate: true }
+)
+
+watch(
   () =>
     [
       privacy.isInitialized,
@@ -236,7 +274,27 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => route.fullPath,
+  () => {
+    const currentNavOrder = getNavOrder(route.meta.navOrder)
+    const lastNavOrder = previousNavOrder.value
+
+    if (lastNavOrder === null || currentNavOrder === null || currentNavOrder === lastNavOrder) {
+      routeTransitionName.value = 'page-fade'
+    } else {
+      routeTransitionName.value =
+        currentNavOrder > lastNavOrder ? 'page-slide-forward' : 'page-slide-back'
+    }
+
+    previousNavOrder.value = currentNavOrder
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
+  setupReducedMotionListener()
+
   for (const eventName of USER_ACTIVITY_EVENTS) {
     window.addEventListener(eventName, handleUserActivity)
   }
@@ -256,6 +314,11 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (removeReducedMotionListener) {
+    removeReducedMotionListener()
+    removeReducedMotionListener = null
+  }
+
   for (const eventName of USER_ACTIVITY_EVENTS) {
     window.removeEventListener(eventName, handleUserActivity)
   }
@@ -285,58 +348,64 @@ onBeforeUnmount(() => {
           <n-layout>
             <AppHeader />
             <n-layout-content class="main-content">
-              <router-view v-if="privacy.isUnlocked" v-slot="{ Component }">
-                <component :is="Component" ref="activeRouteViewRef" />
+              <router-view v-if="privacy.isUnlocked" v-slot="{ Component, route: currentRoute }">
+                <transition :name="routeTransitionName" mode="out-in">
+                  <div :key="currentRoute.fullPath" class="route-page">
+                    <component :is="Component" ref="activeRouteViewRef" />
+                  </div>
+                </transition>
               </router-view>
             </n-layout-content>
           </n-layout>
         </n-layout>
 
-        <div v-if="showLockOverlay" class="privacy-lock-overlay">
-          <n-card class="privacy-lock-card" :bordered="false">
-            <h2 class="privacy-lock-title">{{ t('app.privacy.title') }}</h2>
-            <p class="privacy-lock-description">
-              {{
-                privacy.usesWindowsPassword
-                  ? t('app.privacy.unlockWithWindowsPassword')
-                  : t('app.privacy.unlockWithPin')
-              }}
-            </p>
+        <transition name="privacy-lock-fade">
+          <div v-if="showLockOverlay" class="privacy-lock-overlay">
+            <n-card class="privacy-lock-card" :bordered="false">
+              <h2 class="privacy-lock-title">{{ t('app.privacy.title') }}</h2>
+              <p class="privacy-lock-description">
+                {{
+                  privacy.usesWindowsPassword
+                    ? t('app.privacy.unlockWithWindowsPassword')
+                    : t('app.privacy.unlockWithPin')
+                }}
+              </p>
 
-            <div
-              class="privacy-lock-form"
-              :class="{ 'privacy-lock-form--windows': privacy.usesWindowsPassword }"
-            >
-              <n-input-otp
-                v-if="!privacy.usesWindowsPassword"
-                :value="password"
-                :length="OTP_LENGTH"
-                mask
-                :allow-input="allowDigitInput"
-                size="large"
-                :status="unlockStatus"
-                @update:value="handlePasswordInput"
-                @finish="handlePasswordFinish"
-              />
-              <template v-else>
-                <n-input
-                  :value="windowsPassword"
-                  type="password"
-                  show-password-on="mousedown"
-                  clearable
-                  :disabled="unlocking"
+              <div
+                class="privacy-lock-form"
+                :class="{ 'privacy-lock-form--windows': privacy.usesWindowsPassword }"
+              >
+                <n-input-otp
+                  v-if="!privacy.usesWindowsPassword"
+                  :value="password"
+                  :length="OTP_LENGTH"
+                  mask
+                  :allow-input="allowDigitInput"
+                  size="large"
                   :status="unlockStatus"
-                  :placeholder="t('app.privacy.windowsPasswordPlaceholder')"
-                  @update:value="handleWindowsPasswordInput"
-                  @keyup.enter="handleUnlock"
+                  @update:value="handlePasswordInput"
+                  @finish="handlePasswordFinish"
                 />
-                <n-button type="primary" :loading="unlocking" @click="handleUnlock">{{
-                  t('app.privacy.unlock')
-                }}</n-button>
-              </template>
-            </div>
-          </n-card>
-        </div>
+                <template v-else>
+                  <n-input
+                    :value="windowsPassword"
+                    type="password"
+                    show-password-on="mousedown"
+                    clearable
+                    :disabled="unlocking"
+                    :status="unlockStatus"
+                    :placeholder="t('app.privacy.windowsPasswordPlaceholder')"
+                    @update:value="handleWindowsPasswordInput"
+                    @keyup.enter="handleUnlock"
+                  />
+                  <n-button type="primary" :loading="unlocking" @click="handleUnlock">{{
+                    t('app.privacy.unlock')
+                  }}</n-button>
+                </template>
+              </div>
+            </n-card>
+          </div>
+        </transition>
       </div>
     </n-dialog-provider>
   </n-config-provider>
@@ -378,6 +447,74 @@ body {
 .main-content {
   height: calc(100vh - 92px); /* 减去 TitleBar(32px) + Header(60px) 高度 */
   overflow: hidden;
+  position: relative;
+}
+
+.route-page {
+  height: 100%;
+  will-change: opacity, transform;
+}
+
+.page-slide-forward-enter-active,
+.page-slide-forward-leave-active,
+.page-slide-back-enter-active,
+.page-slide-back-leave-active,
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition:
+    opacity var(--motion-normal) var(--ease-enter),
+    transform var(--motion-normal) var(--ease-enter);
+}
+
+.page-slide-forward-leave-active,
+.page-slide-back-leave-active,
+.page-fade-leave-active {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+}
+
+.page-slide-forward-enter-from {
+  opacity: 0;
+  transform: translateX(var(--motion-distance-md));
+}
+
+.page-slide-forward-leave-to {
+  opacity: 0;
+  transform: translateX(calc(var(--motion-distance-md) * -1));
+}
+
+.page-slide-back-enter-from {
+  opacity: 0;
+  transform: translateX(calc(var(--motion-distance-md) * -1));
+}
+
+.page-slide-back-leave-to {
+  opacity: 0;
+  transform: translateX(var(--motion-distance-md));
+}
+
+.page-fade-enter-from,
+.page-fade-leave-to {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-slide-forward-enter-active,
+  .page-slide-forward-leave-active,
+  .page-slide-back-enter-active,
+  .page-slide-back-leave-active,
+  .page-fade-enter-active,
+  .page-fade-leave-active {
+    transition: opacity var(--motion-fast) linear;
+  }
+
+  .page-slide-forward-enter-from,
+  .page-slide-forward-leave-to,
+  .page-slide-back-enter-from,
+  .page-slide-back-leave-to {
+    transform: none;
+  }
 }
 
 /* 初始隐藏滚动条 */
@@ -397,6 +534,16 @@ body {
   background: rgba(14, 18, 24, 0.28);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+}
+
+.privacy-lock-fade-enter-active,
+.privacy-lock-fade-leave-active {
+  transition: opacity var(--motion-normal) var(--ease-standard);
+}
+
+.privacy-lock-fade-enter-from,
+.privacy-lock-fade-leave-to {
+  opacity: 0;
 }
 
 .privacy-lock-card {

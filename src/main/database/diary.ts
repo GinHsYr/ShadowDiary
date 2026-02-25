@@ -304,16 +304,15 @@ export function getDiaryDates(yearMonth: string): string[] {
   const monthEnd = new Date(y, m, 1, 0, 0, 0, 0).getTime()
 
   const rows = db
-    .prepare('SELECT created_at FROM diary_entries WHERE created_at >= ? AND created_at < ?')
-    .all(monthStart, monthEnd) as { created_at: number }[]
+    .prepare(
+      `SELECT DISTINCT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch', 'localtime') AS diary_date
+       FROM diary_entries
+       WHERE created_at >= ? AND created_at < ?
+       ORDER BY diary_date`
+    )
+    .all(monthStart, monthEnd) as { diary_date: string | null }[]
 
-  const dateSet = new Set<string>()
-  for (const row of rows) {
-    const d = new Date(row.created_at)
-    const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    dateSet.add(ds)
-  }
-  return Array.from(dateSet)
+  return rows.map((row) => row.diary_date).filter((date): date is string => Boolean(date))
 }
 
 // 根据关键词查找匹配的档案，返回该档案的所有名称（name + aliases）

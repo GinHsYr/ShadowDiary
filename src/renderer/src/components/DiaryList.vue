@@ -2,21 +2,23 @@
   <div class="diary-list">
     <!-- 日记列表 -->
     <div ref="listRef" class="list-body" @scroll="handleScroll">
-      <div
-        v-for="entry in entries"
-        :key="entry.id"
-        class="diary-item"
-        :class="{ active: entry.id === selectedId }"
-        @click="$emit('select', entry)"
-        @contextmenu.prevent="handleContextMenu($event, entry)"
-      >
-        <div class="item-header">
-          <span class="item-date">{{ formatDate(entry.createdAt) }}</span>
-          <span class="item-mood">{{ moodEmoji[entry.mood] || '' }}</span>
+      <transition-group name="diary-item-motion" tag="div" class="diary-item-group">
+        <div
+          v-for="entry in entries"
+          :key="entry.id"
+          class="diary-item"
+          :class="{ active: entry.id === selectedId }"
+          @click="$emit('select', entry)"
+          @contextmenu.prevent="handleContextMenu($event, entry)"
+        >
+          <div class="item-header">
+            <span class="item-date">{{ formatDate(entry.createdAt) }}</span>
+            <span class="item-mood">{{ moodEmoji[entry.mood] || '' }}</span>
+          </div>
+          <div class="item-title">{{ entry.title || t('common.noTitle') }}</div>
+          <div class="item-preview">{{ stripHtml(entry.content) }}</div>
         </div>
-        <div class="item-title">{{ entry.title || t('common.noTitle') }}</div>
-        <div class="item-preview">{{ stripHtml(entry.content) }}</div>
-      </div>
+      </transition-group>
 
       <div v-if="entries.length === 0 && !loading" class="list-empty">
         <p>{{ t('diaryList.empty') }}</p>
@@ -273,10 +275,13 @@ defineExpose({ refresh, updateEntry, removeEntry })
 }
 
 .diary-item {
+  position: relative;
   padding: 12px;
   border-radius: 10px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
   margin-bottom: 4px;
 }
 
@@ -284,9 +289,29 @@ defineExpose({ refresh, updateEntry, removeEntry })
   background: var(--app-accent-06, rgba(24, 160, 88, 0.06));
 }
 
+.diary-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--app-accent-color, #18a058);
+  opacity: 0;
+  transform: scaleY(0.5);
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+}
+
 .diary-item.active {
   background: var(--app-accent-12, rgba(24, 160, 88, 0.12));
-  box-shadow: inset 3px 0 0 var(--app-accent-color, #18a058);
+}
+
+.diary-item.active::before {
+  opacity: 1;
+  transform: scaleY(1);
 }
 
 .item-header {
@@ -352,5 +377,26 @@ defineExpose({ refresh, updateEntry, removeEntry })
   font-size: 13px;
   font-weight: 600;
   color: var(--n-text-color, #333);
+}
+
+.diary-item-motion-enter-active,
+.diary-item-motion-leave-active {
+  transition:
+    transform var(--motion-normal) var(--ease-enter),
+    opacity var(--motion-normal) var(--ease-standard);
+}
+
+.diary-item-motion-enter-from {
+  opacity: 0;
+  transform: translateY(var(--motion-distance-sm));
+}
+
+.diary-item-motion-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.diary-item-motion-move {
+  transition: transform var(--motion-normal) var(--ease-standard);
 }
 </style>

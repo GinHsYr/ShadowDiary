@@ -8,21 +8,33 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/dashboard',
     name: 'Dashboard',
+    meta: {
+      navOrder: 0
+    },
     component: () => import('../views/dashboard/index.vue')
   },
   {
     path: '/today',
     name: 'Today',
+    meta: {
+      navOrder: 1
+    },
     component: () => import('../views/today/index.vue')
   },
   {
     path: '/archives',
     name: 'Archives',
+    meta: {
+      navOrder: 2
+    },
     component: () => import('../views/archives/index.vue')
   },
   {
     path: '/settings',
     name: 'Settings',
+    meta: {
+      navOrder: 3
+    },
     component: () => import('../views/settings/index.vue')
   }
 ]

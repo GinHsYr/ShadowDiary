@@ -193,19 +193,31 @@ function extractSnippet(
 
 // --- Search logic ---
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+let latestSearchRequestId = 0
+
+function invalidateSearchRequests(): void {
+  latestSearchRequestId += 1
+  searching.value = false
+}
+
+function resetSearchResultsState(): void {
+  searchResults.value = []
+  searchTotal.value = 0
+  archiveResults.value = []
+}
 
 async function triggerSearch(keyword?: string): Promise<void> {
   const kw = (keyword ?? searchKeyword.value).trim()
   const hasFilters = filterMood.value || filterTags.value.length > 0 || filterDateRange.value
 
   if (!kw && !hasFilters) {
-    searchResults.value = []
-    searchTotal.value = 0
-    archiveResults.value = []
+    invalidateSearchRequests()
+    resetSearchResultsState()
     showPopover.value = searchHistory.value.length > 0
     return
   }
 
+  const requestId = ++latestSearchRequestId
   searching.value = true
   showPopover.value = true
   try {
@@ -224,6 +236,8 @@ async function triggerSearch(keyword?: string): Promise<void> {
       kw ? window.api.getArchives({ search: kw }) : Promise.resolve([])
     ])
 
+    if (requestId !== latestSearchRequestId) return
+
     searchResults.value = diaryResult.entries
     searchTotal.value = diaryResult.total
     archiveResults.value = archives
@@ -231,9 +245,12 @@ async function triggerSearch(keyword?: string): Promise<void> {
     expandedKeywords.value = diaryResult.expandedKeywords || []
     showPopover.value = true
   } catch (error) {
+    if (requestId !== latestSearchRequestId) return
     console.error('搜索失败:', error)
   } finally {
-    searching.value = false
+    if (requestId === latestSearchRequestId) {
+      searching.value = false
+    }
   }
 }
 
@@ -243,9 +260,8 @@ const handleSearchInput = (value: string): void => {
   if (searchTimer) clearTimeout(searchTimer)
 
   if (!value.trim() && !filterMood.value && !filterTags.value.length && !filterDateRange.value) {
-    searchResults.value = []
-    searchTotal.value = 0
-    archiveResults.value = []
+    invalidateSearchRequests()
+    resetSearchResultsState()
     showPopover.value = searchHistory.value.length > 0
     return
   }
@@ -276,12 +292,18 @@ const goToArchive = (archive: Archive): void => {
 
 /** Close search popover and reset state */
 function closeSearch(): void {
+  invalidateSearchRequests()
   showPopover.value = false
   showFilter.value = false
   searchKeyword.value = ''
-  searchResults.value = []
-  searchTotal.value = 0
-  archiveResults.value = []
+  resetSearchResultsState()
+}
+
+function clearSearchInput(): void {
+  invalidateSearchRequests()
+  searchKeyword.value = ''
+  resetSearchResultsState()
+  showPopover.value = searchHistory.value.length > 0
 }
 
 const formatDate = (ts: number): string => {
@@ -440,15 +462,7 @@ onBeforeUnmount(() => {
                 <n-icon
                   :component="CloseCircleOutline"
                   class="search-clear"
-                  @mousedown.prevent="
-                    () => {
-                      searchKeyword = ''
-                      searchResults = []
-                      searchTotal = 0
-                      archiveResults = []
-                      showPopover = searchHistory.length > 0
-                    }
-                  "
+                  @mousedown.prevent="clearSearchInput"
                 />
               </template>
             </n-input>
@@ -538,6 +552,7 @@ onBeforeUnmount(() => {
                 :key="item"
                 class="history-item"
                 :class="{ active: activeIndex === index }"
+                :style="{ '--stagger-index': index }"
                 @click="clickHistory(item)"
               >
                 <span class="history-text">{{ item }}</span>
@@ -557,8 +572,9 @@ onBeforeUnmount(() => {
               <div class="result-section-title">{{ t('header.archives') }}</div>
               <n-list hoverable clickable size="small" class="archive-result-list">
                 <n-list-item
-                  v-for="archive in archiveResults.slice(0, 5)"
+                  v-for="(archive, index) in archiveResults.slice(0, 5)"
                   :key="archive.id"
+                  :style="{ '--stagger-index': index }"
                   @click="goToArchive(archive)"
                 >
                   <template #prefix>
@@ -629,6 +645,7 @@ onBeforeUnmount(() => {
                 <n-list-item
                   v-for="(entry, index) in searchResults"
                   :key="entry.id"
+                  :style="{ '--stagger-index': index + Math.min(archiveResults.length, 5) }"
                   :class="{ active: activeIndex === index }"
                   @click="goToEntry(entry)"
                 >
@@ -761,6 +778,7 @@ onBeforeUnmount(() => {
   max-height: 480px;
   overflow-y: auto;
   overflow-x: hidden;
+  animation: search-popover-in var(--motion-normal) var(--ease-enter);
 }
 
 /* Filter panel */
@@ -840,7 +858,9 @@ onBeforeUnmount(() => {
   font-size: 13px;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard);
+  animation: search-item-in var(--motion-normal) var(--ease-enter) both;
+  animation-delay: calc(var(--stagger-index, 0) * var(--motion-stagger));
 }
 
 .history-text {
@@ -867,8 +887,8 @@ onBeforeUnmount(() => {
   padding: 2px;
   border-radius: 4px;
   transition:
-    opacity 0.15s,
-    color 0.15s;
+    opacity var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
   color: var(--n-text-color-3, #999);
 }
 
@@ -904,6 +924,11 @@ onBeforeUnmount(() => {
   overflow-y: auto;
 }
 
+.search-results :deep(.n-list-item) {
+  animation: search-item-in var(--motion-normal) var(--ease-enter) both;
+  animation-delay: calc(var(--stagger-index, 0) * var(--motion-stagger));
+}
+
 .search-results :deep(.n-list-item.active) {
   background: var(--app-accent-12, rgba(24, 160, 88, 0.12));
 }
@@ -927,6 +952,7 @@ onBeforeUnmount(() => {
   color: var(--app-accent-color, #18a058);
   border-radius: 2px;
   padding: 0 1px;
+  animation: keyword-mark-fade var(--motion-slow) var(--ease-enter);
 }
 
 /* Archive results */
@@ -973,5 +999,36 @@ onBeforeUnmount(() => {
   border-radius: 3px;
   min-width: 18px;
   text-align: center;
+}
+
+@keyframes search-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--motion-distance-sm) * -1));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes search-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-distance-sm));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes keyword-mark-fade {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
 }
 </style>

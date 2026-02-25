@@ -166,13 +166,15 @@
               </div>
             </div>
 
-            <div
-              v-if="privacyMessage"
-              class="update-message privacy-update-message"
-              :class="privacyMessageType"
-            >
-              <span class="message-text">{{ privacyMessage }}</span>
-            </div>
+            <transition name="settings-message">
+              <div
+                v-if="privacyMessage"
+                class="update-message privacy-update-message"
+                :class="[privacyMessageType, `is-${privacyMessageType}`]"
+              >
+                <span class="message-text">{{ privacyMessage }}</span>
+              </div>
+            </transition>
           </n-space>
         </n-card>
 
@@ -212,9 +214,15 @@
               </n-button>
             </div>
 
-            <div v-if="dataMessage" class="update-message" :class="dataMessageType">
-              <span class="message-text">{{ dataMessage }}</span>
-            </div>
+            <transition name="settings-message">
+              <div
+                v-if="dataMessage"
+                class="update-message"
+                :class="[dataMessageType, `is-${dataMessageType}`]"
+              >
+                <span class="message-text">{{ dataMessage }}</span>
+              </div>
+            </transition>
           </n-space>
         </n-card>
 
@@ -247,19 +255,25 @@
                 {{ t('settings.about.checkUpdateButton') }}
               </n-button>
             </div>
-            <div v-if="updateMessage" class="update-message" :class="updateMessageType">
-              <span>{{ updateMessage }}</span>
-              <template v-if="hasUpdate && !downloading && !downloaded">
-                <n-button class="update-btn" @click="handleDownloadUpdate">
-                  {{ t('settings.about.downloadUpdate') }}
-                </n-button>
-              </template>
-              <template v-if="downloaded">
-                <n-button type="primary" class="update-btn" @click="handleInstallUpdate">
-                  {{ t('settings.about.installNow') }}
-                </n-button>
-              </template>
-            </div>
+            <transition name="settings-message">
+              <div
+                v-if="updateMessage"
+                class="update-message"
+                :class="[updateMessageType, `is-${updateMessageType}`]"
+              >
+                <span>{{ updateMessage }}</span>
+                <template v-if="hasUpdate && !downloading && !downloaded">
+                  <n-button class="update-btn" @click="handleDownloadUpdate">
+                    {{ t('settings.about.downloadUpdate') }}
+                  </n-button>
+                </template>
+                <template v-if="downloaded">
+                  <n-button type="primary" class="update-btn" @click="handleInstallUpdate">
+                    {{ t('settings.about.installNow') }}
+                  </n-button>
+                </template>
+              </div>
+            </transition>
             <div v-if="downloading" class="download-progress">
               <n-progress type="line" :percentage="downloadProgress" :show-indicator="true" />
             </div>
@@ -1407,6 +1421,19 @@ const handleImportData = (): void => {
 .update-message {
   display: flex;
   align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.update-message::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
 }
 
 .message-text {
@@ -1429,6 +1456,14 @@ const handleImportData = (): void => {
 
 .settings-card {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  transition:
+    box-shadow var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+}
+
+.settings-card:hover {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
 
 .setting-item {
@@ -1485,9 +1520,9 @@ const handleImportData = (): void => {
   align-items: center;
   cursor: pointer;
   transition:
-    border-color 0.2s,
-    box-shadow 0.2s,
-    transform 0.2s;
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
 }
 
 .accent-chip:hover:not(:disabled) {
@@ -1555,12 +1590,6 @@ const handleImportData = (): void => {
   text-decoration: underline;
 }
 
-.update-message {
-  padding: 12px;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
 .update-message.success {
   background-color: var(--app-accent-12, rgba(24, 160, 88, 0.12));
   color: var(--app-accent-color, #18a058);
@@ -1582,6 +1611,27 @@ const handleImportData = (): void => {
   color: #2a94e5;
 }
 
+.update-message.is-success::before {
+  animation: message-dot-pulse var(--motion-normal) var(--ease-enter);
+}
+
+.update-message.is-error {
+  animation: message-shake var(--motion-fast) var(--ease-standard) 2;
+}
+
+.settings-message-enter-active,
+.settings-message-leave-active {
+  transition:
+    opacity var(--motion-normal) var(--ease-standard),
+    transform var(--motion-normal) var(--ease-enter);
+}
+
+.settings-message-enter-from,
+.settings-message-leave-to {
+  opacity: 0;
+  transform: translateY(calc(var(--motion-distance-sm) * -1));
+}
+
 .download-progress {
   padding: 8px 0;
 }
@@ -1590,6 +1640,33 @@ const handleImportData = (): void => {
   font-size: 13px;
   color: var(--n-text-color-2);
   word-break: break-word;
+}
+
+@keyframes message-dot-pulse {
+  0% {
+    transform: scale(0.65);
+    opacity: 0.55;
+  }
+  70% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes message-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
 }
 
 @media (max-width: 768px) {
