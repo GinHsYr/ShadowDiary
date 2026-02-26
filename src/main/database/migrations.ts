@@ -432,13 +432,13 @@ const migrations: Migration[] = [
          FROM diary_entries
          WHERE content LIKE '%diary-image://%'`
       )
-      .iterate() as Iterable<{
+      .all() as {
       id: string
       title: string
       content: string
       created_at: number
       updated_at: number
-    }>
+    }[]
     for (const row of diaryRows) {
       const candidates = collectImageCandidatesFromTextForMigration(row.content)
       for (const [imageId, candidate] of candidates) {
@@ -464,14 +464,14 @@ const migrations: Migration[] = [
          FROM archives
          WHERE main_image LIKE '%diary-image://%' OR images LIKE '%diary-image://%'`
       )
-      .iterate() as Iterable<{
+      .all() as {
       id: string
       name: string
       main_image: string | null
       images: string | null
       created_at: number
       updated_at: number
-    }>
+    }[]
     for (const row of archiveRows) {
       const candidates = collectArchiveImageCandidatesForMigration(row.main_image, row.images)
       for (const [imageId, candidate] of candidates) {
