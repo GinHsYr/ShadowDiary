@@ -408,7 +408,7 @@ onBeforeUnmount(() => {
     :date-locale="naiveDateLocale"
   >
     <n-dialog-provider>
-      <div class="app-shell">
+      <div class="app-shell" :class="{ 'app-shell--locked': showLockOverlay }">
         <div v-if="startup.isBooting" class="startup-skeleton">
           <div class="startup-skeleton-titlebar">
             <n-skeleton width="100%" height="32px" />
@@ -437,7 +437,7 @@ onBeforeUnmount(() => {
 
         <template v-else>
           <TitleBar />
-          <n-layout has-sider position="absolute" style="top: 32px">
+          <n-layout has-sider position="absolute" style="top: var(--app-title-bar-height)">
             <AppSidebar />
 
             <n-layout>
@@ -511,6 +511,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
+:root {
+  --app-title-bar-height: 32px;
+}
+
 /* 全局重置 */
 html,
 body {
@@ -537,6 +541,10 @@ body {
   overflow: hidden;
 }
 
+.app-shell--locked .title-bar {
+  z-index: 5000 !important;
+}
+
 .startup-skeleton {
   height: 100%;
   background:
@@ -554,11 +562,11 @@ body {
 }
 
 .startup-skeleton-titlebar {
-  height: 32px;
+  height: var(--app-title-bar-height);
 }
 
 .startup-skeleton-layout {
-  height: calc(100% - 32px);
+  height: calc(100% - var(--app-title-bar-height));
   display: flex;
 }
 
@@ -626,7 +634,7 @@ body {
 }
 
 .main-content {
-  height: calc(100vh - 32px); /* 仅减去 TitleBar(32px) 高度 */
+  height: calc(100vh - var(--app-title-bar-height)); /* 仅减去 TitleBar 高度 */
   overflow: hidden;
   position: relative;
 }
