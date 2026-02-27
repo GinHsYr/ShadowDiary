@@ -34,7 +34,9 @@ const api: DiaryAPI = {
 
   // 设置
   getSetting: (key) => invoke('settings:get', key),
+  getSecureSetting: (key) => invoke('settings:getSecure', key),
   setSetting: (key, value) => invoke('settings:set', key, value),
+  setSecureSetting: (key, value) => invoke('settings:setSecure', key, value),
   getAllSettings: () => invoke('settings:getAll'),
   getPrivacyAuthSupport: () => invoke('privacy:getAuthSupport'),
   verifyWindowsPassword: (password) => invoke('privacy:verifyWindowsPassword', password),

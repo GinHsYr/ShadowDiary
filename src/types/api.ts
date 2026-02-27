@@ -140,7 +140,9 @@ export interface DiaryAPI {
 
   // 设置
   getSetting(key: string): Promise<string | null>
+  getSecureSetting(key: string): Promise<string | null>
   setSetting(key: string, value: string): Promise<void>
+  setSecureSetting(key: string, value: string): Promise<void>
   getAllSettings(): Promise<Record<string, string>>
   getPrivacyAuthSupport(): Promise<PrivacyAuthSupport>
   verifyWindowsPassword(password: string): Promise<boolean>

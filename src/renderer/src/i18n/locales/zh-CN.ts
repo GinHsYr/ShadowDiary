@@ -229,6 +229,10 @@ const zhCN = {
     followSystem: '跟随系统',
     simplifiedChinese: '简体中文',
     english: '英语',
+    navigation: {
+      general: '通用设置',
+      ai: 'AI 设置'
+    },
     accents: {
       green: '翡翠绿',
       blue: '天空蓝',
@@ -237,6 +241,69 @@ const zhCN = {
       red: '珊瑚红',
       purple: '霓虹紫',
       teal: '青绿色'
+    },
+    ai: {
+      title: 'AI 设置',
+      subtitle: '配置提供商、模型，以及不同 AI 功能对应的默认模型',
+      provider: {
+        card: '提供商',
+        detailCard: '提供商配置',
+        modelCount: '模型数：{count}',
+        empty: '暂无提供商，请先添加',
+        selectProviderHint: '请先在左侧选择提供商',
+        name: '提供商名称',
+        namePlaceholder: '请输入提供商名称',
+        baseUrl: 'Base URL',
+        baseUrlPlaceholder: '例如：https://api.openai.com/v1',
+        apiKey: 'API Key',
+        apiKeyDescription: 'API Key 将在本地使用系统安全存储加密后保存',
+        apiKeyPlaceholder: '请输入 API Key',
+        customNamePlaceholder: '请输入自定义提供商名称',
+        defaultCustomName: '自定义提供商',
+        deleteConfirmTitle: '删除提供商',
+        deleteConfirmContent: '确认删除“{name}”吗？该提供商下模型及功能绑定将一并移除。',
+        types: {
+          openai: 'OpenAI',
+          anthropic: 'Anthropic',
+          siliconflow: '硅基流动',
+          custom: '自定义'
+        }
+      },
+      model: {
+        card: '模型列表',
+        empty: '当前提供商还没有模型',
+        displayNamePlaceholder: '模型显示名称（如 GPT-4o）',
+        modelIdPlaceholder: '模型 ID（如 gpt-4o）'
+      },
+      binding: {
+        card: '功能模型绑定',
+        providerPlaceholder: '选择提供商',
+        modelPlaceholder: '选择模型'
+      },
+      features: {
+        chat: '对话',
+        summary: '总结',
+        rewrite: '改写'
+      },
+      actions: {
+        addProvider: '添加提供商',
+        deleteProvider: '删除提供商',
+        addModel: '添加模型',
+        deleteModel: '删除模型',
+        clearBinding: '清空绑定'
+      },
+      messages: {
+        saving: '自动保存中...',
+        saveSuccess: 'AI 设置保存成功',
+        saveFailed: 'AI 设置保存失败',
+        providerAdded: '提供商已添加',
+        providerDeleted: '提供商已删除',
+        modelAdded: '模型已添加',
+        modelDeleted: '模型已删除',
+        modelAddFailed: '添加模型失败',
+        modelUpdateFailed: '更新模型失败',
+        providerHasNoModel: '该提供商还没有模型，请先添加模型'
+      }
     },
     privacy: {
       card: '隐私保护',

@@ -43,7 +43,23 @@ const routes: RouteRecordRaw[] = [
     meta: {
       navOrder: 4
     },
-    component: () => import('../views/settings/index.vue')
+    component: () => import('../views/settings/index.vue'),
+    children: [
+      {
+        path: '',
+        name: 'SettingsGeneral',
+        component: () => import('../views/settings/general.vue')
+      },
+      {
+        path: 'general',
+        redirect: '/settings'
+      },
+      {
+        path: 'ai',
+        name: 'SettingsAI',
+        component: () => import('../views/settings/ai.vue')
+      }
+    ]
   }
 ]
 

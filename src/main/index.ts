@@ -84,6 +84,11 @@ import {
   type DataTransferProgress
 } from './utils/dataTransfer'
 import {
+  decryptSecret,
+  encryptSecret,
+  isEncryptedSecretPayload
+} from './security/secureSettings'
+import {
   disableDisguiseMode,
   enableDisguiseMode,
   isDisguiseModeEnabled,
@@ -106,8 +111,10 @@ const APP_QUIT_PREPARE_TIMEOUT_MS = 3000
 const DISGUISE_AUTO_ENABLE_ON_LAUNCH_KEY = 'disguise.autoEnableOnLaunch'
 const DISGUISE_SHORTCUT_KEY = 'disguise.shortcut'
 const DISGUISE_LAST_ENABLED_KEY = 'disguise.lastEnabled'
+const AI_SETTINGS_CONFIG_KEY = 'settings.ai.config.v1'
 const DEFAULT_DISGUISE_SHORTCUT = 'Ctrl+Shift+M'
 const DISGUISE_RESTRICTED_ERROR = '伪装模式下不可用'
+const SECURE_SETTINGS_KEY_ALLOWLIST = new Set<string>([AI_SETTINGS_CONFIG_KEY])
 let cachedUpdateCheck: CheckForUpdatesResult | null = null
 let activeUpdateDownloadToken: CancellationToken | null = null
 let isQuitInProgress = false
@@ -410,6 +417,99 @@ function getDisguiseConfig(): {
 
 function setDisguiseLastEnabled(enabled: boolean): void {
   setRealSetting(DISGUISE_LAST_ENABLED_KEY, enabled ? '1' : '0')
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function assertSecureSettingKey(key: string): void {
+  if (!SECURE_SETTINGS_KEY_ALLOWLIST.has(key)) {
+    throw new Error('不支持的安全设置键')
+  }
+}
+
+function decryptAiSettingsValue(value: string): string {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    return value
+  }
+
+  if (!isPlainRecord(parsed) || !Array.isArray(parsed.providers)) {
+    return value
+  }
+
+  let changed = false
+  const providers = parsed.providers.map((provider) => {
+    if (!isPlainRecord(provider)) return provider
+
+    const secret = provider.apiKey
+    if (!isEncryptedSecretPayload(secret)) return provider
+
+    try {
+      changed = true
+      return {
+        ...provider,
+        apiKey: decryptSecret(secret)
+      }
+    } catch (error) {
+      console.error('解密 AI API Key 失败:', error)
+      changed = true
+      return {
+        ...provider,
+        apiKey: ''
+      }
+    }
+  })
+
+  if (!changed) return value
+
+  return JSON.stringify({
+    ...parsed,
+    providers
+  })
+}
+
+function encryptAiSettingsValue(value: string): string {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error('AI 设置格式无效')
+  }
+
+  if (!isPlainRecord(parsed)) {
+    throw new Error('AI 设置格式无效')
+  }
+
+  if (!Array.isArray(parsed.providers)) {
+    throw new Error('AI 设置格式无效：providers 必须为数组')
+  }
+
+  const providers = parsed.providers.map((provider) => {
+    if (!isPlainRecord(provider)) return provider
+
+    const secret = provider.apiKey
+    if (isEncryptedSecretPayload(secret)) return provider
+    if (typeof secret !== 'string' || !secret.trim()) {
+      return {
+        ...provider,
+        apiKey: ''
+      }
+    }
+
+    return {
+      ...provider,
+      apiKey: encryptSecret(secret)
+    }
+  })
+
+  return JSON.stringify({
+    ...parsed,
+    providers
+  })
 }
 
 function applyDisguiseModeOnLaunch(): void {
@@ -945,11 +1045,37 @@ function registerIpcHandlers(): void {
     return getSetting(key)
   })
 
+  handleTrustedIpc('settings:getSecure', (_event, key: string) => {
+    assertSecureSettingKey(key)
+    const value = getSetting(key)
+    if (value === null) return null
+
+    if (key === AI_SETTINGS_CONFIG_KEY) {
+      return decryptAiSettingsValue(value)
+    }
+
+    return value
+  })
+
   handleTrustedIpc('settings:set', async (_event, key: string, value: string) => {
     if (key.startsWith('disguise.')) {
       throw new Error('请使用专用伪装设置接口')
     }
     const releasedIds = setSetting(key, value)
+    if (!isDisguiseModeEnabled()) {
+      await cleanupReleasedImages(releasedIds)
+    }
+    return true
+  })
+
+  handleTrustedIpc('settings:setSecure', async (_event, key: string, value: string) => {
+    assertSecureSettingKey(key)
+    if (typeof value !== 'string') {
+      throw new Error('设置值必须是字符串')
+    }
+
+    const storedValue = key === AI_SETTINGS_CONFIG_KEY ? encryptAiSettingsValue(value) : value
+    const releasedIds = setSetting(key, storedValue)
     if (!isDisguiseModeEnabled()) {
       await cleanupReleasedImages(releasedIds)
     }
