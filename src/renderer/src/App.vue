@@ -41,6 +41,8 @@ const startup = useStartupStore()
 const route = useRoute()
 const OTP_LENGTH = 6
 const USER_ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'] as const
+  // 调试开关：设置 VITE_DEBUG_BYPASS_PRIVACY_LOCK=1 可临时跳过隐私锁屏流程。
+const DEBUG_BYPASS_PRIVACY_LOCK = import.meta.env.VITE_DEBUG_BYPASS_PRIVACY_LOCK === '1'
 const password = ref<string[]>([])
 const windowsPassword = ref('')
 const unlockError = ref('')
@@ -66,7 +68,12 @@ const routeTransitionName = ref('page-fade')
 const previousNavOrder = ref<number | null>(null)
 const systemPrefersReducedMotion = ref(false)
 
-const showLockOverlay = computed(() => privacy.isInitialized && privacy.isLocked)
+const showLockOverlay = computed(
+  () => !DEBUG_BYPASS_PRIVACY_LOCK && privacy.isInitialized && privacy.isLocked
+)
+const canRenderUnlockedContent = computed(
+  () => privacy.isInitialized && (DEBUG_BYPASS_PRIVACY_LOCK || privacy.isUnlocked)
+)
 const shouldReduceMotion = computed(() => systemPrefersReducedMotion.value || theme.isMotionReduced)
 const naiveLocale = computed(() => {
   if (locale.value === 'en-US') return enUS
@@ -134,6 +141,7 @@ function handleWindowsPasswordInput(value: string): void {
 }
 
 function canAutoLockByPrivacy(): boolean {
+   if (DEBUG_BYPASS_PRIVACY_LOCK) return false
   return privacy.isInitialized && privacy.isEnabled && privacy.hasCredential
 }
 
@@ -352,6 +360,9 @@ watch(
 )
 
 onMounted(() => {
+  if (DEBUG_BYPASS_PRIVACY_LOCK && privacy.isLocked) {
+    privacy.isLocked = false
+  }
   setupReducedMotionListener()
 
   for (const eventName of USER_ACTIVITY_EVENTS) {
@@ -444,7 +455,7 @@ onBeforeUnmount(() => {
               <AppHeader />
               <n-layout-content class="main-content">
                 <router-view
-                  v-if="privacy.isInitialized && privacy.isUnlocked"
+                  v-if="canRenderUnlockedContent"
                   v-slot="{ Component, route: currentRoute }"
                 >
                   <transition :name="routeTransitionName" mode="out-in">
