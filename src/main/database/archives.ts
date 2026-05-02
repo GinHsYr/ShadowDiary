@@ -1,7 +1,8 @@
 import { getDatabase } from './index'
 import { v4 as uuidv4 } from 'uuid'
 import type { Archive } from '../../types/model'
-import { saveImage } from '../utils/imageStorage'
+import { isImageDataUrl, saveImage } from '../utils/imageStorage'
+import { splitArchiveAliases } from './archiveAliases'
 
 interface ArchiveRow {
   id: string
@@ -28,19 +29,9 @@ function parseArchiveImages(imagesJson: string | null): string[] {
   }
 }
 
-function splitArchiveAliases(alias: string | null): string[] {
-  if (!alias) return []
-  return alias
-    .split(/[,，、;；\n\r]+/g)
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
-const IMAGE_DATA_URL_PREFIX_RE = /^data:image\/[a-z0-9.+-]+;base64,/i
-
 async function normalizeArchiveImage(image: string | undefined): Promise<string | undefined> {
   if (!image) return undefined
-  if (!IMAGE_DATA_URL_PREFIX_RE.test(image)) return image
+  if (!isImageDataUrl(image)) return image
   const saved = await saveImage(image)
   return saved.path
 }

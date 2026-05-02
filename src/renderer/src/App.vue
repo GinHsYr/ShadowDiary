@@ -40,8 +40,9 @@ const startup = useStartupStore()
 const route = useRoute()
 const OTP_LENGTH = 6
 const USER_ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'] as const
-  // 调试开关：设置 VITE_DEBUG_BYPASS_PRIVACY_LOCK=1 可临时跳过隐私锁屏流程。
-const DEBUG_BYPASS_PRIVACY_LOCK = import.meta.env.VITE_DEBUG_BYPASS_PRIVACY_LOCK === '1'
+// Dev-only switch: VITE_DEBUG_BYPASS_PRIVACY_LOCK=1 can bypass the privacy lock locally.
+const DEBUG_BYPASS_PRIVACY_LOCK =
+  import.meta.env.DEV && import.meta.env.VITE_DEBUG_BYPASS_PRIVACY_LOCK === '1'
 const password = ref<string[]>([])
 const unlockError = ref('')
 const unlocking = ref(false)

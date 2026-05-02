@@ -8,11 +8,13 @@ import type {
   MediaLibrarySourceRef,
   MediaLibrarySourceType
 } from '../../types/model'
-
-interface ImagePathCandidate {
-  imagePath?: string
-  previewPath?: string
-}
+import {
+  collectDiaryImageCandidatesFromPaths,
+  collectDiaryImageCandidatesFromText,
+  createThumbnailPath,
+  isDiaryImageThumbnailPath
+} from '../utils/diaryImagePath'
+import type { DiaryImagePathCandidate } from '../utils/diaryImagePath'
 
 interface MediaAggregateRow {
   image_id: string
@@ -49,8 +51,6 @@ interface ArchiveMediaSourcePayload {
   updatedAt: number
 }
 
-const DIARY_IMAGE_PATH_RE = /diary-image:\/\/([a-f0-9-]+)(?:(_thumb))?\.[a-z0-9]+/gi
-const DIARY_IMAGE_PATH_FULL_RE = /^diary-image:\/\/([a-f0-9-]+)(?:(_thumb))?\.[a-z0-9]+$/i
 const DEFAULT_PAGE_SIZE = 72
 const MAX_PAGE_SIZE = 200
 
@@ -76,65 +76,16 @@ function normalizeSource(source: MediaLibraryQueryParams['source']): NormalizedM
 }
 
 function createFallbackPreviewPath(imageId: string): string {
-  return `diary-image://${imageId}_thumb.webp`
+  return createThumbnailPath(imageId)
 }
 
 function isThumbnailPath(path: string): boolean {
-  return /_thumb\.[a-z0-9]+$/i.test(path)
-}
-
-function parseImagePath(path: string | null | undefined): {
-  imageId: string
-  isThumbnail: boolean
-  normalizedPath: string
-} | null {
-  if (!path) return null
-  const trimmed = path.trim()
-  if (!trimmed) return null
-
-  const match = DIARY_IMAGE_PATH_FULL_RE.exec(trimmed)
-  if (!match) return null
-
-  return {
-    imageId: match[1].toLowerCase(),
-    isThumbnail: Boolean(match[2]),
-    normalizedPath: trimmed
-  }
-}
-
-function collectImageCandidatesFromText(
-  text: string | null | undefined
-): Map<string, ImagePathCandidate> {
-  const candidates = new Map<string, ImagePathCandidate>()
-  if (!text) return candidates
-
-  DIARY_IMAGE_PATH_RE.lastIndex = 0
-  let match: RegExpExecArray | null
-  while ((match = DIARY_IMAGE_PATH_RE.exec(text)) !== null) {
-    const imageId = match[1].toLowerCase()
-    const fullPath = match[0]
-    const isThumbnail = Boolean(match[2])
-    const current = candidates.get(imageId) ?? {}
-
-    if (isThumbnail) {
-      if (!current.previewPath) {
-        current.previewPath = fullPath
-      }
-    } else if (!current.imagePath) {
-      current.imagePath = fullPath
-    }
-
-    candidates.set(imageId, current)
-  }
-  DIARY_IMAGE_PATH_RE.lastIndex = 0
-
-  return candidates
+  return isDiaryImageThumbnailPath(path)
 }
 
 function collectArchiveImageCandidates(
   payload: Pick<ArchiveMediaSourcePayload, 'mainImage' | 'images'>
-): Map<string, ImagePathCandidate> {
-  const candidates = new Map<string, ImagePathCandidate>()
+): Map<string, DiaryImagePathCandidate> {
   const paths: string[] = []
 
   if (payload.mainImage) {
@@ -145,22 +96,7 @@ function collectArchiveImageCandidates(
     paths.push(image)
   }
 
-  for (const path of paths) {
-    const parsed = parseImagePath(path)
-    if (!parsed) continue
-
-    const current = candidates.get(parsed.imageId) ?? {}
-    if (parsed.isThumbnail) {
-      if (!current.previewPath) {
-        current.previewPath = parsed.normalizedPath
-      }
-    } else if (!current.imagePath) {
-      current.imagePath = parsed.normalizedPath
-    }
-    candidates.set(parsed.imageId, current)
-  }
-
-  return candidates
+  return collectDiaryImageCandidatesFromPaths(paths)
 }
 
 function replaceSourceMediaRefs(
@@ -169,7 +105,7 @@ function replaceSourceMediaRefs(
   sourceTitle: string,
   sourceCreatedAt: number,
   sourceUpdatedAt: number,
-  candidates: Map<string, ImagePathCandidate>
+  candidates: Map<string, DiaryImagePathCandidate>
 ): void {
   const db = getDatabase()
   const apply = db.transaction(() => {
@@ -230,7 +166,7 @@ export function syncDiaryMediaSource(
     payload.title || '',
     payload.createdAt,
     payload.updatedAt,
-    collectImageCandidatesFromText(payload.content)
+    collectDiaryImageCandidatesFromText(payload.content)
   )
 }
 
@@ -297,7 +233,7 @@ export function rebuildMediaSourceIndex(): void {
       row.title || '',
       row.created_at,
       row.updated_at,
-      collectImageCandidatesFromText(row.content)
+      collectDiaryImageCandidatesFromText(row.content)
     )
   }
 

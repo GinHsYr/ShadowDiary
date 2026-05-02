@@ -4,6 +4,7 @@ import { writeFile, mkdir, readFile, unlink, readdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { randomUUID } from 'crypto'
 import sharp from 'sharp'
+import { createDiaryImagePath, extractDiaryImageIds } from './diaryImagePath'
 
 // 图片存储目录
 const getImageDir = (): string => {
@@ -91,6 +92,10 @@ export function parseImageDataUrl(dataUrl: string): ParsedImageDataUrl | null {
   const mimeType = IMAGE_MIME_BY_EXT[ext]
   const buffer = Buffer.from(data, 'base64')
   return { mimeType, ext, buffer }
+}
+
+export function isImageDataUrl(dataUrl: string): boolean {
+  return parseImageDataUrl(dataUrl) !== null
 }
 
 function isPathInsideDir(filePath: string, dir: string): boolean {
@@ -192,8 +197,8 @@ async function saveImageBuffer(
 
   return {
     id,
-    path: `diary-image://${filename}`,
-    thumbnailPath: `diary-image://${thumbnailFilename}`
+    path: createDiaryImagePath(filename),
+    thumbnailPath: createDiaryImagePath(thumbnailFilename)
   }
 }
 
@@ -259,7 +264,7 @@ export async function saveArchiveAvatarFromFile(
     .webp({ quality: 82 })
     .toFile(thumbnailPath)
 
-  const url = `diary-image://${thumbnailFilename}`
+  const url = createDiaryImagePath(thumbnailFilename)
   return {
     id,
     path: url,
@@ -352,15 +357,7 @@ export async function deleteImageByIds(imageIds: Iterable<string>): Promise<void
 
 // 从文本内容中提取所有 diary-image ID（支持原图和 _thumb 缩略图）
 export function extractImageIds(html: string): string[] {
-  const regex = /diary-image:\/\/([a-f0-9-]+)(?:_thumb)?\.[a-z0-9]+/gi
-  const ids: string[] = []
-  let match
-
-  while ((match = regex.exec(html)) !== null) {
-    ids.push(match[1])
-  }
-
-  return ids
+  return extractDiaryImageIds(html)
 }
 
 // 清理未使用的图片

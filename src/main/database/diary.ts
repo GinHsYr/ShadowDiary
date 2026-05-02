@@ -10,6 +10,7 @@ import type {
   PersonMentionDetailItem,
   PersonMentionDetailResult
 } from '../../types/model'
+import { splitArchiveAliases } from './archiveAliases'
 
 interface DiaryRow {
   id: string
@@ -348,7 +349,7 @@ function expandKeywordWithArchiveAliases(keyword: string): string[] {
     // 添加档案名称
     allNames.add(row.name)
     // 添加所有别名
-    for (const alias of splitAliases(row.alias)) {
+    for (const alias of splitArchiveAliases(row.alias)) {
       allNames.add(alias)
     }
   }
@@ -610,14 +611,6 @@ interface PersonTokenMeta {
   charLength: number
 }
 
-function splitAliases(alias: string | null): string[] {
-  if (!alias) return []
-  return alias
-    .split(/[,，、;；\n\r]+/g)
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
 function getPersonArchives(db: ReturnType<typeof getDatabase>): PersonArchiveRow[] {
   return db
     .prepare('SELECT id, name, alias FROM archives WHERE type = ? ORDER BY id')
@@ -636,7 +629,7 @@ function buildPersonMentionMatcher(personArchives: PersonArchiveRow[]): PersonMe
     const tokenMetaForPerson = new Map<string, { token: string; isAlias: boolean }>()
     const rawTokens = [
       { token: person.name, isAlias: false },
-      ...splitAliases(person.alias).map((token) => ({ token, isAlias: true }))
+      ...splitArchiveAliases(person.alias).map((token) => ({ token, isAlias: true }))
     ]
 
     for (const { token, isAlias } of rawTokens) {

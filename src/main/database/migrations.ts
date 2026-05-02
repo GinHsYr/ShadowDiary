@@ -1,4 +1,11 @@
 import type Database from 'better-sqlite3'
+import {
+  collectDiaryImageCandidatesFromPaths,
+  collectDiaryImageCandidatesFromText,
+  createThumbnailPath,
+  extractDiaryImageIds
+} from '../utils/diaryImagePath'
+import type { DiaryImagePathCandidate } from '../utils/diaryImagePath'
 
 type Migration = (db: Database.Database) => void
 
@@ -21,83 +28,24 @@ export function stripHtmlToPlain(html: string): string {
     .trim()
 }
 
-const DIARY_IMAGE_ID_RE = /diary-image:\/\/([a-f0-9-]+)(?:_thumb)?\.[a-z0-9]+/gi
-const DIARY_IMAGE_PATH_RE = /diary-image:\/\/([a-f0-9-]+)(?:(_thumb))?\.[a-z0-9]+/gi
-const DIARY_IMAGE_PATH_FULL_RE = /^diary-image:\/\/([a-f0-9-]+)(?:(_thumb))?\.[a-z0-9]+$/i
-
-interface MigrationImagePathCandidate {
-  imagePath?: string
-  previewPath?: string
-}
-
 function extractImageIdsForMigration(value: string | null | undefined): Set<string> {
-  const imageIds = new Set<string>()
-  if (!value) return imageIds
-
-  let match: RegExpExecArray | null
-  DIARY_IMAGE_ID_RE.lastIndex = 0
-  while ((match = DIARY_IMAGE_ID_RE.exec(value)) !== null) {
-    imageIds.add(match[1])
-  }
-  DIARY_IMAGE_ID_RE.lastIndex = 0
-
-  return imageIds
+  return new Set(extractDiaryImageIds(value))
 }
 
 function createFallbackPreviewPathForMigration(imageId: string): string {
-  return `diary-image://${imageId}_thumb.webp`
-}
-
-function parseImagePathForMigration(path: string | null | undefined): {
-  imageId: string
-  isThumbnail: boolean
-  normalizedPath: string
-} | null {
-  if (!path) return null
-  const trimmed = path.trim()
-  if (!trimmed) return null
-
-  const match = DIARY_IMAGE_PATH_FULL_RE.exec(trimmed)
-  if (!match) return null
-
-  return {
-    imageId: match[1].toLowerCase(),
-    isThumbnail: Boolean(match[2]),
-    normalizedPath: trimmed
-  }
+  return createThumbnailPath(imageId)
 }
 
 function collectImageCandidatesFromTextForMigration(
   text: string | null | undefined
-): Map<string, MigrationImagePathCandidate> {
-  const candidates = new Map<string, MigrationImagePathCandidate>()
-  if (!text) return candidates
-
-  DIARY_IMAGE_PATH_RE.lastIndex = 0
-  let match: RegExpExecArray | null
-  while ((match = DIARY_IMAGE_PATH_RE.exec(text)) !== null) {
-    const imageId = match[1].toLowerCase()
-    const fullPath = match[0]
-    const isThumbnail = Boolean(match[2])
-    const current = candidates.get(imageId) ?? {}
-
-    if (isThumbnail) {
-      if (!current.previewPath) current.previewPath = fullPath
-    } else if (!current.imagePath) {
-      current.imagePath = fullPath
-    }
-    candidates.set(imageId, current)
-  }
-  DIARY_IMAGE_PATH_RE.lastIndex = 0
-
-  return candidates
+): Map<string, DiaryImagePathCandidate> {
+  return collectDiaryImageCandidatesFromText(text)
 }
 
 function collectArchiveImageCandidatesForMigration(
   mainImage: string | null,
   imagesJson: string | null
-): Map<string, MigrationImagePathCandidate> {
-  const candidates = new Map<string, MigrationImagePathCandidate>()
+): Map<string, DiaryImagePathCandidate> {
   const paths: string[] = []
 
   if (mainImage) {
@@ -119,20 +67,7 @@ function collectArchiveImageCandidatesForMigration(
     }
   }
 
-  for (const path of paths) {
-    const parsed = parseImagePathForMigration(path)
-    if (!parsed) continue
-
-    const current = candidates.get(parsed.imageId) ?? {}
-    if (parsed.isThumbnail) {
-      if (!current.previewPath) current.previewPath = parsed.normalizedPath
-    } else if (!current.imagePath) {
-      current.imagePath = parsed.normalizedPath
-    }
-    candidates.set(parsed.imageId, current)
-  }
-
-  return candidates
+  return collectDiaryImageCandidatesFromPaths(paths)
 }
 
 const migrations: Migration[] = [
