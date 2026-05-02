@@ -12,13 +12,19 @@ import {
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { CancellationError, CancellationToken } from 'builder-util-runtime'
-import type { AppUpdateInfo, CheckForUpdatesResult, UpdateCheckOptions } from '../types/api'
+import type {
+  AppUpdateInfo,
+  CheckForUpdatesResult,
+  PrivacyAuthSupport,
+  UpdateCheckOptions,
+  WindowsHelloVerificationResult
+} from '../types/api'
 
 let mainWindow: BrowserWindow | null = null
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { promises as fs } from 'fs'
+import { existsSync, promises as fs } from 'fs'
 import { spawn } from 'child_process'
 import { initDatabase, closeDatabase } from './database'
 import {
@@ -113,7 +119,7 @@ const DISGUISE_SHORTCUT_KEY = 'disguise.shortcut'
 const DISGUISE_LAST_ENABLED_KEY = 'disguise.lastEnabled'
 const AI_SETTINGS_CONFIG_KEY = 'settings.ai.config.v1'
 const DEFAULT_DISGUISE_SHORTCUT = 'Ctrl+Shift+M'
-const DISGUISE_RESTRICTED_ERROR = '伪装模式下不可用'
+const DISGUISE_RESTRICTED_ERROR = '浼妯″紡涓嬩笉鍙敤'
 const SECURE_SETTINGS_KEY_ALLOWLIST = new Set<string>([AI_SETTINGS_CONFIG_KEY])
 let cachedUpdateCheck: CheckForUpdatesResult | null = null
 let activeUpdateDownloadToken: CancellationToken | null = null
@@ -129,7 +135,7 @@ if (rendererDevUrl) {
   try {
     trustedRendererOrigins.add(new URL(rendererDevUrl).origin)
   } catch {
-    console.warn('无效的 ELECTRON_RENDERER_URL，将忽略该信任源')
+    console.warn('鏃犳晥鐨?ELECTRON_RENDERER_URL锛屽皢蹇界暐璇ヤ俊浠绘簮')
   }
 }
 
@@ -230,7 +236,7 @@ function closeDatabaseSafely(): void {
   try {
     closeDatabase()
   } catch (error) {
-    console.error('关闭数据库失败:', error)
+    console.error('鍏抽棴鏁版嵁搴撳け璐?', error)
   }
 }
 
@@ -271,7 +277,7 @@ async function waitForRendererBeforeQuit(): Promise<void> {
       try {
         win.webContents.send('app:before-quit')
       } catch (error) {
-        console.error('发送退出前保存事件失败:', error)
+        console.error('鍙戦€侀€€鍑哄墠淇濆瓨浜嬩欢澶辫触:', error)
         acknowledgeQuitPreparation(win.webContents.id)
       }
     }
@@ -299,7 +305,7 @@ function requestAppQuit(): void {
       hideAllWindows()
       await waitForRendererBeforeQuit()
     } catch (error) {
-      console.error('应用退出准备失败:', error)
+      console.error('搴旂敤閫€鍑哄噯澶囧け璐?', error)
     } finally {
       closeDatabaseSafely()
       app.exit(0)
@@ -388,7 +394,7 @@ async function migrateLegacyAvatarSetting(): Promise<void> {
     const releasedIds = setSetting('user.avatar', saved.path)
     await cleanupReleasedImages(releasedIds)
   } catch (error) {
-    console.error('迁移历史头像失败:', error)
+    console.error('杩佺Щ鍘嗗彶澶村儚澶辫触:', error)
   }
 }
 
@@ -455,7 +461,7 @@ function decryptAiSettingsValue(value: string): string {
         apiKey: decryptSecret(secret)
       }
     } catch (error) {
-      console.error('解密 AI API Key 失败:', error)
+      console.error('瑙ｅ瘑 AI API Key 澶辫触:', error)
       changed = true
       return {
         ...provider,
@@ -477,15 +483,15 @@ function encryptAiSettingsValue(value: string): string {
   try {
     parsed = JSON.parse(value)
   } catch {
-    throw new Error('AI 设置格式无效')
+    throw new Error('AI 璁剧疆鏍煎紡鏃犳晥')
   }
 
   if (!isPlainRecord(parsed)) {
-    throw new Error('AI 设置格式无效')
+    throw new Error('AI 璁剧疆鏍煎紡鏃犳晥')
   }
 
   if (!Array.isArray(parsed.providers)) {
-    throw new Error('AI 设置格式无效：providers 必须为数组')
+    throw new Error('AI 设置格式无效，providers 必须为数组')
   }
 
   const providers = parsed.providers.map((provider) => {
@@ -520,7 +526,7 @@ function applyDisguiseModeOnLaunch(): void {
   try {
     enableDisguiseMode()
   } catch (error) {
-    console.error('启动伪装模式失败:', error)
+    console.error('鍚姩浼妯″紡澶辫触:', error)
     setDisguiseLastEnabled(false)
   }
 }
@@ -632,10 +638,10 @@ function normalizeUpdateErrorMessage(error: unknown): string {
   }
 
   if (normalized.includes('CERT_') || normalized.includes('ERR_SSL')) {
-    return '更新服务器证书校验失败，请检查系统时间或代理设置'
+    return '鏇存柊鏈嶅姟鍣ㄨ瘉涔︽牎楠屽け璐ワ紝璇锋鏌ョ郴缁熸椂闂存垨浠ｇ悊璁剧疆'
   }
 
-  return message || '未知错误'
+  return message || '鏈煡閿欒'
 }
 
 function isUpdateDownloadCanceledError(error: unknown): boolean {
@@ -658,87 +664,85 @@ function registerSystemSecurityEvents(): void {
   })
 }
 
-function isWindowsPasswordSupported(): boolean {
-  return process.platform === 'win32'
+type WindowsHelloHelperCommand = {
+  command: string
+  args: string[]
 }
 
-const POWERSHELL_WINDOWS_PASSWORD_VERIFY_SCRIPT = `
-$ErrorActionPreference = 'Stop'
-$password = [Console]::In.ReadToEnd()
-if ([string]::IsNullOrEmpty($password)) {
-  Write-Output 'false'
-  exit 0
+type WindowsHelloHelperOutput = {
+  ok?: boolean
+  supported?: boolean
+  availability?: string
+  result?: string
+  error?: string
 }
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
 
-public static class NativeMethods {
-  [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-  public static extern bool LogonUser(
-    string lpszUsername,
-    string lpszDomain,
-    string lpszPassword,
-    int dwLogonType,
-    int dwLogonProvider,
-    out IntPtr phToken
-  );
+function resolveWindowsHelloHelperCommand(): WindowsHelloHelperCommand | null {
+  if (process.platform !== 'win32') return null
 
-  [DllImport("kernel32.dll", SetLastError = true)]
-  public static extern bool CloseHandle(IntPtr hObject);
-}
-"@
-
-$userName = [Environment]::UserName
-$userDomain = [Environment]::UserDomainName
-function Test-Logon([string]$name, [string]$domain, [string]$pwd) {
-  $token = [IntPtr]::Zero
-  $ok = [NativeMethods]::LogonUser($name, $domain, $pwd, 2, 0, [ref]$token)
-  if ($ok) {
-    [NativeMethods]::CloseHandle($token) | Out-Null
+  const packagedExe = join(
+    process.resourcesPath,
+    'windows-hello-helper',
+    'ShadowDiary.WindowsHello.exe'
+  )
+  if (app.isPackaged) {
+    if (!existsSync(packagedExe)) return null
+    return { command: packagedExe, args: [] }
   }
-  return $ok
-}
 
-$identityName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-if (Test-Logon $userName $userDomain $password) {
-  Write-Output 'true'
-  exit 0
-}
-if (Test-Logon $userName '.' $password) {
-  Write-Output 'true'
-  exit 0
-}
-if ($identityName -and $identityName.Contains('\\')) {
-  $parts = $identityName.Split('\\', 2)
-  if ($parts.Length -eq 2 -and (Test-Logon $parts[1] $parts[0] $password)) {
-    Write-Output 'true'
-    exit 0
+  const appPath = app.getAppPath()
+  const builtExe = join(appPath, 'build', 'windows-hello-helper', 'ShadowDiary.WindowsHello.exe')
+  if (existsSync(builtExe)) {
+    return { command: builtExe, args: [] }
+  }
+
+  const helperDll = join(
+    appPath,
+    'src',
+    'native',
+    'ShadowDiary.WindowsHello',
+    'bin',
+    'Debug',
+    'net10.0-windows10.0.19041.0',
+    'ShadowDiary.WindowsHello.dll'
+  )
+  if (existsSync(helperDll)) {
+    return { command: 'dotnet', args: [helperDll] }
+  }
+
+  const helperProject = join(
+    appPath,
+    'src',
+    'native',
+    'ShadowDiary.WindowsHello',
+    'ShadowDiary.WindowsHello.csproj'
+  )
+  if (!existsSync(helperProject)) return null
+
+  return {
+    command: 'dotnet',
+    args: ['run', '--project', helperProject, '--no-launch-profile', '--']
   }
 }
-Write-Output 'false'
-`
 
-async function verifyWindowsPassword(password: string): Promise<boolean> {
-  if (!isWindowsPasswordSupported()) return false
-  if (!password) return false
+async function runWindowsHelloHelper(args: string[]): Promise<WindowsHelloHelperOutput> {
+  const helper = resolveWindowsHelloHelperCommand()
+  if (!helper) {
+    return { ok: false, supported: false, error: 'windows_hello_helper_unavailable' }
+  }
 
-  return await new Promise<boolean>((resolve) => {
+  return await new Promise<WindowsHelloHelperOutput>((resolve) => {
     let settled = false
-    const settle = (value: boolean): void => {
+    const settle = (value: WindowsHelloHelperOutput): void => {
       if (settled) return
       settled = true
       resolve(value)
     }
 
-    const child = spawn(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', POWERSHELL_WINDOWS_PASSWORD_VERIFY_SCRIPT],
-      {
-        windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe']
-      }
-    )
+    const child = spawn(helper.command, [...helper.args, ...args], {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
 
     let stdout = ''
     let stderr = ''
@@ -752,22 +756,68 @@ async function verifyWindowsPassword(password: string): Promise<boolean> {
     })
 
     child.on('error', (error) => {
-      console.error('执行 Windows 密码验证失败:', error)
-      settle(false)
+      settle({ ok: false, supported: false, error: getErrorMessage(error) })
     })
 
-    child.on('close', (code) => {
-      if (code !== 0 && stderr.trim()) {
-        console.error('Windows 密码验证脚本异常:', stderr.trim())
+    child.on('close', () => {
+      const payloadText = stdout.trim()
+      if (!payloadText) {
+        settle({ ok: false, supported: false, error: stderr.trim() || 'empty_helper_response' })
+        return
       }
-      settle(stdout.trim().toLowerCase().endsWith('true'))
-    })
 
-    child.stdin.on('error', () => {
-      // 进程提前结束时忽略 stdin 写入错误
+      try {
+        settle(JSON.parse(payloadText) as WindowsHelloHelperOutput)
+      } catch (error) {
+        settle({
+          ok: false,
+          supported: false,
+          error: `${getErrorMessage(error)}: ${payloadText}`
+        })
+      }
     })
-    child.stdin.end(password)
   })
+}
+
+function getWindowHandleValue(win: BrowserWindow): string | null {
+  try {
+    const handle = win.getNativeWindowHandle()
+    if (handle.length >= 8) {
+      return handle.readBigUInt64LE(0).toString()
+    }
+    if (handle.length >= 4) {
+      return BigInt(handle.readUInt32LE(0)).toString()
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+async function getPrivacyAuthSupport(): Promise<PrivacyAuthSupport> {
+  const result = await runWindowsHelloHelper(['support'])
+  return {
+    windowsHello: result.supported === true,
+    availability: result.availability,
+    error: result.error
+  }
+}
+
+async function verifyWindowsHello(
+  win: BrowserWindow,
+  message: string
+): Promise<WindowsHelloVerificationResult> {
+  const hwnd = getWindowHandleValue(win)
+  if (!hwnd) {
+    return { ok: false, error: 'window_handle_unavailable' }
+  }
+
+  const result = await runWindowsHelloHelper(['verify', hwnd, message])
+  return {
+    ok: result.ok === true,
+    result: result.result,
+    error: result.error
+  }
 }
 
 async function runUpdateCheck(): Promise<CheckForUpdatesResult> {
@@ -875,7 +925,7 @@ app
     // Register custom protocol for images
     registerDiaryImageProtocol()
 
-    // 手动触发下载，避免检查更新后自动开始下载导致状态不可控
+    // 鎵嬪姩瑙﹀彂涓嬭浇锛岄伩鍏嶆鏌ユ洿鏂板悗鑷姩寮€濮嬩笅杞藉鑷寸姸鎬佷笉鍙帶
     autoUpdater.autoDownload = false
 
     await migrateLegacyAvatarSetting()
@@ -893,7 +943,7 @@ app
     })
   })
   .catch((error) => {
-    console.error('应用初始化失败:', error)
+    console.error('搴旂敤鍒濆鍖栧け璐?', error)
     app.quit()
   })
 
@@ -916,7 +966,7 @@ function registerIpcHandlers(): void {
     acknowledgeQuitPreparation(event.sender.id)
   })
 
-  // 日记 CRUD
+  // 鏃ヨ CRUD
   handleTrustedIpc('diary:list', (_event, params: Parameters<typeof getDiaryEntries>[0]) => {
     return getDiaryEntries(params ?? {})
   })
@@ -968,12 +1018,12 @@ function registerIpcHandlers(): void {
     return getDiaryDates(yearMonth)
   })
 
-  // 搜索
+  // 鎼滅储
   handleTrustedIpc('diary:search', (_event, params: Parameters<typeof searchDiaries>[0]) => {
     return searchDiaries(params)
   })
 
-  // 档案
+  // 妗ｆ
   handleTrustedIpc('archives:list', (_event, params: Parameters<typeof archives.list>[0]) => {
     return archives.list(params)
   })
@@ -1019,28 +1069,28 @@ function registerIpcHandlers(): void {
     invalidateMediaLibraryCache()
   })
 
-  // 标签
+  // 鏍囩
   handleTrustedIpc('tags:list', () => {
     return getAllTags()
   })
 
-  // 附件
+  // 闄勪欢
   handleTrustedIpc('attachment:add', async (_event, diaryId: string) => {
-    assertDisguiseAvailable('附件添加')
+    assertDisguiseAvailable('闄勪欢娣诲姞')
     return await addAttachment(diaryId)
   })
 
   handleTrustedIpc('attachment:delete', async (_event, id: string) => {
-    assertDisguiseAvailable('附件删除')
+    assertDisguiseAvailable('闄勪欢鍒犻櫎')
     return await deleteAttachment(id)
   })
 
   handleTrustedIpc('attachment:list', (_event, diaryId: string) => {
-    assertDisguiseAvailable('附件读取')
+    assertDisguiseAvailable('闄勪欢璇诲彇')
     return getAttachments(diaryId)
   })
 
-  // 设置
+  // 璁剧疆
   handleTrustedIpc('settings:get', (_event, key: string) => {
     return getSetting(key)
   })
@@ -1086,6 +1136,23 @@ function registerIpcHandlers(): void {
     return getAllSettings()
   })
 
+  handleTrustedIpc('privacy:getAuthSupport', async () => {
+    return await getPrivacyAuthSupport()
+  })
+
+  handleTrustedIpc('privacy:verifyWindowsHello', async (event, message?: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) {
+      return { ok: false, error: 'window_unavailable' }
+    }
+
+    const prompt =
+      typeof message === 'string' && message.trim().length > 0
+        ? message.trim()
+        : 'Verify with Windows Hello'
+    return await verifyWindowsHello(win, prompt)
+  })
+
   handleTrustedIpc('disguise:getConfig', () => {
     return getDisguiseConfig()
   })
@@ -1123,18 +1190,9 @@ function registerIpcHandlers(): void {
     return true
   })
 
-  handleTrustedIpc('privacy:getAuthSupport', () => {
-    return { windowsPassword: isWindowsPasswordSupported() }
-  })
-
-  handleTrustedIpc('privacy:verifyWindowsPassword', async (_event, password: string) => {
-    if (typeof password !== 'string') return false
-    return await verifyWindowsPassword(password)
-  })
-
-  // 数据导入/导出
+  // 鏁版嵁瀵煎叆/瀵煎嚭
   handleTrustedIpc('data:export', async (event, options?: { backupPassword?: string }) => {
-    assertDisguiseAvailable('数据导出')
+    assertDisguiseAvailable('鏁版嵁瀵煎嚭')
     const win = BrowserWindow.fromWebContents(event.sender)
     return await exportAppData(
       win,
@@ -1146,7 +1204,7 @@ function registerIpcHandlers(): void {
   })
 
   handleTrustedIpc('data:import', async (event, options?: { backupPassword?: string }) => {
-    assertDisguiseAvailable('数据导入')
+    assertDisguiseAvailable('鏁版嵁瀵煎叆')
     const win = BrowserWindow.fromWebContents(event.sender)
     const result = await importAppData(
       win,
@@ -1165,11 +1223,11 @@ function registerIpcHandlers(): void {
   })
 
   handleTrustedIpc('data:cancel', () => {
-    assertDisguiseAvailable('数据传输取消')
+    assertDisguiseAvailable('鏁版嵁浼犺緭鍙栨秷')
     return cancelDataTransfer()
   })
 
-  // 统计
+  // 缁熻
   handleTrustedIpc('stats:get', () => {
     return getStats()
   })
@@ -1189,35 +1247,35 @@ function registerIpcHandlers(): void {
     return getMediaLibrary(params ?? {})
   })
 
-  // 保存图片（兼容 data URL）
+  // 淇濆瓨鍥剧墖锛堝吋瀹?data URL锛?
   handleTrustedIpc('image:save', async (_event, base64Data: string) => {
-    assertDisguiseAvailable('图片保存')
+    assertDisguiseAvailable('鍥剧墖淇濆瓨')
     try {
       const result = await saveImage(base64Data)
       return { success: true, ...result }
     } catch (error) {
-      console.error('保存图片失败:', error)
+      console.error('淇濆瓨鍥剧墖澶辫触:', error)
       return { success: false, error: String(error) }
     }
   })
 
-  // 保存图片（文件路径）
+  // 淇濆瓨鍥剧墖锛堟枃浠惰矾寰勶級
   handleTrustedIpc('image:save-file', async (_event, filePath: string) => {
-    assertDisguiseAvailable('图片保存')
+    assertDisguiseAvailable('鍥剧墖淇濆瓨')
     try {
       const result = await saveImageFromFile(filePath)
       return { success: true, ...result }
     } catch (error) {
-      console.error('通过文件路径保存图片失败:', error)
+      console.error('閫氳繃鏂囦欢璺緞淇濆瓨鍥剧墖澶辫触:', error)
       return { success: false, error: String(error) }
     }
   })
 
-  // 保存图片（二进制）
+  // 淇濆瓨鍥剧墖锛堜簩杩涘埗锛?
   handleTrustedIpc(
     'image:save-bytes',
     async (_event, payload: { bytes: Uint8Array; mimeType: string }) => {
-      assertDisguiseAvailable('图片保存')
+      assertDisguiseAvailable('鍥剧墖淇濆瓨')
       try {
         if (
           !payload ||
@@ -1231,35 +1289,35 @@ function registerIpcHandlers(): void {
         const result = await saveImageFromBytes(payload.bytes, payload.mimeType)
         return { success: true, ...result }
       } catch (error) {
-        console.error('通过二进制保存图片失败:', error)
+        console.error('閫氳繃浜岃繘鍒朵繚瀛樺浘鐗囧け璐?', error)
         return { success: false, error: String(error) }
       }
     }
   )
 
-  // 清理未使用的图片
+  // 娓呯悊鏈娇鐢ㄧ殑鍥剧墖
   handleTrustedIpc('image:cleanup', async () => {
-    assertDisguiseAvailable('图片清理')
+    assertDisguiseAvailable('鍥剧墖娓呯悊')
     try {
       await cleanupUnusedImages(getAllReferencedImageIds())
       return { success: true }
     } catch (error) {
-      console.error('清理图片失败:', error)
+      console.error('娓呯悊鍥剧墖澶辫触:', error)
       return { success: false, error: String(error) }
     }
   })
 
-  // 图片选择（用于编辑器插入图片）
+  // 鍥剧墖閫夋嫨锛堢敤浜庣紪杈戝櫒鎻掑叆鍥剧墖锛?
   handleTrustedIpc('select-image', async (event) => {
-    assertDisguiseAvailable('图片选择')
+    assertDisguiseAvailable('鍥剧墖閫夋嫨')
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       const dialogOptions = {
         properties: ['openFile'] as 'openFile'[],
         filters: [
-          { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'] }
+          { name: '鍥剧墖', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'] }
         ],
-        title: '选择图片'
+        title: '閫夋嫨鍥剧墖'
       }
       const result = win
         ? await dialog.showOpenDialog(win, dialogOptions)
@@ -1273,20 +1331,20 @@ function registerIpcHandlers(): void {
       const saved = await saveImageFromFile(filePath)
       return { canceled: false, path: saved.path, thumbnailPath: saved.thumbnailPath }
     } catch (error) {
-      console.error('选择图片失败:', error)
+      console.error('閫夋嫨鍥剧墖澶辫触:', error)
       return { canceled: true }
     }
   })
 
-  // 档案头像选择（自动 1:1 裁切，仅保存 webp 缩略图）
+  // 妗ｆ澶村儚閫夋嫨锛堣嚜鍔?1:1 瑁佸垏锛屼粎淇濆瓨 webp 缂╃暐鍥撅級
   handleTrustedIpc('select-archive-avatar', async (event) => {
-    assertDisguiseAvailable('头像选择')
+    assertDisguiseAvailable('澶村儚閫夋嫨')
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       const dialogOptions = {
         properties: ['openFile'] as 'openFile'[],
-        filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] }],
-        title: '选择头像图片'
+        filters: [{ name: '鍥剧墖', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] }],
+        title: '閫夋嫨澶村儚鍥剧墖'
       }
       const result = win
         ? await dialog.showOpenDialog(win, dialogOptions)
@@ -1300,14 +1358,14 @@ function registerIpcHandlers(): void {
       const saved = await saveArchiveAvatarFromFile(filePath)
       return { canceled: false, path: saved.path, thumbnailPath: saved.thumbnailPath }
     } catch (error) {
-      console.error('选择档案头像失败:', error)
+      console.error('閫夋嫨妗ｆ澶村儚澶辫触:', error)
       return { canceled: true }
     }
   })
 
-  // 复制图片到剪贴板（接收 base64 dataUrl）
+  // 澶嶅埗鍥剧墖鍒板壀璐存澘锛堟帴鏀?base64 dataUrl锛?
   handleTrustedIpc('image:copy', async (_event, dataUrl: string) => {
-    assertDisguiseAvailable('图片复制')
+    assertDisguiseAvailable('鍥剧墖澶嶅埗')
     try {
       const payload = await resolveImagePayload(dataUrl)
       if (!payload) return { success: false }
@@ -1320,7 +1378,7 @@ function registerIpcHandlers(): void {
     }
   })
 
-  // 另存为图片文件
+  // 鍙﹀瓨涓哄浘鐗囨枃浠?
   handleTrustedIpc('image:save-as', async (event, dataUrl: string) => {
     assertDisguiseAvailable('图片另存为')
     try {
@@ -1331,8 +1389,8 @@ function registerIpcHandlers(): void {
       const ext = payload.ext === 'jpeg' ? 'jpg' : payload.ext
       const dialogOptions = {
         defaultPath: `image.${ext}`,
-        filters: [{ name: '图片', extensions: [ext] }],
-        title: '保存图片'
+        filters: [{ name: '鍥剧墖', extensions: [ext] }],
+        title: '淇濆瓨鍥剧墖'
       }
       const result = win
         ? await dialog.showSaveDialog(win, dialogOptions)
@@ -1345,15 +1403,15 @@ function registerIpcHandlers(): void {
     }
   })
 
-  // 头像选择
+  // 澶村儚閫夋嫨
   handleTrustedIpc('select-avatar', async (event) => {
-    assertDisguiseAvailable('头像选择')
+    assertDisguiseAvailable('澶村儚閫夋嫨')
     try {
       const win = BrowserWindow.fromWebContents(event.sender)
       const dialogOptions = {
         properties: ['openFile'] as 'openFile'[],
-        filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }],
-        title: '选择头像图片'
+        filters: [{ name: '鍥剧墖', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }],
+        title: '閫夋嫨澶村儚鍥剧墖'
       }
       const result = win
         ? await dialog.showOpenDialog(win, dialogOptions)
@@ -1376,12 +1434,12 @@ function registerIpcHandlers(): void {
 
       return { canceled: false, path: saved.path, thumbnailPath: saved.thumbnailPath }
     } catch (error) {
-      console.error('处理头像失败:', error)
+      console.error('澶勭悊澶村儚澶辫触:', error)
       return { canceled: true }
     }
   })
 
-  // 窗口控制
+  // 绐楀彛鎺у埗
   handleTrustedIpc('window:minimize', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     win?.minimize()
@@ -1405,7 +1463,7 @@ function registerIpcHandlers(): void {
     return win?.isMaximized() ?? false
   })
 
-  // 应用信息
+  // 搴旂敤淇℃伅
   handleTrustedIpc('app:getInfo', () => {
     return {
       name: app.getName(),
@@ -1416,12 +1474,12 @@ function registerIpcHandlers(): void {
     }
   })
 
-  // 检查更新
+  // 妫€鏌ユ洿鏂?
   handleTrustedIpc('app:checkForUpdates', async (_event, options?: UpdateCheckOptions) => {
     return await getUpdateCheckResult(options)
   })
 
-  // 下载更新
+  // 涓嬭浇鏇存柊
   handleTrustedIpc('app:downloadUpdate', async () => {
     if (activeUpdateDownloadToken && !activeUpdateDownloadToken.cancelled) {
       return
@@ -1447,7 +1505,7 @@ function registerIpcHandlers(): void {
         throw new Error(checkResult.error || '检查更新失败，请稍后重试')
       }
       if (!checkResult.updateInfo) {
-        throw new Error('当前已是最新版本，无需下载更新')
+        throw new Error('褰撳墠宸叉槸鏈€鏂扮増鏈紝鏃犻渶涓嬭浇鏇存柊')
       }
 
       await autoUpdater.downloadUpdate(cancellationToken)
@@ -1467,12 +1525,12 @@ function registerIpcHandlers(): void {
     return true
   })
 
-  // 安装更新
+  // 瀹夎鏇存柊
   handleTrustedIpc('app:installUpdate', () => {
     autoUpdater.quitAndInstall()
   })
 
-  // 更新下载进度事件
+  // 鏇存柊涓嬭浇杩涘害浜嬩欢
   autoUpdater.on('download-progress', (progress) => {
     mainWindow?.webContents.send('update:download-progress', {
       percent: progress.percent,
@@ -1486,7 +1544,7 @@ function registerIpcHandlers(): void {
     mainWindow?.webContents.send('update:download-canceled')
   })
 
-  // 更新下载完成事件
+  // 鏇存柊涓嬭浇瀹屾垚浜嬩欢
   autoUpdater.on('update-downloaded', () => {
     mainWindow?.webContents.send('update:downloaded')
   })
@@ -1515,3 +1573,4 @@ const cropImageToSquare = (image: Electron.NativeImage): Electron.NativeImage =>
 
   return cropped
 }
+

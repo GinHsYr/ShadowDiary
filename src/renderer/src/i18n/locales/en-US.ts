@@ -21,13 +21,13 @@ const enUS = {
   app: {
     privacy: {
       title: 'Privacy Protection',
-      unlockWithWindowsPassword: 'Enter your Windows sign-in password to unlock',
+      unlockWithWindowsHello: 'Verify with Windows Hello to unlock',
       unlockWithPin: 'Enter your 6-digit PIN to unlock',
-      windowsPasswordPlaceholder: 'Windows sign-in password',
       unlock: 'Unlock',
-      requireWindowsPassword: 'Please enter your Windows sign-in password',
+      windowsHelloAction: 'Use Windows Hello',
+      windowsHelloPrompt: 'Verify with Windows Hello to unlock ShadowDiary',
+      windowsHelloFailed: 'Windows Hello verification failed, please try again',
       requirePin: 'Please enter a 6-digit PIN',
-      windowsPasswordIncorrect: 'Incorrect Windows password, please try again',
       pinIncorrect: 'Incorrect password, please try again',
       unlockFailed: 'Failed to unlock, please try again later'
     }
@@ -244,10 +244,10 @@ const enUS = {
       enabled: 'Privacy Protection',
       enabledDescription: 'When enabled, unlocking credentials are required after re-entering',
       authMethod: 'Unlock Method',
-      authMethodSupported: 'Choose 6-digit PIN or Windows sign-in password',
-      authMethodPinOnly: 'Only 6-digit PIN is supported on this system',
+      authMethodSupported: 'Choose a 6-digit PIN or Windows Hello',
+      authMethodPinOnly: 'Only the 6-digit PIN unlock method is available on this device',
       pinOption: '6-digit PIN',
-      windowsOption: 'Windows sign-in password',
+      windowsOption: 'Windows Hello',
       idleLock: 'Idle Auto-Lock',
       idleLockDescription: 'Lock automatically after the configured idle duration',
       passwordSetup: 'Password Setup',
@@ -255,9 +255,9 @@ const enUS = {
       passwordMissingHint: 'No password is set. Please set a 6-digit PIN first',
       resetPassword: 'Reset Password',
       setPassword: 'Set Password',
-      windowsPassword: 'Windows Sign-in Password',
-      windowsPasswordDescription:
-        'Uses your system account password for unlock, no local privacy password needed',
+      windowsHelloLabel: 'Windows Hello',
+      windowsHelloDescription:
+        'Uses your Windows Hello verification flow, including PIN or available biometrics',
       manualLockShortcut: 'Manual Lock Shortcut',
       manualLockShortcutDescription:
         'When privacy protection is enabled, use this shortcut to lock immediately (focus the input then press a new combo)',
@@ -282,8 +282,11 @@ const enUS = {
       disguiseShortcutInvalid: 'Invalid shortcut. Use Ctrl/Alt/Shift/Meta + letter or number',
       disguiseShortcutConflict: 'Disguise mode shortcut cannot be the same as manual lock shortcut',
       disguiseDataRegenerated: 'Disguise data regenerated, reloading page',
-      switchToWindows: 'Switched to Windows password unlock',
+      switchToWindows: 'Switched to Windows Hello unlock',
       switchToPin: 'Switched to PIN unlock',
+      windowsHelloEnablePrompt: 'Verify with Windows Hello to enable privacy protection',
+      windowsHelloDisablePrompt: 'Verify with Windows Hello to disable privacy protection',
+      windowsHelloVerifyFailed: 'Windows Hello verification was not completed',
       idleLockUpdated: 'Idle lock duration updated',
       manualLockShortcutUpdated: 'Manual lock shortcut updated to {shortcut}',
       manualLockShortcutInvalid: 'Invalid shortcut. Use Ctrl/Alt/Shift/Meta + letter or number',
@@ -300,17 +303,9 @@ const enUS = {
         setupSwitchDesc: 'Set a 6-digit PIN first. Unlock method will switch to PIN after saving',
         disableDesc: 'Enter current password to disable privacy protection',
         resetDesc: 'Verify current password before setting a new one',
-        windowsEnableTitle: 'Enable Privacy Protection',
-        windowsDisableTitle: 'Disable Privacy Protection',
-        windowsEnableDesc:
-          'Enter your Windows sign-in password. Privacy protection will be enabled after verification',
-        windowsDisableDesc: 'Enter your Windows sign-in password to disable privacy protection',
         currentPassword: 'Current Password',
         newPassword: 'New Password',
         confirmPassword: 'Confirm New Password',
-        windowsPasswordLabel: 'Windows Sign-in Password',
-        windowsPasswordPlaceholder: 'Enter your Windows sign-in password',
-        verifyAndEnable: 'Verify & Enable',
         confirmDisable: 'Confirm Disable'
       }
     },

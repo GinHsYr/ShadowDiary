@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="settings-page">
     <div class="page-header">
       <h1 class="page-title">{{ t('settings.title') }}</h1>
@@ -7,7 +7,7 @@
 
     <div class="settings-container">
       <n-space vertical :size="24">
-        <!-- 外观设置 -->
+        <!-- 婢舵牞顫囩拋鍓х枂 -->
         <n-card :title="t('settings.appearance')" :bordered="false" class="settings-card">
           <n-space vertical :size="20">
             <div class="setting-item">
@@ -74,7 +74,7 @@
           </div>
         </n-card>
 
-        <!-- 隐私保护 -->
+        <!-- 闂呮劗顫嗘穱婵囧Б -->
         <n-card :title="t('settings.privacy.card')" :bordered="false" class="settings-card">
           <n-space vertical :size="16">
             <div class="setting-item">
@@ -96,7 +96,7 @@
                 <label class="setting-label">{{ t('settings.privacy.authMethod') }}</label>
                 <span class="setting-description">
                   {{
-                    privacy.isWindowsPasswordSupported
+                    privacy.isWindowsHelloSupported
                       ? t('settings.privacy.authMethodSupported')
                       : t('settings.privacy.authMethodPinOnly')
                   }}
@@ -223,10 +223,7 @@
               </div>
             </div>
 
-            <div
-              v-if="privacy.isEnabled && privacy.authMethod === 'pin'"
-              class="setting-item setting-item-top"
-            >
+            <div v-if="privacy.isEnabled && privacy.authMethod === 'pin'" class="setting-item setting-item-top">
               <div class="setting-info">
                 <label class="setting-label">{{ t('settings.privacy.passwordSetup') }}</label>
                 <span class="setting-description">
@@ -254,13 +251,13 @@
             </div>
 
             <div
-              v-if="privacy.isEnabled && privacy.authMethod === 'windows'"
+              v-if="privacy.isEnabled && privacy.usesWindowsHello"
               class="setting-item setting-item-top"
             >
               <div class="setting-info">
-                <label class="setting-label">{{ t('settings.privacy.windowsPassword') }}</label>
+                <label class="setting-label">{{ t('settings.privacy.windowsHelloLabel') }}</label>
                 <span class="setting-description">
-                  {{ t('settings.privacy.windowsPasswordDescription') }}
+                  {{ t('settings.privacy.windowsHelloDescription') }}
                 </span>
               </div>
             </div>
@@ -277,7 +274,7 @@
           </n-space>
         </n-card>
 
-        <!-- 数据管理 -->
+        <!-- 閺佺増宓佺粻锛勬倞 -->
         <n-card :title="t('settings.data.card')" :bordered="false" class="settings-card">
           <n-space vertical :size="16">
             <div class="setting-item">
@@ -325,7 +322,7 @@
           </n-space>
         </n-card>
 
-        <!-- 关于 -->
+        <!-- 閸忓厖绨?-->
         <n-card :title="t('settings.about.card')" :bordered="false" class="settings-card">
           <n-space vertical :size="16">
             <div class="about-item">
@@ -459,52 +456,6 @@
               passwordModalMode === 'disable'
                 ? t('settings.privacy.modal.confirmDisable')
                 : t('common.save')
-            }}
-          </n-button>
-        </n-space>
-      </template>
-    </n-modal>
-
-    <n-modal
-      v-model:show="showWindowsPasswordModal"
-      preset="card"
-      :title="windowsPasswordModalTitle"
-      :bordered="false"
-      style="width: 440px; border-radius: 12px"
-      @close="handleCloseWindowsPasswordModal"
-    >
-      <n-space vertical :size="12">
-        <p class="privacy-modal-desc">{{ windowsPasswordModalDescription }}</p>
-
-        <div class="setting-info">
-          <label class="setting-label">{{
-            t('settings.privacy.modal.windowsPasswordLabel')
-          }}</label>
-          <n-input
-            :value="windowsPasswordForDisable"
-            type="password"
-            show-password-on="mousedown"
-            :status="windowsPasswordStatus"
-            :placeholder="t('settings.privacy.modal.windowsPasswordPlaceholder')"
-            @update:value="handleWindowsPasswordInput"
-          />
-        </div>
-      </n-space>
-
-      <template #footer>
-        <n-space justify="end">
-          <n-button :disabled="privacyLoading" @click="handleCloseWindowsPasswordModal">{{
-            t('common.cancel')
-          }}</n-button>
-          <n-button
-            type="primary"
-            :loading="privacyLoading"
-            @click="handleSubmitWindowsPasswordModal"
-          >
-            {{
-              windowsPasswordModalMode === 'enable'
-                ? t('settings.privacy.modal.verifyAndEnable')
-                : t('settings.privacy.modal.confirmDisable')
             }}
           </n-button>
         </n-space>
@@ -742,7 +693,7 @@ const visibleAccentOptions = computed(() =>
 )
 const localePreferenceOptions = computed(() => [
   { label: t('settings.followSystem'), value: 'system' as LocalePreference },
-  { label: '中文', value: 'zh-CN' as LocalePreference },
+  { label: '简体中文', value: 'zh-CN' as LocalePreference },
   { label: 'English', value: 'en-US' as LocalePreference },
   { label: '日本語', value: 'ja-JP' as LocalePreference },
   { label: '한국어', value: 'ko-KR' as LocalePreference }
@@ -787,10 +738,6 @@ const privacyMessage = ref('')
 const privacyMessageType = ref<'success' | 'error' | 'info'>('info')
 const showPasswordModal = ref(false)
 const passwordModalMode = ref<'setup' | 'reset' | 'disable'>('setup')
-const showWindowsPasswordModal = ref(false)
-const windowsPasswordModalMode = ref<'enable' | 'disable'>('disable')
-const windowsPasswordForDisable = ref('')
-const windowsPasswordStatus = ref<'error' | undefined>(undefined)
 const currentPassword = ref<string[]>([])
 const newPassword = ref<string[]>([])
 const confirmPassword = ref<string[]>([])
@@ -820,13 +767,13 @@ const backupPasswordModalDescription = computed(() =>
     ? t('settings.data.exportPasswordDesc')
     : t('settings.data.importPasswordDesc')
 )
-const privacyAuthMethodOptions = computed(() => {
+const privacyAuthMethodOptions = computed((): Array<{ label: string; value: PrivacyAuthMethod }> => {
   const options: Array<{ label: string; value: PrivacyAuthMethod }> = [
     { label: t('settings.privacy.pinOption'), value: 'pin' }
   ]
 
-  if (privacy.isWindowsPasswordSupported) {
-    options.push({ label: t('settings.privacy.windowsOption'), value: 'windows' })
+  if (privacy.isWindowsHelloSupported) {
+    options.push({ label: t('settings.privacy.windowsOption'), value: 'windowsHello' })
   }
 
   return options
@@ -840,12 +787,12 @@ const appInfo = ref<AppInfo>({
   nodeVersion: ''
 })
 
-// 加载应用信息
+// 閸旂姾娴囨惔鏃傛暏娣団剝浼?
 async function loadAppInfo(): Promise<void> {
   try {
     appInfo.value = await window.api.getAppInfo()
   } catch (error) {
-    console.error('加载应用信息失败:', error)
+    console.error('閸旂姾娴囨惔鏃傛暏娣団剝浼呮径杈Е:', error)
   }
 }
 
@@ -879,7 +826,7 @@ function isUpdateDownloadCanceledError(error: unknown): boolean {
 onMounted(() => {
   loadAppInfo()
 
-  // 监听下载进度
+  // 閻╂垵鎯夋稉瀣祰鏉╂稑瀹?
   removeUpdateListeners.push(
     window.api.onDownloadProgress((progress: UpdateDownloadProgress) => {
       downloadProgress.value = Math.max(0, Math.min(100, Math.round(progress.percent)))
@@ -888,7 +835,7 @@ onMounted(() => {
     })
   )
 
-  // 监听下载取消
+  // 閻╂垵鎯夋稉瀣祰閸欐牗绉?
   removeUpdateListeners.push(
     window.api.onUpdateDownloadCanceled(() => {
       downloading.value = false
@@ -899,7 +846,7 @@ onMounted(() => {
     })
   )
 
-  // 监听下载完成
+  // 閻╂垵鎯夋稉瀣祰鐎瑰本鍨?
   removeUpdateListeners.push(
     window.api.onUpdateDownloaded(() => {
       downloading.value = false
@@ -946,7 +893,7 @@ const handleAccentChange = (accent: ThemeAccent): void => {
 
 const handleOpenAISettings = (): void => {
   router.push('/settings/ai').catch((error) => {
-    console.error('打开 AI 设置页面失败:', error)
+    console.error('閹垫挸绱?AI 鐠佸墽鐤嗘い鐢告桨婢惰精瑙?', error)
   })
 }
 
@@ -966,7 +913,7 @@ const handleLocalePreferenceChange = async (value: string | number | null): Prom
   try {
     await localeStore.setPreference(value)
   } catch (error) {
-    console.error('更新语言设置失败:', error)
+    console.error('閺囧瓨鏌婄拠顓♀枅鐠佸墽鐤嗘径杈Е:', error)
   } finally {
     localeSaving.value = false
   }
@@ -989,18 +936,6 @@ const passwordModalDescription = computed(() => {
   return t('settings.privacy.modal.resetDesc')
 })
 
-const windowsPasswordModalTitle = computed(() =>
-  windowsPasswordModalMode.value === 'enable'
-    ? t('settings.privacy.modal.windowsEnableTitle')
-    : t('settings.privacy.modal.windowsDisableTitle')
-)
-
-const windowsPasswordModalDescription = computed(() =>
-  windowsPasswordModalMode.value === 'enable'
-    ? t('settings.privacy.modal.windowsEnableDesc')
-    : t('settings.privacy.modal.windowsDisableDesc')
-)
-
 function allowDigitInput(char: string): boolean {
   return /^\d$/.test(char)
 }
@@ -1020,11 +955,6 @@ const handleConfirmPasswordInput = (value: string[]): void => {
   confirmPasswordStatus.value = undefined
 }
 
-const handleWindowsPasswordInput = (value: string): void => {
-  windowsPasswordForDisable.value = value
-  windowsPasswordStatus.value = undefined
-}
-
 const resetPasswordStatuses = (): void => {
   currentPasswordStatus.value = undefined
   newPasswordStatus.value = undefined
@@ -1036,11 +966,6 @@ const resetPasswordModalForm = (): void => {
   newPassword.value = []
   confirmPassword.value = []
   resetPasswordStatuses()
-}
-
-const resetWindowsPasswordModalForm = (): void => {
-  windowsPasswordForDisable.value = ''
-  windowsPasswordStatus.value = undefined
 }
 
 const openPasswordModal = (
@@ -1062,18 +987,6 @@ const handleClosePasswordModal = (): void => {
   resetPasswordModalForm()
 }
 
-const openWindowsPasswordModal = (mode: 'enable' | 'disable'): void => {
-  windowsPasswordModalMode.value = mode
-  resetWindowsPasswordModalForm()
-  showWindowsPasswordModal.value = true
-}
-
-const handleCloseWindowsPasswordModal = (): void => {
-  showWindowsPasswordModal.value = false
-  windowsPasswordModalMode.value = 'disable'
-  resetWindowsPasswordModalForm()
-}
-
 const enablePrivacy = async (): Promise<void> => {
   if (privacyLoading.value) return
 
@@ -1083,8 +996,33 @@ const enablePrivacy = async (): Promise<void> => {
     privacyMessage.value = t('settings.privacy.enabledSuccess')
     privacyMessageType.value = 'success'
   } catch (error) {
-    console.error('开启隐私保护失败:', error)
+    console.error('瀵偓閸氼垶娈ｇ粔浣风箽閹躲倕銇戠拹?', error)
     privacyMessage.value = t('settings.data.openFailedWithReason', { reason: String(error) })
+    privacyMessageType.value = 'error'
+  } finally {
+    privacyLoading.value = false
+  }
+}
+
+const enablePrivacyWithWindowsHello = async (): Promise<void> => {
+  if (privacyLoading.value) return
+
+  privacyLoading.value = true
+  try {
+    const verified = await privacy.verifyWindowsHello(t('settings.privacy.windowsHelloEnablePrompt'))
+    if (!verified) {
+      privacyMessage.value = t('settings.privacy.windowsHelloVerifyFailed')
+      privacyMessageType.value = 'error'
+      return
+    }
+
+    await privacy.enablePrivacy()
+    privacyMessage.value = t('settings.privacy.enabledSuccess')
+    privacyMessageType.value = 'success'
+  } catch (error) {
+    privacyMessage.value = t('settings.data.openFailedWithReason', {
+      reason: unwrapIpcErrorMessage(error)
+    })
     privacyMessageType.value = 'error'
   } finally {
     privacyLoading.value = false
@@ -1093,19 +1031,35 @@ const enablePrivacy = async (): Promise<void> => {
 
 const handlePrivacyToggle = (value: boolean): void => {
   if (value) {
-    if (privacy.authMethod === 'pin' && !privacy.hasPassword) {
-      openPasswordModal('setup', true)
+    if (privacy.usesWindowsHello) {
+      void enablePrivacyWithWindowsHello()
       return
     }
-    if (privacy.authMethod === 'windows') {
-      openWindowsPasswordModal('enable')
+    if (!privacy.hasPassword) {
+      openPasswordModal('setup', true)
       return
     }
     void enablePrivacy()
     return
   }
-  if (privacy.usesWindowsPassword) {
-    openWindowsPasswordModal('disable')
+
+  if (privacy.usesWindowsHello) {
+    privacyLoading.value = true
+    void privacy
+      .disablePrivacyWithWindowsHello(t('settings.privacy.windowsHelloDisablePrompt'))
+      .then(() => {
+        privacyMessage.value = t('settings.privacy.disabledSuccess')
+        privacyMessageType.value = 'success'
+      })
+      .catch((error) => {
+        privacyMessage.value = t('settings.data.closeFailedWithReason', {
+          reason: unwrapIpcErrorMessage(error)
+        })
+        privacyMessageType.value = 'error'
+      })
+      .finally(() => {
+        privacyLoading.value = false
+      })
     return
   }
   openPasswordModal('disable')
@@ -1116,7 +1070,7 @@ const handleOpenPasswordModal = (): void => {
 }
 
 const handlePrivacyAuthMethodChange = async (value: string | number | null): Promise<void> => {
-  if (value !== 'pin' && value !== 'windows') return
+  if (value !== 'pin' && value !== 'windowsHello') return
   if (privacyLoading.value || value === privacy.authMethod) return
 
   if (value === 'pin' && !privacy.hasPassword) {
@@ -1128,12 +1082,12 @@ const handlePrivacyAuthMethodChange = async (value: string | number | null): Pro
   try {
     await privacy.setAuthMethod(value)
     privacyMessage.value =
-      value === 'windows'
+      value === 'windowsHello'
         ? t('settings.privacy.switchToWindows')
         : t('settings.privacy.switchToPin')
     privacyMessageType.value = 'success'
   } catch (error) {
-    console.error('更新隐私解锁方式失败:', error)
+    console.error('閺囧瓨鏌婇梾鎰潌鐟欙綁鏀ｉ弬鐟扮础婢惰精瑙?', error)
     privacyMessage.value = t('settings.data.updateFailedWithReason', { reason: String(error) })
     privacyMessageType.value = 'error'
   } finally {
@@ -1150,7 +1104,7 @@ const handlePrivacyIdleMinuteChange = async (value: number | null): Promise<void
     privacyMessage.value = t('settings.privacy.idleLockUpdated')
     privacyMessageType.value = 'success'
   } catch (error) {
-    console.error('更新自动锁定时长失败:', error)
+    console.error('閺囧瓨鏌婇懛顏勫З闁夸礁鐣鹃弮鍫曟毐婢惰精瑙?', error)
     privacyMessage.value = t('settings.data.updateFailedWithReason', { reason: String(error) })
     privacyMessageType.value = 'error'
   } finally {
@@ -1167,7 +1121,7 @@ const updateManualLockShortcut = async (shortcut: string): Promise<void> => {
     privacyMessage.value = t('settings.privacy.manualLockShortcutUpdated', { shortcut })
     privacyMessageType.value = 'success'
   } catch (error) {
-    console.error('更新手动锁定快捷键失败:', error)
+    console.error('閺囧瓨鏌婇幍瀣З闁夸礁鐣捐箛顐ｅ祹闁款喖銇戠拹?', error)
     privacyMessage.value = t('settings.data.updateFailedWithReason', { reason: String(error) })
     privacyMessageType.value = 'error'
   } finally {
@@ -1211,7 +1165,7 @@ const handleDisguiseToggle = async (value: boolean): Promise<void> => {
     privacyMessageType.value = 'success'
     reloadForDisguiseMode()
   } catch (error) {
-    console.error('切换伪装模式失败:', error)
+    console.error('閸掑洦宕叉导顏囶棅濡€崇础婢惰精瑙?', error)
     privacyMessage.value = t('settings.data.updateFailedWithReason', {
       reason: unwrapIpcErrorMessage(error)
     })
@@ -1230,7 +1184,7 @@ const handleDisguiseAutoEnableOnLaunchToggle = async (value: boolean): Promise<v
     privacyMessage.value = t('settings.privacy.disguiseAutoEnableUpdated')
     privacyMessageType.value = 'success'
   } catch (error) {
-    console.error('更新伪装模式自动启动失败:', error)
+    console.error('閺囧瓨鏌婃导顏囶棅濡€崇础閼奉亜濮╅崥顖氬З婢惰精瑙?', error)
     privacyMessage.value = t('settings.data.updateFailedWithReason', {
       reason: unwrapIpcErrorMessage(error)
     })
@@ -1255,7 +1209,7 @@ const updateDisguiseShortcut = async (shortcut: string): Promise<void> => {
     privacyMessage.value = t('settings.privacy.disguiseShortcutUpdated', { shortcut })
     privacyMessageType.value = 'success'
   } catch (error) {
-    console.error('更新伪装模式快捷键失败:', error)
+    console.error('閺囧瓨鏌婃导顏囶棅濡€崇础韫囶偅宓庨柨顔笺亼鐠?', error)
     privacyMessage.value = t('settings.data.updateFailedWithReason', {
       reason: unwrapIpcErrorMessage(error)
     })
@@ -1295,7 +1249,7 @@ const handleRegenerateDisguiseData = async (): Promise<void> => {
     privacyMessageType.value = 'success'
     reloadForDisguiseMode()
   } catch (error) {
-    console.error('重建伪装数据失败:', error)
+    console.error('闁插秴缂撴导顏囶棅閺佺増宓佹径杈Е:', error)
     privacyMessage.value = t('settings.data.updateFailedWithReason', {
       reason: unwrapIpcErrorMessage(error)
     })
@@ -1323,8 +1277,8 @@ const handleSubmitPasswordModal = async (): Promise<void> => {
       privacyMessageType.value = 'success'
       handleClosePasswordModal()
     } catch (error) {
-      console.error('关闭隐私保护失败:', error)
-      if (String(error).includes('原密码错误')) {
+      console.error('閸忔娊妫撮梾鎰潌娣囨繃濮㈡径杈Е:', error)
+      if (String(error).includes('current_password_incorrect')) {
         currentPasswordStatus.value = 'error'
       } else {
         privacyMessage.value = t('settings.data.closeFailedWithReason', { reason: String(error) })
@@ -1378,54 +1332,13 @@ const handleSubmitPasswordModal = async (): Promise<void> => {
     privacyMessageType.value = 'success'
     handleClosePasswordModal()
   } catch (error) {
-    console.error('保存隐私密码失败:', error)
-    if (String(error).includes('原密码错误')) {
+    console.error('娣囨繂鐡ㄩ梾鎰潌鐎靛棛鐖滄径杈Е:', error)
+    if (String(error).includes('current_password_incorrect')) {
       currentPasswordStatus.value = 'error'
     } else {
       privacyMessage.value = t('settings.data.saveFailedWithReason', { reason: String(error) })
       privacyMessageType.value = 'error'
     }
-  } finally {
-    privacyLoading.value = false
-  }
-}
-
-const handleSubmitWindowsPasswordModal = async (): Promise<void> => {
-  if (privacyLoading.value) return
-
-  windowsPasswordStatus.value = undefined
-  if (!windowsPasswordForDisable.value) {
-    windowsPasswordStatus.value = 'error'
-    return
-  }
-
-  privacyLoading.value = true
-  try {
-    const verified = await window.api.verifyWindowsPassword(windowsPasswordForDisable.value)
-    if (!verified) {
-      windowsPasswordStatus.value = 'error'
-      return
-    }
-
-    if (windowsPasswordModalMode.value === 'enable') {
-      await privacy.enablePrivacy()
-      privacyMessage.value = t('settings.privacy.enabledSuccess')
-    } else {
-      await privacy.disablePrivacy()
-      privacyMessage.value = t('settings.privacy.disabledSuccess')
-    }
-    privacyMessageType.value = 'success'
-    handleCloseWindowsPasswordModal()
-  } catch (error) {
-    console.error('处理隐私保护失败:', error)
-    privacyMessage.value = t('settings.data.failedWithReason', {
-      action:
-        windowsPasswordModalMode.value === 'enable'
-          ? t('settings.privacy.modal.windowsEnableTitle')
-          : t('settings.privacy.modal.windowsDisableTitle'),
-      reason: String(error)
-    })
-    privacyMessageType.value = 'error'
   } finally {
     privacyLoading.value = false
   }
@@ -2096,3 +2009,8 @@ const handleImportData = (): void => {
   }
 }
 </style>
+
+
+
+
+

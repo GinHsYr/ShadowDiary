@@ -26,7 +26,7 @@ A local-first diary desktop app built with Electron + Vue 3 + TypeScript.
   - `Ctrl/Cmd + K` quick search
   - Combined filters by keyword, mood, tags, date range, and archive data
 - **Privacy & Security**
-  - App lock (6-digit PIN / Windows sign-in password)
+  - App lock (6-digit PIN / Windows Hello)
   - Auto-lock on idle and system lock linkage
   - Encrypted SQLite database (SQLCipher)
   - Optional disguise mode for privacy-sensitive scenarios

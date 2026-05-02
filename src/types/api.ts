@@ -36,7 +36,15 @@ export interface AppInfo {
 }
 
 export interface PrivacyAuthSupport {
-  windowsPassword: boolean
+  windowsHello: boolean
+  availability?: string
+  error?: string
+}
+
+export interface WindowsHelloVerificationResult {
+  ok: boolean
+  result?: string
+  error?: string
 }
 
 export interface DisguiseConfig {
@@ -145,7 +153,7 @@ export interface DiaryAPI {
   setSecureSetting(key: string, value: string): Promise<void>
   getAllSettings(): Promise<Record<string, string>>
   getPrivacyAuthSupport(): Promise<PrivacyAuthSupport>
-  verifyWindowsPassword(password: string): Promise<boolean>
+  verifyWindowsHello(message?: string): Promise<WindowsHelloVerificationResult>
   getDisguiseConfig(): Promise<DisguiseConfig>
   setDisguiseEnabled(enabled: boolean): Promise<void>
   setDisguiseAutoEnableOnLaunch(enabled: boolean): Promise<void>

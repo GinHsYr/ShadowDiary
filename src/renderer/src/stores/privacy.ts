@@ -5,23 +5,33 @@ const PRIVACY_PASSWORD_HASH_KEY = 'privacy.passwordHash'
 const PRIVACY_IDLE_LOCK_MINUTES_KEY = 'privacy.idleLockMinutes'
 const PRIVACY_AUTH_METHOD_KEY = 'privacy.authMethod'
 const PRIVACY_MANUAL_LOCK_SHORTCUT_KEY = 'privacy.manualLockShortcut'
-const DEFAULT_PRIVACY_AUTH_METHOD = 'pin'
+const DEFAULT_PRIVACY_AUTH_METHOD: PrivacyAuthMethod = 'pin'
 const DEFAULT_PRIVACY_IDLE_LOCK_MINUTES = 5
+
+const ERROR_CURRENT_PASSWORD_INCORRECT = 'current_password_incorrect'
+const ERROR_WINDOWS_HELLO_VERIFICATION_FAILED = 'windows_hello_verification_failed'
+const ERROR_INVALID_PIN = 'invalid_pin'
+const ERROR_WINDOWS_HELLO_NOT_SUPPORTED = 'windows_hello_not_supported'
+const ERROR_PIN_REQUIRED_BEFORE_SWITCH = 'pin_required_before_switch'
+const ERROR_INVALID_MANUAL_LOCK_SHORTCUT = 'invalid_manual_lock_shortcut'
+
 export const DEFAULT_PRIVACY_MANUAL_LOCK_SHORTCUT = 'Alt+L'
 export const PRIVACY_IDLE_LOCK_MINUTE_OPTIONS = [1, 5, 10, 15, 30] as const
-export type PrivacyAuthMethod = 'pin' | 'windows'
+export type PrivacyAuthMethod = 'pin' | 'windowsHello'
 
-function isPrivacyAuthMethod(value: string): value is PrivacyAuthMethod {
-  return value === 'pin' || value === 'windows'
+function isPrivacyAuthMethod(value: string): value is PrivacyAuthMethod | 'windows' {
+  return value === 'pin' || value === 'windowsHello' || value === 'windows'
 }
 
 function normalizeAuthMethod(
   value: string | null | undefined,
-  windowsPasswordSupported: boolean
+  windowsHelloSupported: boolean
 ): PrivacyAuthMethod {
   const trimmed = value?.trim() || ''
   if (!isPrivacyAuthMethod(trimmed)) return DEFAULT_PRIVACY_AUTH_METHOD
-  if (trimmed === 'windows' && !windowsPasswordSupported) return DEFAULT_PRIVACY_AUTH_METHOD
+  if (trimmed === 'windows' || trimmed === 'windowsHello') {
+    return windowsHelloSupported ? 'windowsHello' : DEFAULT_PRIVACY_AUTH_METHOD
+  }
   return trimmed
 }
 
@@ -190,23 +200,21 @@ export const usePrivacyStore = defineStore('privacy', {
     idleLockMinutes: DEFAULT_PRIVACY_IDLE_LOCK_MINUTES,
     manualLockShortcut: DEFAULT_PRIVACY_MANUAL_LOCK_SHORTCUT,
     authMethod: DEFAULT_PRIVACY_AUTH_METHOD as PrivacyAuthMethod,
-    isWindowsPasswordSupported: false
+    isWindowsHelloSupported: false
   }),
 
   getters: {
     isUnlocked(state): boolean {
       return !state.isLocked
     },
-    usesWindowsPassword(state): boolean {
-      return state.authMethod === 'windows'
+    usesWindowsHello(state): boolean {
+      return state.authMethod === 'windowsHello'
     },
     hasPassword(state): boolean {
       return state.passwordHash.length > 0
     },
     hasCredential(state): boolean {
-      if (state.authMethod === 'windows') {
-        return state.isWindowsPasswordSupported
-      }
+      if (state.authMethod === 'windowsHello') return state.isWindowsHelloSupported
       return state.passwordHash.length > 0
     },
     idleLockMs(state): number {
@@ -237,51 +245,64 @@ export const usePrivacyStore = defineStore('privacy', {
         const normalizedHash = passwordHash?.trim() || ''
         const idleLockMinutes = normalizeIdleLockMinutes(idleLockMinutesSetting)
         const manualLockShortcut = normalizePrivacyManualLockShortcut(manualLockShortcutSetting)
-        const windowsPasswordSupported = !!authSupport?.windowsPassword
-        const authMethod = normalizeAuthMethod(authMethodSetting, windowsPasswordSupported)
+        const windowsHelloSupported = authSupport?.windowsHello === true
+        const authMethod = normalizeAuthMethod(authMethodSetting, windowsHelloSupported)
 
         this.isEnabled = enabled
         this.passwordHash = normalizedHash
         this.idleLockMinutes = idleLockMinutes
         this.manualLockShortcut = manualLockShortcut
+        this.isWindowsHelloSupported = windowsHelloSupported
         this.authMethod = authMethod
-        this.isWindowsPasswordSupported = windowsPasswordSupported
         this.isLocked = enabled && this.hasCredential
 
         if ((authMethodSetting?.trim() || '') !== authMethod) {
           void window.api
             .setSetting(PRIVACY_AUTH_METHOD_KEY, authMethod)
-            .catch((error) => console.error('保存隐私认证方式失败:', error))
+            .catch((error) => console.error('Failed to save privacy auth method:', error))
         }
         if ((manualLockShortcutSetting?.trim() || '') !== manualLockShortcut) {
           void window.api
             .setSetting(PRIVACY_MANUAL_LOCK_SHORTCUT_KEY, manualLockShortcut)
-            .catch((error) => console.error('保存手动锁定快捷键失败:', error))
+            .catch((error) => console.error('Failed to save manual lock shortcut:', error))
         }
       } catch (error) {
-        console.error('加载隐私设置失败:', error)
+        console.error('Failed to load privacy settings:', error)
         this.isEnabled = false
         this.isLocked = false
         this.passwordHash = ''
         this.idleLockMinutes = DEFAULT_PRIVACY_IDLE_LOCK_MINUTES
         this.manualLockShortcut = DEFAULT_PRIVACY_MANUAL_LOCK_SHORTCUT
         this.authMethod = DEFAULT_PRIVACY_AUTH_METHOD
-        this.isWindowsPasswordSupported = false
+        this.isWindowsHelloSupported = false
       } finally {
         this.isInitialized = true
       }
     },
 
     async unlockWithPassword(password: string): Promise<boolean> {
+      if (this.authMethod !== 'pin') return false
       if (!this.isEnabled) {
         this.isLocked = false
         return true
       }
 
-      const matches = await this.verifyCredential(password)
-      if (!matches) {
-        return false
+      const matches = await this.verifyPinPassword(password)
+      if (!matches) return false
+
+      this.isLocked = false
+      return true
+    },
+
+    async unlockWithWindowsHello(message: string): Promise<boolean> {
+      if (this.authMethod !== 'windowsHello' || !this.isWindowsHelloSupported) return false
+      if (!this.isEnabled) {
+        this.isLocked = false
+        return true
       }
+
+      const result = await window.api.verifyWindowsHello(message)
+      if (!result.ok) return false
 
       this.isLocked = false
       return true
@@ -307,17 +328,20 @@ export const usePrivacyStore = defineStore('privacy', {
     },
 
     async disablePrivacyWithPassword(password: string): Promise<void> {
-      const matched = await this.verifyCredential(password)
-      if (!matched) {
-        throw new Error('原密码错误')
-      }
+      const matched = await this.verifyPinPassword(password)
+      if (!matched) throw new Error(ERROR_CURRENT_PASSWORD_INCORRECT)
+      await this.disablePrivacy()
+    },
 
+    async disablePrivacyWithWindowsHello(message: string): Promise<void> {
+      const matched = await this.verifyWindowsHello(message)
+      if (!matched) throw new Error(ERROR_WINDOWS_HELLO_VERIFICATION_FAILED)
       await this.disablePrivacy()
     },
 
     async setPassword(password: string): Promise<void> {
       if (!isValidPrivacyPassword(password)) {
-        throw new Error('密码必须是6位数字')
+        throw new Error(ERROR_INVALID_PIN)
       }
 
       const hash = await sha256Hex(password)
@@ -329,7 +353,13 @@ export const usePrivacyStore = defineStore('privacy', {
     },
 
     async verifyPassword(password: string): Promise<boolean> {
-      return await this.verifyCredential(password)
+      return await this.verifyPinPassword(password)
+    },
+
+    async verifyWindowsHello(message: string): Promise<boolean> {
+      if (!this.isWindowsHelloSupported) return false
+      const result = await window.api.verifyWindowsHello(message)
+      return result.ok
     },
 
     async verifyPinPassword(password: string): Promise<boolean> {
@@ -341,21 +371,13 @@ export const usePrivacyStore = defineStore('privacy', {
       return hashed === this.passwordHash
     },
 
-    async verifyCredential(password: string): Promise<boolean> {
-      if (this.authMethod === 'windows') {
-        if (!this.isWindowsPasswordSupported || !password) return false
-        return await window.api.verifyWindowsPassword(password)
-      }
-      return await this.verifyPinPassword(password)
-    },
-
     async setAuthMethod(method: PrivacyAuthMethod): Promise<void> {
-      const normalizedMethod = normalizeAuthMethod(method, this.isWindowsPasswordSupported)
-      if (normalizedMethod !== method) {
-        throw new Error('当前系统不支持 Windows 登录密码')
+      const normalizedMethod = normalizeAuthMethod(method, this.isWindowsHelloSupported)
+      if (method === 'windowsHello' && normalizedMethod !== 'windowsHello') {
+        throw new Error(ERROR_WINDOWS_HELLO_NOT_SUPPORTED)
       }
       if (normalizedMethod === 'pin' && this.isEnabled && !this.hasPassword) {
-        throw new Error('请先设置6位数字密码')
+        throw new Error(ERROR_PIN_REQUIRED_BEFORE_SWITCH)
       }
 
       await window.api.setSetting(PRIVACY_AUTH_METHOD_KEY, normalizedMethod)
@@ -367,10 +389,7 @@ export const usePrivacyStore = defineStore('privacy', {
 
     async updatePasswordWithCurrent(currentPassword: string, newPassword: string): Promise<void> {
       const currentValid = await this.verifyPinPassword(currentPassword)
-      if (!currentValid) {
-        throw new Error('原密码错误')
-      }
-
+      if (!currentValid) throw new Error(ERROR_CURRENT_PASSWORD_INCORRECT)
       await this.setPassword(newPassword)
     },
 
@@ -382,9 +401,7 @@ export const usePrivacyStore = defineStore('privacy', {
 
     async setManualLockShortcut(shortcut: string): Promise<void> {
       const parsed = parseShortcut(shortcut)
-      if (!parsed) {
-        throw new Error('手动锁定快捷键格式无效')
-      }
+      if (!parsed) throw new Error(ERROR_INVALID_MANUAL_LOCK_SHORTCUT)
       const normalized = formatShortcut(parsed)
       await window.api.setSetting(PRIVACY_MANUAL_LOCK_SHORTCUT_KEY, normalized)
       this.manualLockShortcut = normalized

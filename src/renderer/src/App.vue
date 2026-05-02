@@ -4,7 +4,6 @@ import {
   NCard,
   NConfigProvider,
   NDialogProvider,
-  NInput,
   NInputOtp,
   NLayout,
   NLayoutContent,
@@ -44,12 +43,9 @@ const USER_ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'wheel', 'tou
   // 调试开关：设置 VITE_DEBUG_BYPASS_PRIVACY_LOCK=1 可临时跳过隐私锁屏流程。
 const DEBUG_BYPASS_PRIVACY_LOCK = import.meta.env.VITE_DEBUG_BYPASS_PRIVACY_LOCK === '1'
 const password = ref<string[]>([])
-const windowsPassword = ref('')
 const unlockError = ref('')
 const unlocking = ref(false)
-const passwordValue = computed(() =>
-  privacy.usesWindowsPassword ? windowsPassword.value : password.value.join('')
-)
+const passwordValue = computed(() => password.value.join(''))
 const unlockStatus = computed<'error' | undefined>(() => (unlockError.value ? 'error' : undefined))
 let idleTimer: number | null = null
 let lastActivityAt = Date.now()
@@ -133,11 +129,9 @@ function handlePasswordFinish(value: string[]): void {
   void handleUnlock()
 }
 
-function handleWindowsPasswordInput(value: string): void {
-  windowsPassword.value = value
-  if (unlockError.value) {
-    unlockError.value = ''
-  }
+function resetUnlockState(): void {
+  password.value = []
+  unlockError.value = ''
 }
 
 function canAutoLockByPrivacy(): boolean {
@@ -255,30 +249,28 @@ async function flushBeforeQuit(): Promise<void> {
 async function handleUnlock(): Promise<void> {
   if (unlocking.value) return
 
-  if (privacy.usesWindowsPassword && !passwordValue.value) {
-    unlockError.value = t('app.privacy.requireWindowsPassword')
-    return
-  }
-
-  if (!privacy.usesWindowsPassword && !isValidPrivacyPassword(passwordValue.value)) {
-    unlockError.value = t('app.privacy.requirePin')
-    return
-  }
-
   unlocking.value = true
   try {
-    const ok = await privacy.unlockWithPassword(passwordValue.value)
+    let ok = false
+
+    if (privacy.usesWindowsHello) {
+      ok = await privacy.unlockWithWindowsHello(t('app.privacy.windowsHelloPrompt'))
+    } else {
+      if (!isValidPrivacyPassword(passwordValue.value)) {
+        unlockError.value = t('app.privacy.requirePin')
+        return
+      }
+      ok = await privacy.unlockWithPassword(passwordValue.value)
+    }
+
     if (!ok) {
-      unlockError.value = privacy.usesWindowsPassword
-        ? t('app.privacy.windowsPasswordIncorrect')
+      unlockError.value = privacy.usesWindowsHello
+        ? t('app.privacy.windowsHelloFailed')
         : t('app.privacy.pinIncorrect')
       password.value = []
-      windowsPassword.value = ''
       return
     }
-    password.value = []
-    windowsPassword.value = ''
-    unlockError.value = ''
+    resetUnlockState()
   } catch (error) {
     console.error('解锁失败:', error)
     unlockError.value = t('app.privacy.unlockFailed')
@@ -474,18 +466,18 @@ onBeforeUnmount(() => {
                 <h2 class="privacy-lock-title">{{ t('app.privacy.title') }}</h2>
                 <p class="privacy-lock-description">
                   {{
-                    privacy.usesWindowsPassword
-                      ? t('app.privacy.unlockWithWindowsPassword')
+                    privacy.usesWindowsHello
+                      ? t('app.privacy.unlockWithWindowsHello')
                       : t('app.privacy.unlockWithPin')
                   }}
                 </p>
 
                 <div
                   class="privacy-lock-form"
-                  :class="{ 'privacy-lock-form--windows': privacy.usesWindowsPassword }"
+                  :class="{ 'privacy-lock-form--windows-hello': privacy.usesWindowsHello }"
                 >
                   <n-input-otp
-                    v-if="!privacy.usesWindowsPassword"
+                    v-if="!privacy.usesWindowsHello"
                     :value="password"
                     :length="OTP_LENGTH"
                     mask
@@ -495,22 +487,14 @@ onBeforeUnmount(() => {
                     @update:value="handlePasswordInput"
                     @finish="handlePasswordFinish"
                   />
-                  <template v-else>
-                    <n-input
-                      :value="windowsPassword"
-                      type="password"
-                      show-password-on="mousedown"
-                      clearable
-                      :disabled="unlocking"
-                      :status="unlockStatus"
-                      :placeholder="t('app.privacy.windowsPasswordPlaceholder')"
-                      @update:value="handleWindowsPasswordInput"
-                      @keyup.enter="handleUnlock"
-                    />
-                    <n-button type="primary" :loading="unlocking" @click="handleUnlock">{{
-                      t('app.privacy.unlock')
-                    }}</n-button>
-                  </template>
+                  <n-button
+                    v-else
+                    type="primary"
+                    :loading="unlocking"
+                    @click="handleUnlock"
+                  >
+                    {{ t('app.privacy.windowsHelloAction') }}
+                  </n-button>
                 </div>
               </n-card>
             </div>
@@ -842,9 +826,8 @@ body {
   justify-content: center;
 }
 
-.privacy-lock-form--windows {
-  flex-direction: column;
-  gap: 10px;
+.privacy-lock-form--windows-hello {
+  align-items: center;
 }
 
 @keyframes privacy-lock-card-drop-bounce {

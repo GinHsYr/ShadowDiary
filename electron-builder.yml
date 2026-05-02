@@ -5,6 +5,11 @@ directories:
 files:
   - out/**
   - package.json
+extraResources:
+  - from: build/windows-hello-helper
+    to: windows-hello-helper
+    filter:
+      - '**/*'
 asarUnpack:
   - '**/*.node'
 compression: maximum
