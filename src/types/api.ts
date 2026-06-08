@@ -53,6 +53,15 @@ export interface DisguiseConfig {
   shortcut: string
 }
 
+export interface McpRuntimeStatus {
+  enabled: boolean
+  running: boolean
+  url: string
+  host: string
+  port: number
+  error?: string
+}
+
 export interface AppUpdateInfo {
   version: string
   releaseDate?: string
@@ -99,17 +108,13 @@ export interface DataTransferResult {
   path?: string
   error?: string
   errorCode?:
-    | 'VALIDATION_FAILED'
     | 'UNSUPPORTED_BACKUP_FORMAT'
-    | 'MISSING_KEY_ENVELOPE'
-    | 'WRONG_BACKUP_PASSWORD'
+    | 'MISSING_KEY_FILE'
     | 'INVALID_BACKUP'
     | 'TRANSFER_IN_PROGRESS'
 }
 
-export interface DataTransferOptions {
-  backupPassword: string
-}
+export interface DataTransferOptions {}
 
 export interface DataTransferProgress {
   percent: number
@@ -159,6 +164,7 @@ export interface DiaryAPI {
   setDisguiseAutoEnableOnLaunch(enabled: boolean): Promise<void>
   setDisguiseShortcut(shortcut: string): Promise<void>
   regenerateDisguiseData(): Promise<void>
+  getMcpStatus(): Promise<McpRuntimeStatus>
   exportData(options: DataTransferOptions): Promise<DataTransferResult>
   importData(options: DataTransferOptions): Promise<DataTransferResult>
   cancelDataTransfer(): Promise<boolean>

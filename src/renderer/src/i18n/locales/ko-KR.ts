@@ -239,6 +239,99 @@ const koKR = {
       purple: '네온 퍼플',
       teal: '틸'
     },
+    ai: {
+      title: 'AI Settings',
+      subtitle: 'Configure providers, models, feature bindings, and local MCP access',
+      entry: {
+        title: 'Models and Providers',
+        description: 'Configure AI providers, models, and feature bindings'
+      },
+      provider: {
+        card: 'Providers',
+        detailCard: 'Provider Configuration',
+        modelCount: '{count} models',
+        empty: 'No providers yet',
+        selectProviderHint: 'Select a provider first',
+        name: 'Provider Name',
+        namePlaceholder: 'Enter provider name',
+        baseUrl: 'Base URL',
+        baseUrlPlaceholder: 'For example: https://api.openai.com/v1',
+        apiKey: 'API Key',
+        apiKeyDescription: 'API keys are stored locally through secure settings',
+        apiKeyPlaceholder: 'Enter API key',
+        customNamePlaceholder: 'Enter custom provider name',
+        defaultCustomName: 'Custom Provider',
+        deleteConfirmTitle: 'Delete Provider',
+        deleteConfirmContent: 'Delete "{name}"? Its models and feature bindings will be removed.',
+        types: {
+          openai: 'OpenAI',
+          anthropic: 'Anthropic',
+          siliconflow: 'SiliconFlow',
+          custom: 'Custom'
+        }
+      },
+      model: {
+        card: 'Models',
+        empty: 'This provider has no models yet',
+        displayNamePlaceholder: 'Display name, e.g. GPT-4o',
+        modelIdPlaceholder: 'Model ID, e.g. gpt-4o'
+      },
+      binding: {
+        card: 'Feature Model Bindings',
+        providerPlaceholder: 'Select provider',
+        modelPlaceholder: 'Select model'
+      },
+      mcp: {
+        card: 'MCP Configuration',
+        enabled: 'Enable MCP',
+        enabledDescription: 'Allow other local apps to read diaries through MCP',
+        endpoint: 'Local Endpoint',
+        endpointDescription: 'Listens on 127.0.0.1 only and requires a Bearer token',
+        port: 'Port',
+        portDescription: 'Changing the port restarts the MCP service automatically',
+        token: 'Access Token',
+        tokenDescription: 'Send this as Authorization: Bearer when calling MCP',
+        maxSearchResults: 'Max Search Results',
+        maxReadChars: 'Read Characters',
+        maxBatchMetadata: 'Batch Metadata Limit',
+        statusRunning: 'Running',
+        statusStopped: 'Stopped',
+        statusStarting: 'Starting',
+        statusError: 'Error',
+        statusErrorDetail: 'MCP failed to start: {reason}',
+        openDetail: 'Open Configuration'
+      },
+      features: {
+        chat: 'Chat',
+        summary: 'Summary',
+        rewrite: 'Rewrite'
+      },
+      actions: {
+        addProvider: 'Add Provider',
+        deleteProvider: 'Delete Provider',
+        addModel: 'Add Model',
+        deleteModel: 'Delete Model',
+        clearBinding: 'Clear',
+        copyToken: 'Copy Token',
+        regenerateToken: 'Regenerate',
+        openDetail: 'Open Settings'
+      },
+      messages: {
+        saving: 'Saving...',
+        saveSuccess: 'AI settings saved',
+        saveFailed: 'Failed to save AI settings',
+        providerAdded: 'Provider added',
+        providerDeleted: 'Provider deleted',
+        modelAdded: 'Model added',
+        modelDeleted: 'Model deleted',
+        modelAddFailed: 'Failed to add model',
+        modelUpdateFailed: 'Failed to update model',
+        providerHasNoModel: 'This provider has no models yet',
+        tokenCopied: 'MCP token copied',
+        tokenCopyFailed: 'Failed to copy MCP token',
+        tokenRegenerated: 'MCP token regenerated'
+      }
+    },
     privacy: {
       card: '개인정보 보호',
       enabled: '개인정보 보호',

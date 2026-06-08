@@ -45,6 +45,7 @@ const api: DiaryAPI = {
   setDisguiseAutoEnableOnLaunch: (enabled) => invoke('disguise:setAutoEnableOnLaunch', enabled),
   setDisguiseShortcut: (shortcut) => invoke('disguise:setShortcut', shortcut),
   regenerateDisguiseData: () => invoke('disguise:regenerateData'),
+  getMcpStatus: () => invoke('mcp:getStatus'),
   exportData: (options) => invoke('data:export', options),
   importData: (options) => invoke('data:import', options),
   cancelDataTransfer: () => invoke('data:cancel'),

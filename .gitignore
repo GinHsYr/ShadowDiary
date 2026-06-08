@@ -13,3 +13,7 @@ nul
 .idea
 AGENTS.md
 .codex
+.appdata
+.dotnet
+.nuget
+.userprofile

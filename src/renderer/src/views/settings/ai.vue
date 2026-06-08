@@ -213,7 +213,16 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowBackOutline } from '@vicons/ionicons5'
-import { NButton, NCard, NEmpty, NIcon, NInput, NSelect, NSpace, useDialog } from 'naive-ui'
+import {
+  NButton,
+  NCard,
+  NEmpty,
+  NIcon,
+  NInput,
+  NSelect,
+  NSpace,
+  useDialog
+} from 'naive-ui'
 import { useRouter } from 'vue-router'
 import {
   AI_FEATURE_KEYS,

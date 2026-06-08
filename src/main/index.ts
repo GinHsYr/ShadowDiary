@@ -100,6 +100,12 @@ import {
   isDisguiseModeEnabled,
   regenerateDisguiseModeData
 } from './privacy/disguiseSession'
+import {
+  applyMcpServerConfig,
+  getMcpServerStatus,
+  normalizeMcpServerConfig,
+  stopMcpServer
+} from './mcp/server'
 
 const IMAGE_MIME_MAP: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -307,6 +313,7 @@ function requestAppQuit(): void {
     } catch (error) {
       console.error('搴旂敤閫€鍑哄噯澶囧け璐?', error)
     } finally {
+      await stopMcpServer()
       closeDatabaseSafely()
       app.exit(0)
     }
@@ -516,6 +523,26 @@ function encryptAiSettingsValue(value: string): string {
     ...parsed,
     providers
   })
+}
+
+async function applyMcpConfigFromStoredAiSettings(): Promise<void> {
+  const value = getSetting(AI_SETTINGS_CONFIG_KEY)
+  if (!value) {
+    await applyMcpServerConfig(normalizeMcpServerConfig(null))
+    return
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(decryptAiSettingsValue(value))
+  } catch (error) {
+    console.error('Failed to parse AI settings for MCP config:', error)
+    await applyMcpServerConfig(normalizeMcpServerConfig(null))
+    return
+  }
+
+  const mcpConfig = isPlainRecord(parsed) ? parsed.mcp : null
+  await applyMcpServerConfig(normalizeMcpServerConfig(mcpConfig))
 }
 
 function applyDisguiseModeOnLaunch(): void {
@@ -930,6 +957,7 @@ app
 
     await migrateLegacyAvatarSetting()
     applyDisguiseModeOnLaunch()
+    await applyMcpConfigFromStoredAiSettings()
 
     // Register IPC handlers
     registerIpcHandlers()
@@ -1129,11 +1157,18 @@ function registerIpcHandlers(): void {
     if (!isDisguiseModeEnabled()) {
       await cleanupReleasedImages(releasedIds)
     }
+    if (key === AI_SETTINGS_CONFIG_KEY) {
+      await applyMcpConfigFromStoredAiSettings()
+    }
     return true
   })
 
   handleTrustedIpc('settings:getAll', () => {
     return getAllSettings()
+  })
+
+  handleTrustedIpc('mcp:getStatus', () => {
+    return getMcpServerStatus()
   })
 
   handleTrustedIpc('privacy:getAuthSupport', async () => {
@@ -1191,24 +1226,24 @@ function registerIpcHandlers(): void {
   })
 
   // 鏁版嵁瀵煎叆/瀵煎嚭
-  handleTrustedIpc('data:export', async (event, options?: { backupPassword?: string }) => {
+  handleTrustedIpc('data:export', async (event) => {
     assertDisguiseAvailable('鏁版嵁瀵煎嚭')
     const win = BrowserWindow.fromWebContents(event.sender)
     return await exportAppData(
       win,
-      { backupPassword: options?.backupPassword ?? '' },
+      {},
       (progress: DataTransferProgress) => {
         event.sender.send('data:export-progress', progress)
       }
     )
   })
 
-  handleTrustedIpc('data:import', async (event, options?: { backupPassword?: string }) => {
+  handleTrustedIpc('data:import', async (event) => {
     assertDisguiseAvailable('鏁版嵁瀵煎叆')
     const win = BrowserWindow.fromWebContents(event.sender)
     const result = await importAppData(
       win,
-      { backupPassword: options?.backupPassword ?? '' },
+      {},
       (progress: DataTransferProgress) => {
         event.sender.send('data:import-progress', progress)
       }
@@ -1573,4 +1608,3 @@ const cropImageToSquare = (image: Electron.NativeImage): Electron.NativeImage =>
 
   return cropped
 }
-

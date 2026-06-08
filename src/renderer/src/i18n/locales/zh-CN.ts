@@ -258,6 +258,10 @@ const zhCN = {
     ai: {
       title: 'AI 设置',
       subtitle: '配置提供商、模型，以及不同 AI 功能对应的默认模型',
+      entry: {
+        title: '模型与供应商',
+        description: '配置 AI 提供商、模型和功能绑定'
+      },
       provider: {
         card: '提供商',
         detailCard: '提供商配置',
@@ -293,6 +297,26 @@ const zhCN = {
         providerPlaceholder: '选择提供商',
         modelPlaceholder: '选择模型'
       },
+      mcp: {
+        card: 'MCP 配置',
+        enabled: '启用 MCP',
+        enabledDescription: '允许其他本地应用通过 MCP 只读访问日记',
+        endpoint: '本地端点',
+        endpointDescription: '仅监听 127.0.0.1，调用时需要 Bearer Token',
+        port: '端口',
+        portDescription: '修改端口后会自动重启 MCP 服务',
+        token: '访问令牌',
+        tokenDescription: '外部应用调用 MCP 时需要放在 Authorization: Bearer 中',
+        maxSearchResults: '最大搜索结果数',
+        maxReadChars: '单次阅读字符数',
+        maxBatchMetadata: '批量元信息数量',
+        statusRunning: '运行中',
+        statusStopped: '已停止',
+        statusStarting: '启动中',
+        statusError: '异常',
+        statusErrorDetail: 'MCP 启动失败：{reason}',
+        openDetail: '进入配置'
+      },
       features: {
         chat: '对话',
         summary: '总结',
@@ -303,7 +327,10 @@ const zhCN = {
         deleteProvider: '删除提供商',
         addModel: '添加模型',
         deleteModel: '删除模型',
-        clearBinding: '清空绑定'
+        clearBinding: '清空绑定',
+        copyToken: '复制令牌',
+        regenerateToken: '重新生成',
+        openDetail: '进入设置'
       },
       messages: {
         saving: '自动保存中...',
@@ -315,7 +342,10 @@ const zhCN = {
         modelDeleted: '模型已删除',
         modelAddFailed: '添加模型失败',
         modelUpdateFailed: '更新模型失败',
-        providerHasNoModel: '该提供商还没有模型，请先添加模型'
+        providerHasNoModel: '该提供商还没有模型，请先添加模型',
+        tokenCopied: 'MCP 令牌已复制',
+        tokenCopyFailed: '复制 MCP 令牌失败',
+        tokenRegenerated: 'MCP 令牌已重新生成'
       }
     },
     privacy: {

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="settings-page">
     <div class="page-header">
       <h1 class="page-title">{{ t('settings.title') }}</h1>
@@ -65,13 +65,27 @@
         </n-card>
 
         <n-card :title="t('settings.navigation.ai')" :bordered="false" class="settings-card">
-          <div class="setting-item">
-            <div class="setting-info">
-              <label class="setting-label">{{ t('settings.ai.title') }}</label>
-              <span class="setting-description">{{ t('settings.ai.subtitle') }}</span>
+          <n-space vertical :size="12">
+            <div v-if="false" class="setting-item setting-entry">
+              <div class="setting-info">
+                <label class="setting-label">{{ t('settings.ai.entry.title') }}</label>
+                <span class="setting-description">{{ t('settings.ai.entry.description') }}</span>
+              </div>
+              <n-button @click="handleOpenAISettings">
+                {{ t('settings.ai.actions.openDetail') }}
+              </n-button>
             </div>
-            <n-button @click="handleOpenAISettings">{{ t('settings.navigation.ai') }}</n-button>
-          </div>
+
+            <div class="setting-item setting-entry">
+              <div class="setting-info">
+                <label class="setting-label">{{ t('settings.ai.mcp.card') }}</label>
+                <span class="setting-description">{{ t('settings.ai.mcp.enabledDescription') }}</span>
+              </div>
+              <n-button @click="handleOpenMcpSettings">
+                {{ t('settings.ai.mcp.openDetail') }}
+              </n-button>
+            </div>
+          </n-space>
         </n-card>
 
         <!-- 闂呮劗顫嗘穱婵囧Б -->
@@ -223,7 +237,10 @@
               </div>
             </div>
 
-            <div v-if="privacy.isEnabled && privacy.authMethod === 'pin'" class="setting-item setting-item-top">
+            <div
+              v-if="privacy.isEnabled && privacy.authMethod === 'pin'"
+              class="setting-item setting-item-top"
+            >
               <div class="setting-info">
                 <label class="setting-label">{{ t('settings.privacy.passwordSetup') }}</label>
                 <span class="setting-description">
@@ -461,65 +478,6 @@
         </n-space>
       </template>
     </n-modal>
-
-    <n-modal
-      v-model:show="showBackupPasswordModal"
-      preset="card"
-      :title="backupPasswordModalTitle"
-      :bordered="false"
-      style="width: 440px; border-radius: 12px"
-      @close="handleCloseBackupPasswordModal"
-    >
-      <n-space vertical :size="12">
-        <p class="privacy-modal-desc">
-          {{ backupPasswordModalDescription }}
-        </p>
-        <div class="setting-info">
-          <label class="setting-label">{{ t('settings.data.backupPassword') }}</label>
-          <n-input
-            v-model:value="backupPassword"
-            type="password"
-            show-password-on="mousedown"
-            :status="backupPasswordStatus"
-            :placeholder="t('settings.data.minLength', { count: MIN_BACKUP_PASSWORD_LENGTH })"
-          />
-        </div>
-
-        <div v-if="backupPasswordMode === 'export'" class="setting-info">
-          <label class="setting-label">{{ t('settings.data.confirmPassword') }}</label>
-          <n-input
-            v-model:value="confirmBackupPassword"
-            type="password"
-            show-password-on="mousedown"
-            :status="confirmBackupPasswordStatus"
-            :placeholder="t('settings.data.reenterPassword')"
-          />
-        </div>
-      </n-space>
-
-      <template #footer>
-        <n-space justify="end">
-          <n-button
-            :disabled="exportingData || importingData || backupPasswordSubmitting"
-            @click="handleCloseBackupPasswordModal"
-          >
-            {{ t('common.cancel') }}
-          </n-button>
-          <n-button
-            type="primary"
-            :loading="backupPasswordSubmitting"
-            @click="handleConfirmBackupPassword"
-          >
-            {{
-              backupPasswordMode === 'export'
-                ? t('settings.data.confirmExport')
-                : t('settings.data.confirmImport')
-            }}
-          </n-button>
-        </n-space>
-      </template>
-    </n-modal>
-
     <n-modal
       v-model:show="showExportProgressDialog"
       preset="dialog"
@@ -724,14 +682,6 @@ const importProgressMessage = ref(t('settings.data.preparingImport'))
 const importTransferDone = ref(false)
 const importCanceling = ref(false)
 const reloadAfterImportComplete = ref(false)
-const MIN_BACKUP_PASSWORD_LENGTH = 8
-const showBackupPasswordModal = ref(false)
-const backupPasswordMode = ref<'export' | 'import'>('export')
-const backupPassword = ref('')
-const confirmBackupPassword = ref('')
-const backupPasswordStatus = ref<'error' | undefined>(undefined)
-const confirmBackupPasswordStatus = ref<'error' | undefined>(undefined)
-const backupPasswordSubmitting = ref(false)
 const privacyLoading = ref(false)
 const disguiseLoading = ref(false)
 const privacyMessage = ref('')
@@ -757,27 +707,19 @@ const downloadProgressText = computed(() =>
     total: formatFileSize(totalBytes.value)
   })
 )
-const backupPasswordModalTitle = computed(() =>
-  backupPasswordMode.value === 'export'
-    ? t('settings.data.exportPasswordTitle')
-    : t('settings.data.importPasswordTitle')
-)
-const backupPasswordModalDescription = computed(() =>
-  backupPasswordMode.value === 'export'
-    ? t('settings.data.exportPasswordDesc')
-    : t('settings.data.importPasswordDesc')
-)
-const privacyAuthMethodOptions = computed((): Array<{ label: string; value: PrivacyAuthMethod }> => {
-  const options: Array<{ label: string; value: PrivacyAuthMethod }> = [
-    { label: t('settings.privacy.pinOption'), value: 'pin' }
-  ]
+const privacyAuthMethodOptions = computed(
+  (): Array<{ label: string; value: PrivacyAuthMethod }> => {
+    const options: Array<{ label: string; value: PrivacyAuthMethod }> = [
+      { label: t('settings.privacy.pinOption'), value: 'pin' }
+    ]
 
-  if (privacy.isWindowsHelloSupported) {
-    options.push({ label: t('settings.privacy.windowsOption'), value: 'windowsHello' })
+    if (privacy.isWindowsHelloSupported) {
+      options.push({ label: t('settings.privacy.windowsOption'), value: 'windowsHello' })
+    }
+
+    return options
   }
-
-  return options
-})
+)
 
 const appInfo = ref<AppInfo>({
   name: '',
@@ -897,6 +839,12 @@ const handleOpenAISettings = (): void => {
   })
 }
 
+const handleOpenMcpSettings = (): void => {
+  router.push('/settings/mcp').catch((error) => {
+    console.error('打开 MCP 设置页面失败:', error)
+  })
+}
+
 const handleLocalePreferenceChange = async (value: string | number | null): Promise<void> => {
   if (
     value !== 'system' &&
@@ -1009,7 +957,9 @@ const enablePrivacyWithWindowsHello = async (): Promise<void> => {
 
   privacyLoading.value = true
   try {
-    const verified = await privacy.verifyWindowsHello(t('settings.privacy.windowsHelloEnablePrompt'))
+    const verified = await privacy.verifyWindowsHello(
+      t('settings.privacy.windowsHelloEnablePrompt')
+    )
     if (!verified) {
       privacyMessage.value = t('settings.privacy.windowsHelloVerifyFailed')
       privacyMessageType.value = 'error'
@@ -1447,35 +1397,7 @@ const handleInstallUpdate = (): void => {
 }
 
 const handleExportData = async (): Promise<void> => {
-  openBackupPasswordModal('export')
-}
-
-function resetBackupPasswordStatuses(): void {
-  backupPasswordStatus.value = undefined
-  confirmBackupPasswordStatus.value = undefined
-}
-
-function resetBackupPasswordForm(): void {
-  backupPassword.value = ''
-  confirmBackupPassword.value = ''
-  resetBackupPasswordStatuses()
-}
-
-function openBackupPasswordModal(mode: 'export' | 'import'): void {
-  backupPasswordMode.value = mode
-  backupPasswordSubmitting.value = false
-  resetBackupPasswordForm()
-  showBackupPasswordModal.value = true
-}
-
-function handleCloseBackupPasswordModal(): void {
-  showBackupPasswordModal.value = false
-  backupPasswordSubmitting.value = false
-  resetBackupPasswordForm()
-}
-
-function isValidBackupPassword(value: string): boolean {
-  return value.trim().length >= MIN_BACKUP_PASSWORD_LENGTH
+  await runExportData()
 }
 
 function resolveTransferErrorMessage(
@@ -1492,20 +1414,11 @@ function resolveTransferErrorMessage(
     })
   }
 
-  if (result.errorCode === 'VALIDATION_FAILED') {
-    return (
-      result.error ||
-      t('settings.data.backupPasswordTooShort', { count: MIN_BACKUP_PASSWORD_LENGTH })
-    )
-  }
   if (result.errorCode === 'UNSUPPORTED_BACKUP_FORMAT') {
     return result.error || t('settings.data.unsupportedBackup')
   }
-  if (result.errorCode === 'MISSING_KEY_ENVELOPE') {
+  if (result.errorCode === 'MISSING_KEY_FILE') {
     return result.error || t('settings.data.missingEnvelope')
-  }
-  if (result.errorCode === 'WRONG_BACKUP_PASSWORD') {
-    return t('settings.data.wrongBackupPassword')
   }
   if (result.errorCode === 'TRANSFER_IN_PROGRESS') {
     return result.error || t('settings.data.transferInProgress')
@@ -1550,7 +1463,7 @@ const handleCancelImportTransfer = async (): Promise<void> => {
   }
 }
 
-const runExportData = async (backupPasswordValue: string): Promise<void> => {
+const runExportData = async (): Promise<void> => {
   exportingData.value = true
   exportTransferDone.value = false
   exportCanceling.value = false
@@ -1561,7 +1474,7 @@ const runExportData = async (backupPasswordValue: string): Promise<void> => {
   dataMessageType.value = 'info'
 
   try {
-    const result = await window.api.exportData({ backupPassword: backupPasswordValue })
+    const result = await window.api.exportData({})
     if (result.canceled) {
       exportProgress.value = 100
       exportProgressMessage.value = t('settings.data.exportCanceled')
@@ -1596,7 +1509,7 @@ const runExportData = async (backupPasswordValue: string): Promise<void> => {
   }
 }
 
-const runImportData = async (backupPasswordValue: string): Promise<void> => {
+const runImportData = async (): Promise<void> => {
   importingData.value = true
   importTransferDone.value = false
   importCanceling.value = false
@@ -1608,7 +1521,7 @@ const runImportData = async (backupPasswordValue: string): Promise<void> => {
   dataMessageType.value = 'info'
 
   try {
-    const result = await window.api.importData({ backupPassword: backupPasswordValue })
+    const result = await window.api.importData({})
     if (result.canceled) {
       importProgress.value = 100
       importProgressMessage.value = t('settings.data.importCanceled')
@@ -1644,41 +1557,6 @@ const runImportData = async (backupPasswordValue: string): Promise<void> => {
   }
 }
 
-const handleConfirmBackupPassword = async (): Promise<void> => {
-  if (backupPasswordSubmitting.value) return
-
-  resetBackupPasswordStatuses()
-
-  if (!isValidBackupPassword(backupPassword.value)) {
-    backupPasswordStatus.value = 'error'
-    return
-  }
-
-  if (
-    backupPasswordMode.value === 'export' &&
-    backupPassword.value !== confirmBackupPassword.value
-  ) {
-    backupPasswordStatus.value = 'error'
-    confirmBackupPasswordStatus.value = 'error'
-    return
-  }
-
-  backupPasswordSubmitting.value = true
-  showBackupPasswordModal.value = false
-  const password = backupPassword.value
-  resetBackupPasswordForm()
-
-  try {
-    if (backupPasswordMode.value === 'export') {
-      await runExportData(password)
-      return
-    }
-    await runImportData(password)
-  } finally {
-    backupPasswordSubmitting.value = false
-  }
-}
-
 const handleImportData = (): void => {
   dialog.warning({
     title: t('settings.data.importConfirmTitle'),
@@ -1686,7 +1564,7 @@ const handleImportData = (): void => {
     positiveText: t('settings.data.continueImport'),
     negativeText: t('common.cancel'),
     onPositiveClick: () => {
-      openBackupPasswordModal('import')
+      void runImportData()
     }
   })
 }
@@ -1770,6 +1648,11 @@ const handleImportData = (): void => {
 
 .setting-item-top {
   align-items: flex-start;
+}
+
+.setting-entry + .setting-entry {
+  border-top: 1px solid var(--n-border-color);
+  padding-top: 16px;
 }
 
 .setting-info {
@@ -2009,8 +1892,3 @@ const handleImportData = (): void => {
   }
 }
 </style>
-
-
-
-
-

@@ -1,0 +1,2 @@
+E:\Codes\Web\Electron\ShadowDiary\build\windows-hello-helper\ShadowDiary.WindowsHello.pdb
+E:\Codes\Web\Electron\ShadowDiary\build\windows-hello-helper\ShadowDiary.WindowsHello.exe

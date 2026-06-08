@@ -3,6 +3,8 @@ import { getDatabase } from './index'
 import { stripHtmlToPlain } from './migrations'
 import type {
   DiaryEntry,
+  DiaryMetadata,
+  DiaryPlainTextReadResult,
   Mood,
   SearchParams,
   HomePageStats,
@@ -54,6 +56,16 @@ interface MentionDiaryScanRow {
   created_at: number
 }
 
+interface DiaryMetadataRow {
+  id: string
+  title: string
+  plain_content: string
+  mood: Mood
+  weather: string | null
+  created_at: number
+  updated_at: number
+}
+
 function rowToEntry(row: DiaryRow, tags: string[]): DiaryEntry {
   return {
     id: row.id,
@@ -64,6 +76,19 @@ function rowToEntry(row: DiaryRow, tags: string[]): DiaryEntry {
     weather: row.weather ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at
+  }
+}
+
+function rowToMetadata(row: DiaryMetadataRow, tags: string[]): DiaryMetadata {
+  return {
+    id: row.id,
+    title: row.title,
+    mood: row.mood,
+    tags,
+    weather: row.weather ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    contentLength: row.plain_content.length
   }
 }
 
@@ -209,6 +234,71 @@ export function getDiaryEntry(id: string): DiaryEntry | null {
   const row = db.prepare('SELECT * FROM diary_entries WHERE id = ?').get(id) as DiaryRow | undefined
   if (!row) return null
   return rowToEntry(row, getTagsForDiary(row.id))
+}
+
+export function getDiaryMetadata(id: string): DiaryMetadata | null {
+  const db = getDatabase()
+  const row = db
+    .prepare(
+      'SELECT id, title, plain_content, mood, weather, created_at, updated_at FROM diary_entries WHERE id = ?'
+    )
+    .get(id) as DiaryMetadataRow | undefined
+  if (!row) return null
+  return rowToMetadata(row, getTagsForDiary(row.id))
+}
+
+export function getDiaryMetadataBatch(ids: string[]): DiaryMetadata[] {
+  const normalizedIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))]
+  if (normalizedIds.length === 0) return []
+
+  const db = getDatabase()
+  const placeholders = normalizedIds.map(() => '?').join(',')
+  const rows = db
+    .prepare(
+      `SELECT id, title, plain_content, mood, weather, created_at, updated_at
+       FROM diary_entries
+       WHERE id IN (${placeholders})`
+    )
+    .all(...normalizedIds) as DiaryMetadataRow[]
+
+  const tagsByDiaryId = getTagsByDiaryIds(rows.map((row) => row.id))
+  const rowById = new Map(rows.map((row) => [row.id, row]))
+
+  return normalizedIds
+    .map((id) => {
+      const row = rowById.get(id)
+      if (!row) return null
+      return rowToMetadata(row, tagsByDiaryId.get(row.id) ?? [])
+    })
+    .filter((item): item is DiaryMetadata => Boolean(item))
+}
+
+export function readDiaryPlainText(params: {
+  id: string
+  offset?: number
+  maxChars?: number
+}): DiaryPlainTextReadResult | null {
+  const metadata = getDiaryMetadata(params.id)
+  if (!metadata) return null
+
+  const db = getDatabase()
+  const row = db
+    .prepare('SELECT plain_content FROM diary_entries WHERE id = ?')
+    .get(params.id) as { plain_content: string } | undefined
+  if (!row) return null
+
+  const content = row.plain_content || ''
+  const offset = Math.max(0, Math.min(Math.floor(params.offset ?? 0), content.length))
+  const maxChars = Math.max(1, Math.floor(params.maxChars ?? 4000))
+  const nextOffset = offset + maxChars < content.length ? offset + maxChars : null
+
+  return {
+    ...metadata,
+    content: content.slice(offset, offset + maxChars),
+    offset,
+    nextOffset,
+    truncated: nextOffset !== null
+  }
 }
 
 export function getDiaryByDate(dateStr: string): DiaryEntry | null {

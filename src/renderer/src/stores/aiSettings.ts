@@ -25,9 +25,20 @@ export interface AIFeatureBinding {
   modelId: string
 }
 
+export interface AIMcpConfig {
+  enabled: boolean
+  host: '127.0.0.1'
+  port: number
+  authToken: string
+  maxSearchResults: number
+  maxReadChars: number
+  maxBatchMetadata: number
+}
+
 export interface AISettingsConfig {
   providers: AIProviderConfig[]
   featureBindings: Partial<Record<AIFeatureKey, AIFeatureBinding>>
+  mcp: AIMcpConfig
 }
 
 interface PersistResult {
@@ -36,6 +47,10 @@ interface PersistResult {
 }
 
 const SAVE_DEBOUNCE_MS = 300
+export const DEFAULT_MCP_PORT = 37373
+const DEFAULT_MCP_MAX_SEARCH_RESULTS = 20
+const DEFAULT_MCP_MAX_READ_CHARS = 4000
+const DEFAULT_MCP_MAX_BATCH_METADATA = 30
 
 const DEFAULT_PROVIDER_TEMPLATES: Record<
   AIProviderType,
@@ -68,6 +83,27 @@ function createId(prefix: string): string {
     return `${prefix}-${crypto.randomUUID()}`
   }
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function createSecretToken(prefix: string): string {
+  const bytes = new Uint8Array(24)
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    crypto.getRandomValues(bytes)
+    return `${prefix}_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+  }
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
+}
+
+function createDefaultMcpConfig(): AIMcpConfig {
+  return {
+    enabled: false,
+    host: '127.0.0.1',
+    port: DEFAULT_MCP_PORT,
+    authToken: createSecretToken('sdmcp'),
+    maxSearchResults: DEFAULT_MCP_MAX_SEARCH_RESULTS,
+    maxReadChars: DEFAULT_MCP_MAX_READ_CHARS,
+    maxBatchMetadata: DEFAULT_MCP_MAX_BATCH_METADATA
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -107,7 +143,8 @@ function createDefaultAISettingsConfig(): AISettingsConfig {
       createProviderFromTemplate('anthropic', { id: 'provider-anthropic-default' }),
       createProviderFromTemplate('siliconflow', { id: 'provider-siliconflow-default' })
     ],
-    featureBindings: {}
+    featureBindings: {},
+    mcp: createDefaultMcpConfig()
   }
 }
 
@@ -192,12 +229,45 @@ function normalizeFeatureBindings(
   return result
 }
 
+function clampInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, Math.floor(parsed)))
+}
+
+function normalizeMcpConfig(value: unknown): AIMcpConfig {
+  const fallback = createDefaultMcpConfig()
+  if (!isRecord(value)) return fallback
+
+  return {
+    enabled: value.enabled === true,
+    host: '127.0.0.1',
+    port: clampInteger(value.port, fallback.port, 1024, 65535),
+    authToken: trimString(value.authToken) || fallback.authToken,
+    maxSearchResults: clampInteger(
+      value.maxSearchResults,
+      fallback.maxSearchResults,
+      1,
+      100
+    ),
+    maxReadChars: clampInteger(value.maxReadChars, fallback.maxReadChars, 500, 20000),
+    maxBatchMetadata: clampInteger(
+      value.maxBatchMetadata,
+      fallback.maxBatchMetadata,
+      1,
+      100
+    )
+  }
+}
+
 function normalizeAISettingsConfig(
   value: unknown,
   options?: { fallbackToDefaultProviders?: boolean }
 ): AISettingsConfig {
   if (!isRecord(value)) {
-    return options?.fallbackToDefaultProviders ? createDefaultAISettingsConfig() : { providers: [], featureBindings: {} }
+    return options?.fallbackToDefaultProviders
+      ? createDefaultAISettingsConfig()
+      : { providers: [], featureBindings: {}, mcp: createDefaultMcpConfig() }
   }
 
   const providerEntries = Array.isArray(value.providers) ? value.providers : []
@@ -216,7 +286,8 @@ function normalizeAISettingsConfig(
 
   return {
     providers: normalizedProviders,
-    featureBindings: normalizeFeatureBindings(value.featureBindings, normalizedProviders)
+    featureBindings: normalizeFeatureBindings(value.featureBindings, normalizedProviders),
+    mcp: normalizeMcpConfig(value.mcp)
   }
 }
 
@@ -226,7 +297,8 @@ function cloneConfig(config: AISettingsConfig): AISettingsConfig {
       ...provider,
       models: provider.models.map((model) => ({ ...model }))
     })),
-    featureBindings: { ...config.featureBindings }
+    featureBindings: { ...config.featureBindings },
+    mcp: { ...config.mcp }
   }
 }
 
@@ -263,6 +335,9 @@ export const useAISettingsStore = defineStore('aiSettings', {
     },
     featureBindings(state): Partial<Record<AIFeatureKey, AIFeatureBinding>> {
       return state.config.featureBindings
+    },
+    mcp(state): AIMcpConfig {
+      return state.config.mcp
     }
   },
 
@@ -491,6 +566,23 @@ export const useAISettingsStore = defineStore('aiSettings', {
       cleanupFeatureBindings(nextConfig)
       this.config = nextConfig
       this.queueSave()
+    },
+
+    updateMcpConfig(patch: Partial<AIMcpConfig>): void {
+      this.config = {
+        ...this.config,
+        mcp: normalizeMcpConfig({
+          ...this.config.mcp,
+          ...patch
+        })
+      }
+      this.queueSave()
+    },
+
+    regenerateMcpToken(): string {
+      const authToken = createSecretToken('sdmcp')
+      this.updateMcpConfig({ authToken })
+      return authToken
     }
   }
 })

@@ -56,6 +56,24 @@ export interface SearchResult {
   expandedKeywords?: string[] // 扩展后的关键词列表（包含档案别名）
 }
 
+export interface DiaryMetadata {
+  id: string
+  title: string
+  mood: Mood
+  tags: string[]
+  weather?: string
+  createdAt: number
+  updatedAt: number
+  contentLength: number
+}
+
+export interface DiaryPlainTextReadResult extends DiaryMetadata {
+  content: string
+  offset: number
+  nextOffset: number | null
+  truncated: boolean
+}
+
 export interface PersonMentionDetailItem {
   id: string
   title: string
