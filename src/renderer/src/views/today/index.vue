@@ -68,7 +68,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useDialog } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import type { DiaryEntry, Mood } from '../../../../types/model'
@@ -95,6 +95,7 @@ const diaryListRef = ref<InstanceType<typeof DiaryList> | null>(null)
 const diaryEditorRef = ref<{ scrollToKeyword: (keyword: string) => boolean } | null>(null)
 
 const route = useRoute()
+const router = useRouter()
 const selectedMood = ref<Mood>('calm')
 const diaryTitle = ref('')
 const diaryContent = ref('')
@@ -141,6 +142,12 @@ function isDraftEntryId(id: string | null): boolean {
 
 function createDraftEntryId(): string {
   return `draft-diary-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function formatDateStr(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate()
+  ).padStart(2, '0')}`
 }
 
 function clearResizeReleaseTimer(): void {
@@ -345,6 +352,20 @@ function applyEntryToEditor(entry: DiaryEntry): void {
   setSaveState('idle')
 }
 
+function replaceRouteWithEntry(entry: DiaryEntry, keyword?: string): void {
+  if (route.path !== '/today') return
+  if (route.query.id === entry.id && (!keyword || route.query.keyword === keyword)) return
+
+  router
+    .replace({
+      path: '/today',
+      query: keyword ? { id: entry.id, keyword } : { id: entry.id }
+    })
+    .catch((error) => {
+      console.error('更新日记路由失败:', error)
+    })
+}
+
 function removeActiveDraftEntry(): void {
   const draftId = activeDraftEntryId.value
   if (!draftId) return
@@ -403,6 +424,7 @@ async function handleCreate(dateStr?: string): Promise<void> {
       const entry = await window.api.getDiaryByDate(dateStr)
       if (entry) {
         applyEntryToEditor(entry)
+        replaceRouteWithEntry(entry)
       } else {
         createDraftEntryForDate(dateStr)
       }
@@ -412,7 +434,7 @@ async function handleCreate(dateStr?: string): Promise<void> {
   } else {
     const dateParam = route.query.date as string | undefined
     const targetDate = dateParam ? new Date(dateParam + 'T12:00:00') : new Date()
-    resetEditorState(targetDate)
+    await loadOrCreateForDate(formatDateStr(targetDate))
   }
 }
 
@@ -454,6 +476,7 @@ async function loadEntryById(id: string, keyword?: string): Promise<void> {
     const entry = await window.api.getDiaryEntry(id)
     if (entry) {
       await handleSelectEntry(entry)
+      replaceRouteWithEntry(entry, keyword)
       if (keyword) {
         scrollToKeyword(keyword)
       }
@@ -482,6 +505,7 @@ async function loadOrCreateForDate(dateStr: string): Promise<void> {
     const entry = await window.api.getDiaryByDate(dateStr)
     if (entry) {
       applyEntryToEditor(entry)
+      replaceRouteWithEntry(entry)
     } else {
       resetEditorState(targetDate)
     }
@@ -499,6 +523,8 @@ async function handleRouteQuery(query: Record<string, unknown>): Promise<void> {
     await loadEntryById(id, keyword)
   } else if (date) {
     await loadOrCreateForDate(date)
+  } else {
+    await loadOrCreateForDate(formatDateStr(new Date()))
   }
 }
 

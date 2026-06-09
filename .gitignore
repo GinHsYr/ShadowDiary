@@ -1,6 +1,7 @@
 node_modules
 dist
 out
+build/windows-hello-helper
 .DS_Store
 .eslintcache
 *.log*

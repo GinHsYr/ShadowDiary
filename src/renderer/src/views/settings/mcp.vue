@@ -69,12 +69,7 @@
             <span class="setting-description">{{ t('settings.ai.mcp.tokenDescription') }}</span>
           </div>
           <div class="mcp-token-row">
-            <n-input
-              :value="mcp.authToken"
-              type="password"
-              show-password-on="mousedown"
-              readonly
-            />
+            <n-input :value="mcp.authToken" type="password" show-password-on="mousedown" readonly />
             <n-button secondary @click="handleCopyMcpToken">
               {{ t('settings.ai.actions.copyToken') }}
             </n-button>
@@ -127,6 +122,54 @@
         </div>
       </n-space>
     </n-card>
+
+    <n-card :bordered="false" class="settings-card docs-card">
+      <n-space vertical :size="16">
+        <div class="docs-header">
+          <div>
+            <h2 class="section-title">{{ t('settings.ai.mcp.usageTitle') }}</h2>
+            <p class="section-description">{{ t('settings.ai.mcp.usageDescription') }}</p>
+          </div>
+          <n-button secondary @click="handleCopyMcpClientConfig">
+            {{ t('settings.ai.actions.copyConfig') }}
+          </n-button>
+        </div>
+
+        <div class="docs-grid">
+          <section class="docs-section">
+            <h3 class="docs-title">{{ t('settings.ai.mcp.clientSetupTitle') }}</h3>
+            <ol class="docs-list">
+              <li>{{ t('settings.ai.mcp.clientSetupEnable') }}</li>
+              <li>{{ t('settings.ai.mcp.clientSetupCopy') }}</li>
+              <li>{{ t('settings.ai.mcp.clientSetupRestart') }}</li>
+            </ol>
+          </section>
+
+          <section class="docs-section">
+            <h3 class="docs-title">{{ t('settings.ai.mcp.authTitle') }}</h3>
+            <p class="docs-text">{{ t('settings.ai.mcp.authDescription') }}</p>
+            <div class="auth-line">
+              <code>Authorization: Bearer {{ mcp.authToken }}</code>
+            </div>
+          </section>
+        </div>
+
+        <section class="docs-section">
+          <h3 class="docs-title">{{ t('settings.ai.mcp.clientConfigTitle') }}</h3>
+          <pre class="config-block"><code>{{ mcpClientConfigText }}</code></pre>
+        </section>
+
+        <section class="docs-section">
+          <h3 class="docs-title">{{ t('settings.ai.mcp.toolsTitle') }}</h3>
+          <ul class="tool-list">
+            <li v-for="tool in mcpTools" :key="tool.name">
+              <code>{{ tool.name }}</code>
+              <span>{{ tool.description }}</span>
+            </li>
+          </ul>
+        </section>
+      </n-space>
+    </n-card>
   </div>
 </template>
 
@@ -135,16 +178,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ArrowBackOutline } from '@vicons/ionicons5'
-import {
-  NButton,
-  NCard,
-  NIcon,
-  NInput,
-  NInputNumber,
-  NSpace,
-  NSwitch,
-  NTag
-} from 'naive-ui'
+import { NButton, NCard, NIcon, NInput, NInputNumber, NSpace, NSwitch, NTag } from 'naive-ui'
 import type { McpRuntimeStatus } from '../../../../types/api'
 import { type AIMcpConfig, useAISettingsStore } from '@renderer/stores/aiSettings'
 
@@ -156,6 +190,41 @@ const mcpStatus = ref<McpRuntimeStatus | null>(null)
 
 const mcp = computed(() => aiSettings.mcp)
 const mcpUrl = computed(() => `http://127.0.0.1:${mcp.value.port}/mcp`)
+const mcpClientConfigText = computed(() =>
+  JSON.stringify(
+    {
+      mcpServers: {
+        shadowdiary: {
+          type: 'http',
+          url: mcpUrl.value,
+          headers: {
+            Authorization: `Bearer ${mcp.value.authToken}`
+          }
+        }
+      }
+    },
+    null,
+    2
+  )
+)
+const mcpTools = computed(() => [
+  {
+    name: 'diary_search',
+    description: t('settings.ai.mcp.toolDiarySearch')
+  },
+  {
+    name: 'diary_read',
+    description: t('settings.ai.mcp.toolDiaryRead')
+  },
+  {
+    name: 'diary_read_by_date',
+    description: t('settings.ai.mcp.toolDiaryReadByDate')
+  },
+  {
+    name: 'diary_get_metadata_batch',
+    description: t('settings.ai.mcp.toolDiaryGetMetadataBatch')
+  }
+])
 const runtimeEnabled = computed(() => mcpStatus.value?.enabled ?? mcp.value.enabled)
 const mcpStatusLabel = computed(() => {
   if (!runtimeEnabled.value) return t('settings.ai.mcp.statusStopped')
@@ -233,6 +302,15 @@ async function handleCopyMcpToken(): Promise<void> {
   }
 }
 
+async function handleCopyMcpClientConfig(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(mcpClientConfigText.value)
+    notify('success', t('settings.ai.messages.configCopied'))
+  } catch {
+    notify('error', t('settings.ai.messages.configCopyFailed'))
+  }
+}
+
 function handleRegenerateMcpToken(): void {
   aiSettings.regenerateMcpToken()
   void persistMcpConfigAndRefreshStatus()
@@ -305,6 +383,107 @@ onMounted(async () => {
 .settings-card {
   max-width: 920px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.docs-card {
+  margin-top: 16px;
+}
+
+.docs-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--n-text-color);
+}
+
+.section-description {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--n-text-color-3);
+}
+
+.docs-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.docs-section {
+  min-width: 0;
+}
+
+.docs-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--n-text-color);
+}
+
+.docs-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--n-text-color-2);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.docs-text {
+  margin: 0;
+  color: var(--n-text-color-2);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.auth-line,
+.config-block {
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--n-code-color, rgba(128, 128, 128, 0.12));
+}
+
+.auth-line {
+  margin-top: 8px;
+  padding: 9px 10px;
+  font-size: 12px;
+}
+
+.config-block {
+  margin: 0;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.tool-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tool-list li {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  color: var(--n-text-color-2);
+  font-size: 13px;
+}
+
+.tool-list code,
+.auth-line code,
+.config-block code {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
 }
 
 .setting-item {
@@ -389,6 +568,19 @@ onMounted(async () => {
   .mcp-endpoint,
   .mcp-token-row {
     grid-template-columns: 1fr;
+  }
+
+  .docs-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .docs-header {
+    flex-direction: column;
+  }
+
+  .tool-list li {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 }
 </style>

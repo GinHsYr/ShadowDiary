@@ -6,12 +6,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import * as z from 'zod/v4'
 import type { McpRuntimeStatus } from '../../types/api'
 import type { DiaryEntry, Mood, SearchParams } from '../../types/model'
-import {
-  getDiaryMetadata,
-  getDiaryMetadataBatch,
-  readDiaryPlainText,
-  searchDiaries
-} from '../database/diary'
+import { getDiaryMetadataBatch, readDiaryPlainText, searchDiaries } from '../database/diary'
 
 export interface McpServerConfig {
   enabled: boolean
@@ -61,21 +56,14 @@ export function normalizeMcpServerConfig(value: unknown): McpServerConfig {
     host: '127.0.0.1',
     port: clampInteger(value.port, DEFAULT_MCP_CONFIG.port, 1024, 65535),
     authToken:
-      typeof value.authToken === 'string' && value.authToken.trim()
-        ? value.authToken.trim()
-        : '',
+      typeof value.authToken === 'string' && value.authToken.trim() ? value.authToken.trim() : '',
     maxSearchResults: clampInteger(
       value.maxSearchResults,
       DEFAULT_MCP_CONFIG.maxSearchResults,
       1,
       100
     ),
-    maxReadChars: clampInteger(
-      value.maxReadChars,
-      DEFAULT_MCP_CONFIG.maxReadChars,
-      500,
-      20000
-    ),
+    maxReadChars: clampInteger(value.maxReadChars, DEFAULT_MCP_CONFIG.maxReadChars, 500, 20000),
     maxBatchMetadata: clampInteger(
       value.maxBatchMetadata,
       DEFAULT_MCP_CONFIG.maxBatchMetadata,
@@ -332,9 +320,18 @@ function createDiaryMcpServer(config: McpServerConfig): McpServer {
         'Search diary entries by keyword, one day, date range, mood, and tags. Returns compact snippets only. Use diary_read for a selected entry.',
       inputSchema: {
         keyword: z.string().optional(),
-        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        dateFrom: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        dateTo: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
         mood: z.enum(MOODS).optional(),
         tags: z.array(z.string()).optional(),
         limit: z.number().int().min(1).optional(),
@@ -431,27 +428,11 @@ function createDiaryMcpServer(config: McpServerConfig): McpServer {
   )
 
   server.registerTool(
-    'diary_get_metadata',
-    {
-      title: 'Get diary metadata',
-      description: 'Get metadata for one diary entry without returning content.',
-      inputSchema: {
-        id: z.string().min(1)
-      }
-    },
-    async ({ id }) => {
-      const metadata = getDiaryMetadata(id)
-      if (!metadata) return textResult({ error: 'not_found', id }, true)
-      return textResult(metadata)
-    }
-  )
-
-  server.registerTool(
     'diary_get_metadata_batch',
     {
       title: 'Get diary metadata batch',
       description:
-        'Get metadata for multiple diary entries without returning content. The server enforces a batch size limit.',
+        'Get metadata for one or more diary entries without returning content. The server enforces a batch size limit.',
       inputSchema: {
         ids: z.array(z.string().min(1)).min(1)
       }
@@ -476,7 +457,10 @@ function createDiaryMcpServer(config: McpServerConfig): McpServer {
   return server
 }
 
-function textResult(value: unknown, isError = false): {
+function textResult(
+  value: unknown,
+  isError = false
+): {
   isError?: boolean
   content: Array<{ type: 'text'; text: string }>
 } {

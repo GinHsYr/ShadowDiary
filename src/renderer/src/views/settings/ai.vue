@@ -26,7 +26,11 @@
     </div>
 
     <div class="ai-layout">
-      <n-card :title="t('settings.ai.provider.card')" :bordered="false" class="settings-card provider-list-card">
+      <n-card
+        :title="t('settings.ai.provider.card')"
+        :bordered="false"
+        class="settings-card provider-list-card"
+      >
         <n-space vertical :size="10">
           <div v-if="providers.length > 0" class="provider-list">
             <button
@@ -104,7 +108,9 @@
               <div class="setting-item setting-item-top">
                 <div class="setting-info">
                   <label class="setting-label">{{ t('settings.ai.provider.apiKey') }}</label>
-                  <span class="setting-description">{{ t('settings.ai.provider.apiKeyDescription') }}</span>
+                  <span class="setting-description">{{
+                    t('settings.ai.provider.apiKeyDescription')
+                  }}</span>
                 </div>
                 <n-input
                   :value="selectedProvider.apiKey"
@@ -213,16 +219,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowBackOutline } from '@vicons/ionicons5'
-import {
-  NButton,
-  NCard,
-  NEmpty,
-  NIcon,
-  NInput,
-  NSelect,
-  NSpace,
-  useDialog
-} from 'naive-ui'
+import { NButton, NCard, NEmpty, NIcon, NInput, NSelect, NSpace, useDialog } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import {
   AI_FEATURE_KEYS,
@@ -317,7 +314,12 @@ function getProviderDisplayName(type: AIProviderType): string {
 }
 
 function handleProviderTypeChange(value: string | number | null): void {
-  if (value !== 'openai' && value !== 'anthropic' && value !== 'siliconflow' && value !== 'custom') {
+  if (
+    value !== 'openai' &&
+    value !== 'anthropic' &&
+    value !== 'siliconflow' &&
+    value !== 'custom'
+  ) {
     return
   }
   newProviderType.value = value
@@ -335,10 +337,7 @@ function handleAddProvider(): void {
   notify('success', t('settings.ai.messages.providerAdded'))
 }
 
-function handleProviderFieldChange(
-  field: 'name' | 'baseUrl' | 'apiKey',
-  value: string
-): void {
+function handleProviderFieldChange(field: 'name' | 'baseUrl' | 'apiKey', value: string): void {
   if (!selectedProvider.value) return
   aiSettings.updateProvider(selectedProvider.value.id, {
     [field]: value

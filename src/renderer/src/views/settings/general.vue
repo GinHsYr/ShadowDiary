@@ -79,7 +79,9 @@
             <div class="setting-item setting-entry">
               <div class="setting-info">
                 <label class="setting-label">{{ t('settings.ai.mcp.card') }}</label>
-                <span class="setting-description">{{ t('settings.ai.mcp.enabledDescription') }}</span>
+                <span class="setting-description">{{
+                  t('settings.ai.mcp.enabledDescription')
+                }}</span>
               </div>
               <n-button @click="handleOpenMcpSettings">
                 {{ t('settings.ai.mcp.openDetail') }}

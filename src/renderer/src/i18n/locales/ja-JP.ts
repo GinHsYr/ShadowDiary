@@ -299,7 +299,25 @@ const jaJP = {
         statusStarting: 'Starting',
         statusError: 'Error',
         statusErrorDetail: 'MCP failed to start: {reason}',
-        openDetail: 'Open Configuration'
+        openDetail: 'Open Configuration',
+        usageTitle: 'Usage Guide',
+        usageDescription: 'Add ShadowDiary to an MCP client that supports Streamable HTTP.',
+        clientSetupTitle: 'Client Setup',
+        clientSetupEnable: 'Enable MCP and confirm the local endpoint is running.',
+        clientSetupCopy:
+          'Copy the client configuration below into the MCP client mcpServers config.',
+        clientSetupRestart: 'After saving the client configuration, reload or restart that client.',
+        authTitle: 'Authentication',
+        authDescription:
+          'Every request must include the access token. Update the client config after changing the token.',
+        clientConfigTitle: 'Client Config Example',
+        toolsTitle: 'Available Tools',
+        toolDiarySearch:
+          'Search diaries by keyword, date, mood, or tags. Returns snippets and entry IDs.',
+        toolDiaryRead: 'Read one diary as paginated plain text by ID.',
+        toolDiaryReadByDate: 'Read diary plain text by date or date range.',
+        toolDiaryGetMetadataBatch:
+          'Read metadata for one or more diaries by ID without returning content.'
       },
       features: {
         chat: 'Chat',
@@ -313,6 +331,7 @@ const jaJP = {
         deleteModel: 'Delete Model',
         clearBinding: 'Clear',
         copyToken: 'Copy Token',
+        copyConfig: 'Copy Config',
         regenerateToken: 'Regenerate',
         openDetail: 'Open Settings'
       },
@@ -329,7 +348,9 @@ const jaJP = {
         providerHasNoModel: 'This provider has no models yet',
         tokenCopied: 'MCP token copied',
         tokenCopyFailed: 'Failed to copy MCP token',
-        tokenRegenerated: 'MCP token regenerated'
+        tokenRegenerated: 'MCP token regenerated',
+        configCopied: 'MCP client config copied',
+        configCopyFailed: 'Failed to copy MCP client config'
       }
     },
     privacy: {

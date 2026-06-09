@@ -136,7 +136,7 @@ function resetUnlockState(): void {
 }
 
 function canAutoLockByPrivacy(): boolean {
-   if (DEBUG_BYPASS_PRIVACY_LOCK) return false
+  if (DEBUG_BYPASS_PRIVACY_LOCK) return false
   return privacy.isInitialized && privacy.isEnabled && privacy.hasCredential
 }
 
@@ -488,12 +488,7 @@ onBeforeUnmount(() => {
                     @update:value="handlePasswordInput"
                     @finish="handlePasswordFinish"
                   />
-                  <n-button
-                    v-else
-                    type="primary"
-                    :loading="unlocking"
-                    @click="handleUnlock"
-                  >
+                  <n-button v-else type="primary" :loading="unlocking" @click="handleUnlock">
                     {{ t('app.privacy.windowsHelloAction') }}
                   </n-button>
                 </div>

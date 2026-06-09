@@ -187,20 +187,7 @@ const zhCN = {
     monthLabel: '{year}年{month}月',
     yearLabel: '{year}年',
     weekDays: ['日', '一', '二', '三', '四', '五', '六'],
-    months: [
-      '1月',
-      '2月',
-      '3月',
-      '4月',
-      '5月',
-      '6月',
-      '7月',
-      '8月',
-      '9月',
-      '10月',
-      '11月',
-      '12月'
-    ],
+    months: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
     backToToday: '回到今天',
     quickJump: {
       today: '今天',
@@ -315,7 +302,21 @@ const zhCN = {
         statusStarting: '启动中',
         statusError: '异常',
         statusErrorDetail: 'MCP 启动失败：{reason}',
-        openDetail: '进入配置'
+        openDetail: '进入配置',
+        usageTitle: '使用文档',
+        usageDescription: '将 ShadowDiary 添加到支持 Streamable HTTP 的 MCP 客户端。',
+        clientSetupTitle: '客户端接入',
+        clientSetupEnable: '启用 MCP，并确认本地端点状态为运行中。',
+        clientSetupCopy: '复制下面的客户端配置，粘贴到 MCP 客户端的 mcpServers 配置中。',
+        clientSetupRestart: '保存客户端配置后，重新加载或重启该客户端。',
+        authTitle: '鉴权',
+        authDescription: '每次请求都需要携带访问令牌。令牌变更后，需要同步更新客户端配置。',
+        clientConfigTitle: '客户端配置示例',
+        toolsTitle: '可用工具',
+        toolDiarySearch: '按关键词、日期、心情或标签搜索日记，返回摘要和条目 ID。',
+        toolDiaryRead: '按 ID 分页读取单篇日记纯文本。',
+        toolDiaryReadByDate: '按日期或日期范围读取日记纯文本。',
+        toolDiaryGetMetadataBatch: '按一个或多个 ID 读取日记元信息，不返回正文。'
       },
       features: {
         chat: '对话',
@@ -329,6 +330,7 @@ const zhCN = {
         deleteModel: '删除模型',
         clearBinding: '清空绑定',
         copyToken: '复制令牌',
+        copyConfig: '复制配置',
         regenerateToken: '重新生成',
         openDetail: '进入设置'
       },
@@ -345,7 +347,9 @@ const zhCN = {
         providerHasNoModel: '该提供商还没有模型，请先添加模型',
         tokenCopied: 'MCP 令牌已复制',
         tokenCopyFailed: '复制 MCP 令牌失败',
-        tokenRegenerated: 'MCP 令牌已重新生成'
+        tokenRegenerated: 'MCP 令牌已重新生成',
+        configCopied: 'MCP 客户端配置已复制',
+        configCopyFailed: '复制 MCP 客户端配置失败'
       }
     },
     privacy: {

@@ -89,11 +89,7 @@ import {
   importAppData,
   type DataTransferProgress
 } from './utils/dataTransfer'
-import {
-  decryptSecret,
-  encryptSecret,
-  isEncryptedSecretPayload
-} from './security/secureSettings'
+import { decryptSecret, encryptSecret, isEncryptedSecretPayload } from './security/secureSettings'
 import {
   disableDisguiseMode,
   enableDisguiseMode,
@@ -989,6 +985,24 @@ app.on('before-quit', (event) => {
 
 // ========== IPC Handlers ==========
 
+function formatDiaryLocalDate(timestamp: number): string {
+  const date = new Date(timestamp)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate()
+  ).padStart(2, '0')}`
+}
+
+function getPreviousDiaryForSave(
+  entry: Parameters<typeof saveDiaryEntry>[0]
+): ReturnType<typeof getDiaryEntry> {
+  if (entry.id) {
+    const existing = getDiaryEntry(entry.id)
+    if (existing) return existing
+  }
+
+  return getDiaryByDate(formatDiaryLocalDate(entry.createdAt ?? Date.now()))
+}
+
 function registerIpcHandlers(): void {
   onTrustedIpc('app:before-quit-done', (event) => {
     acknowledgeQuitPreparation(event.sender.id)
@@ -1004,7 +1018,7 @@ function registerIpcHandlers(): void {
   })
 
   handleTrustedIpc('diary:save', async (_event, entry: Parameters<typeof saveDiaryEntry>[0]) => {
-    const previous = entry.id ? getDiaryEntry(entry.id) : null
+    const previous = getPreviousDiaryForSave(entry)
     const saved = saveDiaryEntry(entry)
     syncDiaryMediaSource(saved)
     if (!isDisguiseModeEnabled()) {
@@ -1229,25 +1243,17 @@ function registerIpcHandlers(): void {
   handleTrustedIpc('data:export', async (event) => {
     assertDisguiseAvailable('鏁版嵁瀵煎嚭')
     const win = BrowserWindow.fromWebContents(event.sender)
-    return await exportAppData(
-      win,
-      {},
-      (progress: DataTransferProgress) => {
-        event.sender.send('data:export-progress', progress)
-      }
-    )
+    return await exportAppData(win, {}, (progress: DataTransferProgress) => {
+      event.sender.send('data:export-progress', progress)
+    })
   })
 
   handleTrustedIpc('data:import', async (event) => {
     assertDisguiseAvailable('鏁版嵁瀵煎叆')
     const win = BrowserWindow.fromWebContents(event.sender)
-    const result = await importAppData(
-      win,
-      {},
-      (progress: DataTransferProgress) => {
-        event.sender.send('data:import-progress', progress)
-      }
-    )
+    const result = await importAppData(win, {}, (progress: DataTransferProgress) => {
+      event.sender.send('data:import-progress', progress)
+    })
     if (result.success) {
       rebuildPersonMentionStatsIndex()
       rebuildMediaSourceIndex()

@@ -111,7 +111,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeProviderType(value: unknown): AIProviderType {
-  if (value === 'openai' || value === 'anthropic' || value === 'siliconflow' || value === 'custom') {
+  if (
+    value === 'openai' ||
+    value === 'anthropic' ||
+    value === 'siliconflow' ||
+    value === 'custom'
+  ) {
     return value
   }
   return 'custom'
@@ -172,7 +177,10 @@ function normalizeModelConfig(value: unknown, existingIds: Set<string>): AIModel
   }
 }
 
-function normalizeProviderConfig(value: unknown, existingIds: Set<string>): AIProviderConfig | null {
+function normalizeProviderConfig(
+  value: unknown,
+  existingIds: Set<string>
+): AIProviderConfig | null {
   if (!isRecord(value)) return null
 
   const type = normalizeProviderType(value.type)
@@ -244,19 +252,9 @@ function normalizeMcpConfig(value: unknown): AIMcpConfig {
     host: '127.0.0.1',
     port: clampInteger(value.port, fallback.port, 1024, 65535),
     authToken: trimString(value.authToken) || fallback.authToken,
-    maxSearchResults: clampInteger(
-      value.maxSearchResults,
-      fallback.maxSearchResults,
-      1,
-      100
-    ),
+    maxSearchResults: clampInteger(value.maxSearchResults, fallback.maxSearchResults, 1, 100),
     maxReadChars: clampInteger(value.maxReadChars, fallback.maxReadChars, 500, 20000),
-    maxBatchMetadata: clampInteger(
-      value.maxBatchMetadata,
-      fallback.maxBatchMetadata,
-      1,
-      100
-    )
+    maxBatchMetadata: clampInteger(value.maxBatchMetadata, fallback.maxBatchMetadata, 1, 100)
   }
 }
 
@@ -513,7 +511,9 @@ export const useAISettingsStore = defineStore('aiSettings', {
       const nextModel: AIModelConfig = {
         ...current,
         displayName:
-          patch.displayName !== undefined ? patch.displayName.trim() || nextModelId : current.displayName,
+          patch.displayName !== undefined
+            ? patch.displayName.trim() || nextModelId
+            : current.displayName,
         modelId: nextModelId
       }
       const nextModels = [...provider.models]

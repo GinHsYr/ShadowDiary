@@ -282,9 +282,9 @@ export function readDiaryPlainText(params: {
   if (!metadata) return null
 
   const db = getDatabase()
-  const row = db
-    .prepare('SELECT plain_content FROM diary_entries WHERE id = ?')
-    .get(params.id) as { plain_content: string } | undefined
+  const row = db.prepare('SELECT plain_content FROM diary_entries WHERE id = ?').get(params.id) as
+    | { plain_content: string }
+    | undefined
   if (!row) return null
 
   const content = row.plain_content || ''
@@ -316,6 +316,16 @@ export function getDiaryByDate(dateStr: string): DiaryEntry | null {
 
   if (!row) return null
   return rowToEntry(row, getTagsForDiary(row.id))
+}
+
+function getLocalDayRange(timestamp: number): { dayStart: number; dayEnd: number } {
+  const date = new Date(timestamp)
+  const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0)
+  const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1, 0, 0, 0, 0)
+  return {
+    dayStart: dayStart.getTime(),
+    dayEnd: dayEnd.getTime()
+  }
 }
 
 export function saveDiaryEntry(entry: {
@@ -360,6 +370,16 @@ export function saveDiaryEntry(entry: {
     // Insert
     const id = entry.id || randomUUID()
     const createdAt = entry.createdAt ?? now
+    const { dayStart, dayEnd } = getLocalDayRange(createdAt)
+    const sameDayEntry = db
+      .prepare(
+        'SELECT id FROM diary_entries WHERE created_at >= ? AND created_at < ? ORDER BY created_at DESC LIMIT 1'
+      )
+      .get(dayStart, dayEnd) as { id: string } | undefined
+    if (sameDayEntry) {
+      return sameDayEntry.id
+    }
+
     db.prepare(
       'INSERT INTO diary_entries (id, title, content, plain_content, mood, weather, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
