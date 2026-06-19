@@ -37,6 +37,25 @@ const currentItem = computed<MediaLibraryItem | null>(() => {
   return mediaItems.value[idx] ?? null
 })
 
+const ZOOM_MIN = 1
+const ZOOM_MAX = 6
+const ZOOM_STEP = 0.2
+const zoomScale = ref(1)
+const panX = ref(0)
+const panY = ref(0)
+const isPanning = ref(false)
+const viewerStageRef = ref<HTMLElement | null>(null)
+let panStartX = 0
+let panStartY = 0
+let panOriginX = 0
+let panOriginY = 0
+let panMoved = false
+
+const isZoomed = computed(() => zoomScale.value > 1.001)
+const imageTransform = computed(
+  () => `translate(${panX.value}px, ${panY.value}px) scale(${zoomScale.value})`
+)
+
 const hasMore = computed(() => mediaItems.value.length < total.value)
 const isEmpty = computed(
   () => initialized.value && !loadingInitial.value && mediaItems.value.length === 0
@@ -120,10 +139,12 @@ function openSource(source: MediaLibrarySourceRef): void {
 
 function openLightbox(index: number): void {
   if (index < 0 || index >= mediaItems.value.length) return
+  resetZoom()
   lightboxIndex.value = index
 }
 
 function closeLightbox(): void {
+  resetZoom()
   lightboxIndex.value = null
 }
 
@@ -131,6 +152,7 @@ function nextImage(): void {
   if (lightboxIndex.value === null) return
   const next = lightboxIndex.value + 1
   if (next < mediaItems.value.length) {
+    resetZoom()
     lightboxIndex.value = next
   }
 }
@@ -138,8 +160,115 @@ function nextImage(): void {
 function prevImage(): void {
   if (lightboxIndex.value === null) return
   if (lightboxIndex.value > 0) {
+    resetZoom()
     lightboxIndex.value = lightboxIndex.value - 1
   }
+}
+
+function resetZoom(): void {
+  zoomScale.value = 1
+  panX.value = 0
+  panY.value = 0
+  isPanning.value = false
+}
+
+function clampPan(): void {
+  const stage = viewerStageRef.value
+  if (!stage) return
+  const rect = stage.getBoundingClientRect()
+  const halfW = (rect.width * (zoomScale.value - 1)) / 2
+  const halfH = (rect.height * (zoomScale.value - 1)) / 2
+  if (halfW <= 0) panX.value = 0
+  else panX.value = Math.max(-halfW, Math.min(halfW, panX.value))
+  if (halfH <= 0) panY.value = 0
+  else panY.value = Math.max(-halfH, Math.min(halfH, panY.value))
+}
+
+function handleViewerWheel(event: WheelEvent): void {
+  if (!lightboxOpen.value) return
+  event.preventDefault()
+  const stage = viewerStageRef.value
+  if (!stage) return
+
+  const direction = event.deltaY < 0 ? 1 : -1
+  const factor = 1 + direction * ZOOM_STEP
+  const oldScale = zoomScale.value
+  const newScale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, oldScale * factor))
+  if (newScale === oldScale) return
+
+  // Keep the point under the cursor fixed while zooming.
+  const rect = stage.getBoundingClientRect()
+  const cursorX = event.clientX - rect.left - rect.width / 2
+  const cursorY = event.clientY - rect.top - rect.height / 2
+  const ratio = newScale / oldScale
+  panX.value = cursorX - (cursorX - panX.value) * ratio
+  panY.value = cursorY - (cursorY - panY.value) * ratio
+  zoomScale.value = newScale
+
+  if (newScale <= ZOOM_MIN + 0.001) {
+    panX.value = 0
+    panY.value = 0
+  } else {
+    clampPan()
+  }
+}
+
+function handleImageDoubleClick(event: MouseEvent): void {
+  const stage = viewerStageRef.value
+  if (!stage) return
+  if (isZoomed.value) {
+    resetZoom()
+    return
+  }
+  const targetScale = 2.5
+  const rect = stage.getBoundingClientRect()
+  const cursorX = event.clientX - rect.left - rect.width / 2
+  const cursorY = event.clientY - rect.top - rect.height / 2
+  panX.value = -cursorX * (targetScale - 1)
+  panY.value = -cursorY * (targetScale - 1)
+  zoomScale.value = targetScale
+  clampPan()
+}
+
+function handlePanStart(event: PointerEvent): void {
+  if (!isZoomed.value) return
+  if (event.button !== 0) return
+  isPanning.value = true
+  panMoved = false
+  panStartX = event.clientX
+  panStartY = event.clientY
+  panOriginX = panX.value
+  panOriginY = panY.value
+  ;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+  event.preventDefault()
+}
+
+function handlePanMove(event: PointerEvent): void {
+  if (!isPanning.value) return
+  const dx = event.clientX - panStartX
+  const dy = event.clientY - panStartY
+  if (!panMoved && Math.hypot(dx, dy) > 3) panMoved = true
+  panX.value = panOriginX + dx
+  panY.value = panOriginY + dy
+  clampPan()
+}
+
+function handlePanEnd(event: PointerEvent): void {
+  if (!isPanning.value) return
+  isPanning.value = false
+  ;(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId)
+}
+
+function handleStageClick(event: MouseEvent): void {
+  // Don't close while zoomed in — the user is interacting with the image.
+  if (isZoomed.value) return
+  // Suppress click that follows a pan drag.
+  if (panMoved) {
+    panMoved = false
+    return
+  }
+  if (event.target !== event.currentTarget) return
+  closeLightbox()
 }
 
 function handleViewerKeydown(event: KeyboardEvent): void {
@@ -151,11 +280,32 @@ function handleViewerKeydown(event: KeyboardEvent): void {
       break
     case 'ArrowRight':
       event.preventDefault()
-      nextImage()
+      if (!isZoomed.value) nextImage()
       break
     case 'ArrowLeft':
       event.preventDefault()
-      prevImage()
+      if (!isZoomed.value) prevImage()
+      break
+    case '+':
+    case '=':
+      event.preventDefault()
+      zoomScale.value = Math.min(ZOOM_MAX, zoomScale.value * (1 + ZOOM_STEP))
+      clampPan()
+      break
+    case '-':
+    case '_':
+      event.preventDefault()
+      zoomScale.value = Math.max(ZOOM_MIN, zoomScale.value * (1 - ZOOM_STEP))
+      if (zoomScale.value <= ZOOM_MIN + 0.001) {
+        panX.value = 0
+        panY.value = 0
+      } else {
+        clampPan()
+      }
+      break
+    case '0':
+      event.preventDefault()
+      resetZoom()
       break
   }
 }
@@ -354,14 +504,29 @@ watch(lightboxOpen, (open) => {
           <n-icon size="26"><ChevronForwardOutline /></n-icon>
         </button>
 
-        <img
-          :key="currentItem.id"
-          class="viewer-image"
-          :src="currentItem.imagePath"
-          :alt="getItemSourceLabel(currentItem)"
-          @error="handleImageError($event, currentItem)"
-          @click.self="closeLightbox"
-        />
+        <div
+          ref="viewerStageRef"
+          class="viewer-stage"
+          :class="{ 'is-zoomed': isZoomed, 'is-panning': isPanning }"
+          @wheel.prevent="handleViewerWheel"
+          @pointerdown="handlePanStart"
+          @pointermove="handlePanMove"
+          @pointerup="handlePanEnd"
+          @pointercancel="handlePanEnd"
+          @click="handleStageClick"
+        >
+          <img
+            :key="currentItem.id"
+            class="viewer-image"
+            :class="{ 'is-zoomed': isZoomed }"
+            :src="currentItem.imagePath"
+            :alt="getItemSourceLabel(currentItem)"
+            :style="{ transform: imageTransform }"
+            draggable="false"
+            @error="handleImageError($event, currentItem)"
+            @dblclick="handleImageDoubleClick"
+          />
+        </div>
 
         <div class="viewer-bottombar">
           <div class="viewer-date">{{ formatDate(currentItem.latestAt) }}</div>
@@ -676,15 +841,44 @@ html.dark .more-source-item {
   animation: media-viewer-fade var(--motion-fast, 160ms) var(--ease-enter, ease) forwards;
 }
 
+.media-viewer .viewer-stage {
+  position: absolute;
+  inset: 60px 80px 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+  cursor: zoom-in;
+}
+
+.media-viewer .viewer-stage.is-zoomed {
+  cursor: grab;
+}
+
+.media-viewer .viewer-stage.is-panning {
+  cursor: grabbing;
+}
+
 .media-viewer .viewer-image {
-  max-width: calc(100vw - 160px);
-  max-height: calc(100vh - 160px);
+  max-width: 100%;
+  max-height: 100%;
   width: auto;
   height: auto;
   object-fit: contain;
   display: block;
   border-radius: 6px;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  transform-origin: center center;
+  transition: transform 80ms ease-out;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: auto;
+  will-change: transform;
+}
+
+.media-viewer .is-panning .viewer-image {
+  transition: none;
 }
 
 .media-viewer .viewer-topbar {
