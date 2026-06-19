@@ -5,7 +5,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import * as z from 'zod/v4'
 import type { McpRuntimeStatus } from '../../types/api'
-import type { DiaryEntry, Mood, SearchParams } from '../../types/model'
+import type { Archive, DiaryEntry, Mood, SearchParams } from '../../types/model'
+import { archives } from '../database/archives'
 import { getDiaryMetadataBatch, readDiaryPlainText, searchDiaries } from '../database/diary'
 
 export interface McpServerConfig {
@@ -454,6 +455,32 @@ function createDiaryMcpServer(config: McpServerConfig): McpServer {
     }
   )
 
+  server.registerTool(
+    'archive_search_by_name',
+    {
+      title: 'Search archives by name or alias',
+      description:
+        'Search archives (people, objects, etc.) by any name, alias, or partial keyword. The query is matched against both the primary name and aliases without distinction. Returns archive content including description and aliases.',
+      inputSchema: {
+        name: z
+          .string()
+          .min(1)
+          .describe('Name, alias, or any partial keyword to search archives by.'),
+        limit: z.number().int().min(1).optional()
+      }
+    },
+    async ({ name, limit }) => {
+      const effectiveLimit = Math.min(limit ?? config.maxSearchResults, config.maxSearchResults)
+      const matches = archives.searchByName(name, effectiveLimit)
+      return textResult({
+        query: name,
+        total: matches.length,
+        limit: effectiveLimit,
+        entries: matches.map(toArchiveItem)
+      })
+    }
+  )
+
   return server
 }
 
@@ -591,5 +618,25 @@ function toSearchItem(entry: DiaryEntry): {
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
     snippet: content.length > SNIPPET_LENGTH ? `${content.slice(0, SNIPPET_LENGTH)}...` : content
+  }
+}
+
+function toArchiveItem(archive: Archive): {
+  id: string
+  name: string
+  aliases: string[]
+  type: Archive['type']
+  description?: string
+  createdAt: number
+  updatedAt: number
+} {
+  return {
+    id: archive.id,
+    name: archive.name,
+    aliases: archive.aliases,
+    type: archive.type,
+    description: archive.description,
+    createdAt: archive.createdAt,
+    updatedAt: archive.updatedAt
   }
 }

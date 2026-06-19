@@ -150,5 +150,41 @@ export const archives = {
   delete(id: string): void {
     const db = getDatabase()
     db.prepare('DELETE FROM archives WHERE id = ?').run(id)
+  },
+
+  searchByName(name: string, limit?: number): Archive[] {
+    const db = getDatabase()
+    const trimmed = (name || '').trim()
+    if (!trimmed) return []
+
+    const lowered = trimmed.toLowerCase()
+    const like = `%${lowered.replace(/[\\%_]/g, '\\$&')}%`
+    const safeLimit = Math.max(1, Math.min(100, Math.floor(limit ?? 20)))
+
+    // 1) 精确名称/别名匹配优先；2) 模糊匹配次之。最终在 JS 中再次过滤别名命中以避免子串误判（如别名"小明"被"小明明"逗号分隔后误中）。
+    const sql = `
+      SELECT *,
+        CASE
+          WHEN LOWER(name) = ? THEN 0
+          WHEN LOWER(alias) = ? THEN 1
+          WHEN LOWER(name) LIKE ? ESCAPE '\\' THEN 2
+          ELSE 3
+        END AS match_rank
+      FROM archives
+      WHERE LOWER(name) LIKE ? ESCAPE '\\'
+         OR LOWER(IFNULL(alias, '')) LIKE ? ESCAPE '\\'
+      ORDER BY match_rank ASC, updated_at DESC
+      LIMIT ?
+    `
+    const rows = db
+      .prepare(sql)
+      .all(lowered, lowered, like, like, like, safeLimit) as ArchiveRow[]
+
+    return rows
+      .map(rowToArchive)
+      .filter((archive) => {
+        if (archive.name.toLowerCase().includes(lowered)) return true
+        return archive.aliases.some((alias) => alias.toLowerCase().includes(lowered))
+      })
   }
 }

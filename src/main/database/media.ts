@@ -218,7 +218,7 @@ export function rebuildMediaSourceIndex(): void {
        FROM diary_entries
        WHERE content LIKE '%diary-image://%'`
     )
-    .iterate() as Iterable<{
+    .all() as Array<{
     id: string
     title: string
     content: string
@@ -243,7 +243,7 @@ export function rebuildMediaSourceIndex(): void {
        FROM archives
        WHERE main_image LIKE '%diary-image://%' OR images LIKE '%diary-image://%'`
     )
-    .iterate() as Iterable<{
+    .all() as Array<{
     id: string
     name: string
     main_image: string | null

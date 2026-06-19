@@ -97,15 +97,24 @@ const enUS = {
     uploadAvatar: 'Click to upload avatar',
     name: 'Name',
     namePlaceholder: 'Enter name',
+    untitled: 'Untitled archive',
+    editName: 'Edit name',
     aliases: 'Aliases',
     aliasesHint: 'Press Enter to add multiple aliases',
+    aliasPlaceholder: 'Add alias',
     type: 'Type',
     person: 'Person',
     object: 'Object',
     other: 'Other',
-    description: 'Details',
+    description: 'About',
+    descriptionTitle: 'Edit description',
     descriptionPlaceholder: 'Enter details...',
-    images: 'Other Images',
+    descriptionEmpty: 'Click to add description...',
+    editDescription: 'Click to edit description',
+    images: 'Gallery',
+    addImage: 'Add image',
+    galleryEmpty: 'Click to add an image',
+    imageCount: '{count} images',
     deleteArchive: 'Delete Archive',
     deleteConfirm: 'Are you sure you want to delete this archive?',
     saving: 'Saving...',
@@ -161,6 +170,12 @@ const enUS = {
   },
   archivesPage: {
     empty: 'Select or create an archive'
+  },
+  imageLightbox: {
+    counter: '{current} / {total}',
+    prev: 'Previous',
+    next: 'Next',
+    close: 'Close'
   },
   mediaPage: {
     title: 'Media Library',
@@ -321,7 +336,9 @@ const enUS = {
         toolDiaryRead: 'Read one diary as paginated plain text by ID.',
         toolDiaryReadByDate: 'Read diary plain text by date or date range.',
         toolDiaryGetMetadataBatch:
-          'Read metadata for one or more diaries by ID without returning content.'
+          'Read metadata for one or more diaries by ID without returning content.',
+        toolArchiveSearchByName:
+          'Search archive content by name, alias, or any partial keyword. Names and aliases are matched without distinction.'
       },
       features: {
         chat: 'Chat',

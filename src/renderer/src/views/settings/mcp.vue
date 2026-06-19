@@ -223,6 +223,10 @@ const mcpTools = computed(() => [
   {
     name: 'diary_get_metadata_batch',
     description: t('settings.ai.mcp.toolDiaryGetMetadataBatch')
+  },
+  {
+    name: 'archive_search_by_name',
+    description: t('settings.ai.mcp.toolArchiveSearchByName')
   }
 ])
 const runtimeEnabled = computed(() => mcpStatus.value?.enabled ?? mcp.value.enabled)

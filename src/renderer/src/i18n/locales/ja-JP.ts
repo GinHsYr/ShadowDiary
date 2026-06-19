@@ -97,15 +97,24 @@ const jaJP = {
     uploadAvatar: 'クリックしてアバターをアップロード',
     name: '名前',
     namePlaceholder: '名前を入力',
+    untitled: '無題のアーカイブ',
+    editName: '名前を編集',
     aliases: '別名',
     aliasesHint: 'Enter キーで複数の別名を追加',
+    aliasPlaceholder: '別名を追加',
     type: '種類',
     person: '人物',
     object: '物',
     other: 'その他',
-    description: '詳細',
+    description: '紹介',
+    descriptionTitle: '紹介を編集',
     descriptionPlaceholder: '詳細を入力...',
-    images: 'その他の画像',
+    descriptionEmpty: 'クリックして紹介を追加...',
+    editDescription: 'クリックして紹介を編集',
+    images: 'ギャラリー',
+    addImage: '画像を追加',
+    galleryEmpty: 'クリックして画像を追加',
+    imageCount: '{count} 枚',
     deleteArchive: 'アーカイブを削除',
     deleteConfirm: 'このアーカイブを削除してもよろしいですか？',
     saving: '保存中...',
@@ -161,6 +170,12 @@ const jaJP = {
   },
   archivesPage: {
     empty: 'アーカイブを選択または作成してください'
+  },
+  imageLightbox: {
+    counter: '{current} / {total}',
+    prev: '前へ',
+    next: '次へ',
+    close: '閉じる'
   },
   mediaPage: {
     title: 'メディアライブラリ',
@@ -321,7 +336,9 @@ const jaJP = {
         toolDiaryRead: 'Read one diary as paginated plain text by ID.',
         toolDiaryReadByDate: 'Read diary plain text by date or date range.',
         toolDiaryGetMetadataBatch:
-          'Read metadata for one or more diaries by ID without returning content.'
+          'Read metadata for one or more diaries by ID without returning content.',
+        toolArchiveSearchByName:
+          '名前・別名・任意のキーワードでアーカイブ内容（人物・物など）を検索します。名前と別名を区別せずに自動的にマッチします。'
       },
       features: {
         chat: 'Chat',

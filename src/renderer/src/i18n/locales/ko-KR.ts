@@ -97,15 +97,24 @@ const koKR = {
     uploadAvatar: '클릭하여 아바타 업로드',
     name: '이름',
     namePlaceholder: '이름 입력',
+    untitled: '제목 없는 아카이브',
+    editName: '이름 편집',
     aliases: '별칭',
     aliasesHint: 'Enter 키로 별칭을 여러 개 추가할 수 있습니다',
+    aliasPlaceholder: '별칭 추가',
     type: '유형',
     person: '인물',
     object: '사물',
     other: '기타',
-    description: '설명',
+    description: '소개',
+    descriptionTitle: '소개 편집',
     descriptionPlaceholder: '상세 내용을 입력하세요...',
-    images: '기타 이미지',
+    descriptionEmpty: '클릭하여 소개를 추가하세요...',
+    editDescription: '클릭하여 소개를 편집하세요',
+    images: '갤러리',
+    addImage: '이미지 추가',
+    galleryEmpty: '클릭하여 이미지를 추가하세요',
+    imageCount: '{count}장',
     deleteArchive: '아카이브 삭제',
     deleteConfirm: '이 아카이브를 삭제하시겠습니까?',
     saving: '저장 중...',
@@ -161,6 +170,12 @@ const koKR = {
   },
   archivesPage: {
     empty: '아카이브를 선택하거나 새로 만드세요'
+  },
+  imageLightbox: {
+    counter: '{current} / {total}',
+    prev: '이전',
+    next: '다음',
+    close: '닫기'
   },
   mediaPage: {
     title: '미디어 라이브러리',
@@ -321,7 +336,9 @@ const koKR = {
         toolDiaryRead: 'Read one diary as paginated plain text by ID.',
         toolDiaryReadByDate: 'Read diary plain text by date or date range.',
         toolDiaryGetMetadataBatch:
-          'Read metadata for one or more diaries by ID without returning content.'
+          'Read metadata for one or more diaries by ID without returning content.',
+        toolArchiveSearchByName:
+          '이름, 별칭 또는 임의의 키워드로 아카이브 콘텐츠(인물, 사물 등)를 검색합니다. 이름과 별칭은 구분 없이 자동으로 매칭됩니다.'
       },
       features: {
         chat: 'Chat',

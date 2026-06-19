@@ -97,15 +97,24 @@ const zhCN = {
     uploadAvatar: '点击上传头像',
     name: '名称',
     namePlaceholder: '请输入名称',
+    untitled: '未命名档案',
+    editName: '编辑名称',
     aliases: '别名',
     aliasesHint: '按回车添加多个别名',
+    aliasPlaceholder: '添加别名',
     type: '类型',
     person: '人物',
     object: '物品',
     other: '其他',
-    description: '具体内容',
+    description: '简介',
+    descriptionTitle: '编辑简介',
     descriptionPlaceholder: '请输入具体内容...',
-    images: '其他图片',
+    descriptionEmpty: '点击添加简介...',
+    editDescription: '点击编辑简介',
+    images: '相册',
+    addImage: '添加图片',
+    galleryEmpty: '点击添加图片',
+    imageCount: '{count} 张',
     deleteArchive: '删除档案',
     deleteConfirm: '确定要删除这个档案吗？',
     saving: '保存中...',
@@ -161,6 +170,12 @@ const zhCN = {
   },
   archivesPage: {
     empty: '选择或新建一个档案'
+  },
+  imageLightbox: {
+    counter: '第 {current} / {total} 张',
+    prev: '上一张',
+    next: '下一张',
+    close: '关闭'
   },
   mediaPage: {
     title: '媒体库',
@@ -280,8 +295,8 @@ const zhCN = {
       model: {
         card: '模型列表',
         empty: '当前提供商还没有模型',
-        displayNamePlaceholder: '模型显示名称（如 GPT-4o）',
-        modelIdPlaceholder: '模型 ID（如 gpt-4o）'
+        displayNamePlaceholder: '模型显示名称',
+        modelIdPlaceholder: '模型ID'
       },
       binding: {
         card: '功能模型绑定',
@@ -317,10 +332,11 @@ const zhCN = {
         authDescription: '每次请求都需要携带访问令牌。令牌变更后，需要同步更新客户端配置。',
         clientConfigTitle: '客户端配置示例',
         toolsTitle: '可用工具',
-        toolDiarySearch: '按关键词、日期、心情或标签搜索日记，返回摘要和条目 ID。',
-        toolDiaryRead: '按 ID 分页读取单篇日记纯文本。',
-        toolDiaryReadByDate: '按日期或日期范围读取日记纯文本。',
-        toolDiaryGetMetadataBatch: '按一个或多个 ID 读取日记元信息，不返回正文。'
+        toolDiarySearch: '按关键词、日期、心情或标签搜索日记，返回摘要和条目 ID',
+        toolDiaryRead: '按 ID 分页读取单篇日记纯文本',
+        toolDiaryReadByDate: '按日期或日期范围读取日记纯文本',
+        toolDiaryGetMetadataBatch: '按一个或多个 ID 读取日记元信息，不返回正文',
+        toolArchiveSearchByName: '按姓名/别名/任意关键词搜索档案内容'
       },
       features: {
         chat: '对话',
