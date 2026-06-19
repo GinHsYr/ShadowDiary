@@ -177,7 +177,11 @@ const zhCN = {
     moreSources: '另 {count} 个来源',
     empty: '暂无图片',
     emptyHint: '在日记编辑器或档案详情中插入图片后会显示在这里',
-    loadingMore: '加载更多图片...'
+    loadingMore: '加载更多图片...',
+    viewerIndex: '第 {current} / {total} 张',
+    prevImage: '上一张',
+    nextImage: '下一张',
+    closeViewer: '关闭'
   },
   dashboard: {
     welcome: '👋 你好，准备写点什么？',

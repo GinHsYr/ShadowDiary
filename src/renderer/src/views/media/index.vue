@@ -2,7 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { NButton, NButtonGroup, NEmpty, NPopover, NSpin } from 'naive-ui'
+import { NButton, NButtonGroup, NEmpty, NIcon, NPopover, NSpin } from 'naive-ui'
+import { CloseOutline, ChevronBackOutline, ChevronForwardOutline } from '@vicons/ionicons5'
 import type {
   MediaLibraryItem,
   MediaLibrarySourceRef,
@@ -27,6 +28,14 @@ const requestId = ref(0)
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const sentinelRef = ref<HTMLElement | null>(null)
 let observer: IntersectionObserver | null = null
+
+const lightboxIndex = ref<number | null>(null)
+const lightboxOpen = computed(() => lightboxIndex.value !== null)
+const currentItem = computed<MediaLibraryItem | null>(() => {
+  const idx = lightboxIndex.value
+  if (idx === null) return null
+  return mediaItems.value[idx] ?? null
+})
 
 const hasMore = computed(() => mediaItems.value.length < total.value)
 const isEmpty = computed(
@@ -109,10 +118,46 @@ function openSource(source: MediaLibrarySourceRef): void {
   })
 }
 
-function openPrimarySource(item: MediaLibraryItem): void {
-  const source = item.sources[0]
-  if (!source) return
-  openSource(source)
+function openLightbox(index: number): void {
+  if (index < 0 || index >= mediaItems.value.length) return
+  lightboxIndex.value = index
+}
+
+function closeLightbox(): void {
+  lightboxIndex.value = null
+}
+
+function nextImage(): void {
+  if (lightboxIndex.value === null) return
+  const next = lightboxIndex.value + 1
+  if (next < mediaItems.value.length) {
+    lightboxIndex.value = next
+  }
+}
+
+function prevImage(): void {
+  if (lightboxIndex.value === null) return
+  if (lightboxIndex.value > 0) {
+    lightboxIndex.value = lightboxIndex.value - 1
+  }
+}
+
+function handleViewerKeydown(event: KeyboardEvent): void {
+  if (!lightboxOpen.value) return
+  switch (event.key) {
+    case 'Escape':
+      event.preventDefault()
+      closeLightbox()
+      break
+    case 'ArrowRight':
+      event.preventDefault()
+      nextImage()
+      break
+    case 'ArrowLeft':
+      event.preventDefault()
+      prevImage()
+      break
+  }
 }
 
 function handleImageError(event: Event, item: MediaLibraryItem): void {
@@ -163,6 +208,7 @@ async function loadMediaItems(reset = false): Promise<void> {
 }
 
 watch(sourceFilter, () => {
+  lightboxIndex.value = null
   mediaItems.value = []
   total.value = 0
   initialized.value = false
@@ -180,11 +226,18 @@ watch(
 )
 
 onMounted(() => {
+  window.addEventListener('keydown', handleViewerKeydown)
   void loadMediaItems(true)
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleViewerKeydown)
   disconnectObserver()
+})
+
+watch(lightboxOpen, (open) => {
+  if (typeof document === 'undefined') return
+  document.documentElement.style.overflow = open ? 'hidden' : ''
 })
 </script>
 
@@ -234,67 +287,24 @@ onBeforeUnmount(() => {
         </n-empty>
       </div>
 
-      <div v-else class="media-grid">
-        <article
+      <div v-else class="media-masonry">
+        <button
           v-for="(item, index) in mediaItems"
           :key="item.id"
-          class="media-card"
-          :style="{ '--enter-delay': `${Math.min(index, 18) * 26}ms` }"
+          type="button"
+          class="media-tile"
+          :title="t('mediaPage.openSource')"
+          @click="openLightbox(index)"
         >
-          <button
-            type="button"
-            class="media-cover"
-            :title="t('mediaPage.openSource')"
-            @click="openPrimarySource(item)"
-          >
-            <img
-              :src="item.previewPath"
-              :alt="getItemSourceLabel(item)"
-              loading="lazy"
-              decoding="async"
-              @error="handleImageError($event, item)"
-            />
-            <span class="media-source-pill">{{ getItemSourceLabel(item) }}</span>
-          </button>
-
-          <div class="media-meta">
-            <div class="media-date">{{ formatDate(item.latestAt) }}</div>
-            <div class="media-links">
-              <button
-                v-for="source in getVisibleSources(item)"
-                :key="`${source.type}-${source.id}`"
-                type="button"
-                class="source-link"
-                @click="openSource(source)"
-              >
-                {{ getSourceTitle(source) }}
-              </button>
-
-              <n-popover v-if="item.sources.length > VISIBLE_SOURCE_LIMIT" trigger="click">
-                <template #trigger>
-                  <button type="button" class="source-link source-more">
-                    {{
-                      t('mediaPage.moreSources', {
-                        count: item.sources.length - VISIBLE_SOURCE_LIMIT
-                      })
-                    }}
-                  </button>
-                </template>
-                <div class="more-source-list">
-                  <button
-                    v-for="source in getHiddenSources(item)"
-                    :key="`more-${source.type}-${source.id}`"
-                    type="button"
-                    class="more-source-item"
-                    @click="openSource(source)"
-                  >
-                    {{ getSourceLinkText(source) }}
-                  </button>
-                </div>
-              </n-popover>
-            </div>
-          </div>
-        </article>
+          <img
+            :src="item.previewPath"
+            :alt="getItemSourceLabel(item)"
+            loading="lazy"
+            decoding="async"
+            @error="handleImageError($event, item)"
+          />
+          <span class="media-source-pill">{{ getItemSourceLabel(item) }}</span>
+        </button>
       </div>
 
       <div v-if="loadingMore" class="loading-more">
@@ -304,6 +314,94 @@ onBeforeUnmount(() => {
 
       <div ref="sentinelRef" class="scroll-sentinel" aria-hidden="true" />
     </div>
+
+    <teleport to="body">
+      <div v-if="lightboxOpen && currentItem" class="media-viewer" @click.self="closeLightbox">
+        <div class="viewer-topbar">
+          <span class="viewer-source-pill">{{ getItemSourceLabel(currentItem) }}</span>
+          <span class="viewer-counter">{{
+            t('mediaPage.viewerIndex', {
+              current: (lightboxIndex ?? 0) + 1,
+              total: mediaItems.length
+            })
+          }}</span>
+          <button
+            type="button"
+            class="viewer-icon-btn viewer-close"
+            :title="t('mediaPage.closeViewer')"
+            @click="closeLightbox"
+          >
+            <n-icon size="22"><CloseOutline /></n-icon>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          class="viewer-nav viewer-prev"
+          :title="t('mediaPage.prevImage')"
+          :disabled="lightboxIndex === 0"
+          @click="prevImage"
+        >
+          <n-icon size="26"><ChevronBackOutline /></n-icon>
+        </button>
+        <button
+          type="button"
+          class="viewer-nav viewer-next"
+          :title="t('mediaPage.nextImage')"
+          :disabled="lightboxIndex === mediaItems.length - 1"
+          @click="nextImage"
+        >
+          <n-icon size="26"><ChevronForwardOutline /></n-icon>
+        </button>
+
+        <img
+          :key="currentItem.id"
+          class="viewer-image"
+          :src="currentItem.imagePath"
+          :alt="getItemSourceLabel(currentItem)"
+          @error="handleImageError($event, currentItem)"
+          @click.self="closeLightbox"
+        />
+
+        <div class="viewer-bottombar">
+          <div class="viewer-date">{{ formatDate(currentItem.latestAt) }}</div>
+          <div class="viewer-sources">
+            <button
+              v-for="source in getVisibleSources(currentItem)"
+              :key="`${source.type}-${source.id}`"
+              type="button"
+              class="viewer-source-btn"
+              @click="openSource(source)"
+            >
+              {{ t('mediaPage.openSource') }} · {{ getSourceTitle(source) }}
+            </button>
+
+            <n-popover v-if="currentItem.sources.length > VISIBLE_SOURCE_LIMIT" trigger="click">
+              <template #trigger>
+                <button type="button" class="viewer-source-btn viewer-source-more">
+                  {{
+                    t('mediaPage.moreSources', {
+                      count: currentItem.sources.length - VISIBLE_SOURCE_LIMIT
+                    })
+                  }}
+                </button>
+              </template>
+              <div class="more-source-list">
+                <button
+                  v-for="source in getHiddenSources(currentItem)"
+                  :key="`more-${source.type}-${source.id}`"
+                  type="button"
+                  class="more-source-item"
+                  @click="openSource(source)"
+                >
+                  {{ getSourceLinkText(source) }}
+                </button>
+              </div>
+            </n-popover>
+          </div>
+        </div>
+      </div>
+    </teleport>
   </div>
 </template>
 
@@ -394,111 +492,59 @@ onBeforeUnmount(() => {
   color: var(--n-text-color-3, #64748b);
 }
 
-.media-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 14px;
-  align-content: start;
+.media-masonry {
+  column-count: 4;
+  column-gap: 6px;
 }
 
-.media-card {
-  border-radius: 14px;
-  overflow: hidden;
-  background: var(--media-card-bg);
-  border: 1px solid var(--n-border-color, rgba(15, 23, 42, 0.08));
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07);
-  transform: translateY(8px);
-  opacity: 0;
-  animation: media-card-enter var(--motion-normal) var(--ease-enter) forwards;
-  animation-delay: var(--enter-delay);
-}
-
-.media-cover {
+.media-tile {
+  display: block;
   width: 100%;
-  aspect-ratio: 1 / 1;
+  margin: 0 0 6px;
   padding: 0;
   border: none;
-  display: block;
-  cursor: pointer;
-  position: relative;
+  border-radius: 8px;
   overflow: hidden;
+  position: relative;
+  cursor: pointer;
   background: rgba(148, 163, 184, 0.12);
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  page-break-inside: avoid;
+  opacity: 0;
+  animation: media-tile-fade var(--motion-normal) var(--ease-enter) forwards;
 }
 
-.media-cover img {
+.media-tile img {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
   display: block;
-  transition:
-    transform var(--motion-normal) var(--ease-standard),
-    filter var(--motion-normal) var(--ease-standard);
+  transition: transform var(--motion-normal) var(--ease-standard);
 }
 
-.media-cover:hover img {
-  transform: scale(1.04);
-  filter: saturate(1.04);
+.media-tile:hover img {
+  transform: scale(1.02);
 }
 
 .media-source-pill {
   position: absolute;
-  left: 10px;
-  bottom: 10px;
+  left: 6px;
+  bottom: 6px;
   font-size: 11px;
   line-height: 1;
-  padding: 6px 9px;
+  padding: 5px 8px;
   border-radius: 999px;
   color: #fff;
   background: rgba(17, 24, 39, 0.62);
   backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+  pointer-events: none;
 }
 
-.media-meta {
-  padding: 10px 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: var(--media-meta-bg);
-}
-
-.media-date {
-  font-size: 12px;
-  color: var(--n-text-color-3, #64748b);
-  font-weight: 500;
-}
-
-.media-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.source-link,
-.more-source-item {
-  border: none;
-  background: var(--media-link-bg);
-  color: var(--media-link-color);
-  box-shadow: inset 0 0 0 1px var(--media-link-border);
-  border-radius: 999px;
-  font-size: 12px;
-  line-height: 1;
-  padding: 7px 10px;
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
-}
-
-.source-link:hover,
-.more-source-item:hover {
-  background: var(--media-link-bg-hover);
-  transform: translateY(-1px);
-}
-
-.source-more {
-  background: rgba(100, 116, 139, 0.14);
-  color: var(--n-text-color-2, #334155);
+.media-tile:hover .media-source-pill,
+.media-tile:focus-visible .media-source-pill {
+  opacity: 1;
 }
 
 .more-source-list {
@@ -511,10 +557,21 @@ onBeforeUnmount(() => {
 
 .more-source-item {
   text-align: left;
+  border: none;
   border-radius: 10px;
   padding: 9px 10px;
   background: rgba(148, 163, 184, 0.12);
   color: var(--n-text-color, #334155);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
+}
+
+.more-source-item:hover {
+  transform: translateY(-1px);
 }
 
 .loading-more {
@@ -552,12 +609,7 @@ html.dark .media-hero {
   border-color: rgba(148, 163, 184, 0.24);
 }
 
-html.dark .media-card {
-  border-color: rgba(148, 163, 184, 0.2);
-  box-shadow: 0 12px 24px rgba(2, 6, 23, 0.34);
-}
-
-html.dark .media-cover {
+html.dark .media-tile {
   background: rgba(71, 85, 105, 0.22);
 }
 
@@ -566,24 +618,17 @@ html.dark .media-source-pill {
   border: 1px solid rgba(148, 163, 184, 0.24);
 }
 
-html.dark .source-more {
-  background: rgba(71, 85, 105, 0.32);
-  color: var(--n-text-color-2, #cbd5e1);
-}
-
 html.dark .more-source-item {
   background: rgba(51, 65, 85, 0.35);
   color: var(--n-text-color-1, #e2e8f0);
 }
 
-@keyframes media-card-enter {
+@keyframes media-tile-fade {
   from {
     opacity: 0;
-    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -600,18 +645,196 @@ html.dark .more-source-item {
     padding: 14px;
   }
 
-  .media-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+  .media-masonry {
+    column-count: 2;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1200px) {
+  .media-masonry {
+    column-count: 3;
+  }
+}
+
+@media (min-width: 1600px) {
+  .media-masonry {
+    column-count: 5;
+  }
+}
+</style>
+
+<style>
+/* Lightbox viewer is teleported to <body>, so these styles are global. */
+.media-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.92);
+  animation: media-viewer-fade var(--motion-fast, 160ms) var(--ease-enter, ease) forwards;
+}
+
+.media-viewer .viewer-image {
+  max-width: calc(100vw - 160px);
+  max-height: calc(100vh - 160px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  border-radius: 6px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+}
+
+.media-viewer .viewer-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.55) 0%, transparent 100%);
+  color: #fff;
+}
+
+.media-viewer .viewer-source-pill {
+  font-size: 11px;
+  line-height: 1;
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.media-viewer .viewer-counter {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.media-viewer .viewer-icon-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  cursor: pointer;
+  transition: background var(--motion-fast, 140ms) var(--ease-standard, ease);
+}
+
+.media-viewer .viewer-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.media-viewer .viewer-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 64px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  transition: background var(--motion-fast, 140ms) var(--ease-standard, ease);
+}
+
+.media-viewer .viewer-nav:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.media-viewer .viewer-nav:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.media-viewer .viewer-prev {
+  left: 18px;
+}
+
+.media-viewer .viewer-next {
+  right: 18px;
+}
+
+.media-viewer .viewer-bottombar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px 22px;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
+  color: #fff;
+}
+
+.media-viewer .viewer-date {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.media-viewer .viewer-sources {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.media-viewer .viewer-source-btn {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 9px 14px;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast, 140ms) var(--ease-standard, ease),
+    transform var(--motion-fast, 140ms) var(--ease-standard, ease);
+}
+
+.media-viewer .viewer-source-btn:hover {
+  background: rgba(255, 255, 255, 0.24);
+  transform: translateY(-1px);
+}
+
+.media-viewer .viewer-source-more {
+  background: transparent;
+}
+
+@keyframes media-viewer-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .media-viewer .viewer-image {
+    max-width: calc(100vw - 80px);
+    max-height: calc(100vh - 180px);
   }
 
-  .media-meta {
-    padding: 9px 8px 10px;
-    gap: 6px;
-  }
-
-  .source-link {
-    padding: 6px 8px;
+  .media-viewer .viewer-nav {
+    width: 40px;
+    height: 52px;
   }
 }
 </style>

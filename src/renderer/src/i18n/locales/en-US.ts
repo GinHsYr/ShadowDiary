@@ -177,7 +177,11 @@ const enUS = {
     moreSources: '{count} more sources',
     empty: 'No images yet',
     emptyHint: 'Images inserted in diary editor or archive detail will appear here',
-    loadingMore: 'Loading more images...'
+    loadingMore: 'Loading more images...',
+    viewerIndex: '{current} / {total}',
+    prevImage: 'Previous',
+    nextImage: 'Next',
+    closeViewer: 'Close'
   },
   dashboard: {
     welcome: '👋 Hi, ready to write something?',

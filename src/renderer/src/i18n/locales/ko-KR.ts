@@ -177,7 +177,11 @@ const koKR = {
     moreSources: '외 {count}개',
     empty: '아직 이미지가 없습니다',
     emptyHint: '일기 에디터 또는 아카이브 상세에 추가한 이미지가 여기에 표시됩니다',
-    loadingMore: '이미지를 더 불러오는 중...'
+    loadingMore: '이미지를 더 불러오는 중...',
+    viewerIndex: '{current} / {total}',
+    prevImage: '이전 이미지',
+    nextImage: '다음 이미지',
+    closeViewer: '닫기'
   },
   dashboard: {
     welcome: '👋 안녕하세요, 오늘의 기록을 남겨보세요',

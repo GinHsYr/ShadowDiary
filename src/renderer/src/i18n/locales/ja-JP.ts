@@ -177,7 +177,11 @@ const jaJP = {
     moreSources: '他 {count} 件',
     empty: '画像がありません',
     emptyHint: '日記エディタまたはアーカイブ詳細で追加した画像がここに表示されます',
-    loadingMore: '画像を読み込み中...'
+    loadingMore: '画像を読み込み中...',
+    viewerIndex: '{current} / {total} 枚目',
+    prevImage: '前の画像',
+    nextImage: '次の画像',
+    closeViewer: '閉じる'
   },
   dashboard: {
     welcome: '👋 こんにちは、何か書いてみませんか？',
