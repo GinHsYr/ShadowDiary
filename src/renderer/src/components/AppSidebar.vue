@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onBeforeUnmount, onMounted, ref, computed } from 'vue'
+import { h, ref, computed } from 'vue'
 import { NLayoutSider, NMenu, NButton, NAvatar, NIcon, NModal, NInput, NSpace } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import {
@@ -17,7 +17,6 @@ import { useUserStore } from '../stores/user'
 import { ThemeMode, useThemeStore } from '../stores/themes'
 import { useRouter, useRoute } from 'vue-router'
 
-const COLLAPSE_WIDTH = 900
 const { t } = useI18n()
 const theme = useThemeStore()
 
@@ -27,20 +26,6 @@ const userStore = useUserStore()
 // 使用路由
 const router = useRouter()
 const route = useRoute()
-
-// 根据窗口大小更新 sidebar 状态
-const updateCollapsedByWindow = (): void => {
-  collapsed.value = window.innerWidth < COLLAPSE_WIDTH
-}
-
-onMounted(() => {
-  updateCollapsedByWindow()
-  window.addEventListener('resize', updateCollapsedByWindow)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', updateCollapsedByWindow)
-})
 
 // 定义菜单项
 const menuOptions = computed(() => [
@@ -63,11 +48,6 @@ const menuOptions = computed(() => [
     label: t('sidebar.menu.media'),
     key: 'media',
     icon: () => h(NIcon, null, () => h(ImagesOutline))
-  },
-  {
-    label: t('sidebar.menu.settings'),
-    key: 'settings',
-    icon: () => h(NIcon, null, () => h(SettingsOutline))
   }
 ])
 
@@ -82,7 +62,7 @@ const activeKey = computed(() => {
   return 'dashboard'
 })
 
-const collapsed = ref(false)
+const collapsed = ref(true)
 const showModal = ref(false)
 const menuKey = ref(0)
 const savingProfile = ref(false)
@@ -280,9 +260,22 @@ const toggleTheme = (): void => {
         />
       </div>
 
-      <div class="sidebar-footer">
+      <div class="sidebar-footer" :class="{ collapsed }">
         <n-button
-          class="theme-toggle-btn"
+          class="footer-btn"
+          :class="{ active: activeKey === 'settings' }"
+          secondary
+          :block="!collapsed"
+          :circle="collapsed"
+          @click="handleMenuUpdate('settings')"
+        >
+          <template #icon>
+            <n-icon><SettingsOutline /></n-icon>
+          </template>
+          <span v-if="!collapsed">{{ t('sidebar.menu.settings') }}</span>
+        </n-button>
+        <n-button
+          class="footer-btn theme-toggle-btn"
           secondary
           :block="!collapsed"
           :circle="collapsed"
@@ -412,11 +405,30 @@ const toggleTheme = (): void => {
   padding: 12px 12px 6px;
   border-top: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
   display: flex;
-  justify-content: center;
+  flex-direction: row;
+  gap: 8px;
 }
 
-.theme-toggle-btn {
+.sidebar-footer.collapsed {
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 8px 8px;
+}
+
+.sidebar-footer.collapsed .footer-btn {
+  flex: none;
+  width: 40px;
+  height: 40px;
+}
+
+.footer-btn {
   border-radius: 12px;
+  flex: 1;
+}
+
+.footer-btn.active {
+  background-color: var(--n-color-hover, rgba(0, 0, 0, 0.04));
 }
 
 :deep(.sidebar-ripple-button),
