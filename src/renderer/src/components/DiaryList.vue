@@ -29,40 +29,72 @@
     </div>
 
     <!-- 日记列表 -->
-    <div ref="listRef" class="list-body" @scroll="handleScroll">
-      <transition-group name="diary-item-motion" tag="div" class="diary-item-group">
-        <div
-          v-for="entry in displayEntries"
-          :key="entry.id"
-          class="diary-item"
-          :class="{ active: entry.id === selectedId, 'is-draft': isDraftEntry(entry) }"
-          @click="handleItemClick(entry)"
-          @contextmenu.prevent="handleContextMenu($event, entry)"
-        >
-          <div class="item-header">
-            <span class="item-date">{{ formatDate(entry.createdAt) }}</span>
-            <div class="item-header-right">
-              <n-tag v-if="isDraftEntry(entry)" size="tiny" round type="warning" class="draft-tag">
-                {{ t('diaryList.draft') }}
-              </n-tag>
-              <span class="item-mood">{{ moodEmoji[entry.mood] || '' }}</span>
+    <div class="list-body-shell">
+      <div
+        ref="listRef"
+        class="list-body"
+        @scroll="handleScroll"
+        @wheel.passive="handleUserScrollIntent"
+        @touchstart.passive="handleUserScrollIntent"
+      >
+        <transition-group name="diary-item-motion" tag="div" class="diary-item-group">
+          <div
+            v-for="entry in displayEntries"
+            :key="entry.id"
+            class="diary-item"
+            :class="{ active: entry.id === selectedId, 'is-draft': isDraftEntry(entry) }"
+            :data-diary-id="entry.id"
+            @click="handleItemClick(entry)"
+            @contextmenu.prevent="handleContextMenu($event, entry)"
+          >
+            <div class="item-header">
+              <span class="item-date">{{ formatDate(entry.createdAt) }}</span>
+              <div class="item-header-right">
+                <n-tag
+                  v-if="isDraftEntry(entry)"
+                  size="tiny"
+                  round
+                  type="warning"
+                  class="draft-tag"
+                >
+                  {{ t('diaryList.draft') }}
+                </n-tag>
+                <span class="item-mood">{{ moodEmoji[entry.mood] || '' }}</span>
+              </div>
             </div>
+            <div class="item-title">{{ entry.title || t('common.noTitle') }}</div>
+            <div class="item-preview">{{ stripHtml(entry.content) }}</div>
           </div>
-          <div class="item-title">{{ entry.title || t('common.noTitle') }}</div>
-          <div class="item-preview">{{ stripHtml(entry.content) }}</div>
+        </transition-group>
+
+        <div v-if="displayEntries.length === 0 && !loading" class="list-empty">
+          <p>{{ t('diaryList.empty') }}</p>
         </div>
-      </transition-group>
 
-      <div v-if="displayEntries.length === 0 && !loading" class="list-empty">
-        <p>{{ t('diaryList.empty') }}</p>
+        <div v-if="loading" class="list-loading">
+          <n-spin size="small" />
+        </div>
       </div>
 
-      <div v-if="loading" class="list-loading">
-        <n-spin size="small" />
-      </div>
+      <!-- 定位当前日记 -->
+      <n-button
+        v-if="showLocateButton"
+        class="locate-selected-btn"
+        type="primary"
+        size="small"
+        circle
+        secondary
+        :title="t('diaryList.locateSelected')"
+        :aria-label="t('diaryList.locateSelected')"
+        :loading="locatingSelected"
+        @click="handleLocateSelectedClick"
+      >
+        <template #icon>
+          <n-icon :component="LocateOutline" />
+        </template>
+      </n-button>
     </div>
 
-    <!-- 右键菜单 -->
     <n-dropdown
       placement="bottom-start"
       trigger="manual"
@@ -77,8 +109,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { NButton, NDatePicker, NDropdown, NPopover, NSpin, NTag } from 'naive-ui'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { NButton, NDatePicker, NDropdown, NIcon, NPopover, NSpin, NTag } from 'naive-ui'
+import { LocateOutline } from '@vicons/ionicons5'
 import { useI18n } from 'vue-i18n'
 import type { DiaryEntry, Mood } from '../../../types/model'
 const { t, tm } = useI18n()
@@ -107,6 +140,7 @@ interface DiaryEntryDraftInput {
 }
 
 type DiaryListItem = DiaryEntry | DiaryEntryDraftItem
+type DiaryListScrollBehavior = 'auto' | 'smooth'
 
 const showDatePicker = ref(false)
 const newDiaryDate = ref<number>(Date.now())
@@ -167,6 +201,16 @@ const TRIM_BATCH_SIZE = 40
 const listRef = ref<HTMLElement | null>(null)
 const loadedCount = ref(0)
 const displayEntries = computed<DiaryListItem[]>(() => [...draftEntries.value, ...entries.value])
+const locatingSelected = ref(false)
+const selectedNeedsLocation = ref(false)
+const userDetachedSelected = ref(false)
+const showLocateButton = computed(
+  () => Boolean(props.selectedId) && (selectedNeedsLocation.value || userDetachedSelected.value)
+)
+
+let programmaticScrollTimer: ReturnType<typeof setTimeout> | null = null
+let isProgrammaticScroll = false
+let locationFrame = 0
 
 function stripHtml(html: string): string {
   if (!html) return ''
@@ -182,6 +226,134 @@ function formatDate(ts: number): string {
   const day = d.getDate()
   const weekdays = tm('diaryList.weekdayShort') as string[]
   return t('diaryList.dateFormat', { month, day, weekday: weekdays[d.getDay()] })
+}
+
+function getSelectedItemElement(): HTMLElement | null {
+  const el = listRef.value
+  const selectedId = props.selectedId
+  if (!el || !selectedId) return null
+
+  return (
+    Array.from(el.querySelectorAll<HTMLElement>('.diary-item')).find(
+      (item) => item.dataset.diaryId === selectedId
+    ) ?? null
+  )
+}
+
+function isElementComfortablyVisible(item: HTMLElement): boolean {
+  const el = listRef.value
+  if (!el) return false
+
+  const margin = 12
+  const itemTop = item.offsetTop
+  const itemBottom = itemTop + item.offsetHeight
+  const viewportTop = el.scrollTop + margin
+  const viewportBottom = el.scrollTop + el.clientHeight - margin
+
+  return itemTop >= viewportTop && itemBottom <= viewportBottom
+}
+
+function markProgrammaticScroll(): void {
+  isProgrammaticScroll = true
+  if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer)
+  programmaticScrollTimer = setTimeout(() => {
+    isProgrammaticScroll = false
+    programmaticScrollTimer = null
+    updateSelectedLocationState()
+  }, 420)
+}
+
+function updateSelectedLocationState(): void {
+  if (!props.selectedId) {
+    selectedNeedsLocation.value = false
+    userDetachedSelected.value = false
+    return
+  }
+
+  const item = getSelectedItemElement()
+  selectedNeedsLocation.value = !item || !isElementComfortablyVisible(item)
+}
+
+function queueSelectedLocationStateUpdate(): void {
+  if (locationFrame) return
+  locationFrame = window.requestAnimationFrame(() => {
+    locationFrame = 0
+    updateSelectedLocationState()
+  })
+}
+
+function handleUserScrollIntent(): void {
+  if (!props.selectedId || isProgrammaticScroll) return
+  userDetachedSelected.value = true
+  queueSelectedLocationStateUpdate()
+}
+
+async function loadUntilSelectedEntry(): Promise<boolean> {
+  if (!props.selectedId) return false
+  if (getSelectedItemElement()) return true
+
+  while (hasMore.value && !getSelectedItemElement()) {
+    const beforeLoadedCount = loadedCount.value
+    await loadEntries()
+    await nextTick()
+
+    if (loadedCount.value === beforeLoadedCount || loading.value) break
+  }
+
+  return Boolean(getSelectedItemElement())
+}
+
+async function locateSelectedEntry(
+  force = false,
+  behavior: DiaryListScrollBehavior = 'smooth'
+): Promise<void> {
+  if (!props.selectedId || locatingSelected.value) return
+
+  locatingSelected.value = true
+  try {
+    await nextTick()
+    await loadUntilSelectedEntry()
+    await nextTick()
+
+    const el = listRef.value
+    const item = getSelectedItemElement()
+    if (!el || !item) {
+      updateSelectedLocationState()
+      return
+    }
+
+    if (!force && isElementComfortablyVisible(item)) {
+      selectedNeedsLocation.value = false
+      userDetachedSelected.value = false
+      return
+    }
+
+    const targetTop = Math.max(
+      0,
+      item.offsetTop - Math.max(16, (el.clientHeight - item.offsetHeight) / 2)
+    )
+    markProgrammaticScroll()
+    el.scrollTo({ top: targetTop, behavior })
+    userDetachedSelected.value = false
+    selectedNeedsLocation.value = false
+  } finally {
+    locatingSelected.value = false
+    setTimeout(updateSelectedLocationState, 460)
+  }
+}
+
+function handleLocateSelectedClick(): void {
+  void locateSelectedEntry(true)
+}
+
+function syncSelectedLocationAfterMutation(): void {
+  void nextTick(() => {
+    if (props.selectedId && !userDetachedSelected.value) {
+      void locateSelectedEntry(false, 'auto')
+    } else {
+      updateSelectedLocationState()
+    }
+  })
 }
 
 async function loadEntries(reset = false): Promise<void> {
@@ -206,6 +378,12 @@ async function loadEntries(reset = false): Promise<void> {
     console.error('加载日记列表失败:', error)
   } finally {
     loading.value = false
+    await nextTick()
+    if (props.selectedId && !locatingSelected.value && !userDetachedSelected.value) {
+      void locateSelectedEntry(false, 'auto')
+    } else {
+      updateSelectedLocationState()
+    }
   }
 }
 
@@ -246,6 +424,14 @@ function handleScroll(): void {
   if (!el) return
 
   // 防抖优化：避免滚动时频繁触发
+  if (!isProgrammaticScroll && props.selectedId) {
+    const selectedItem = getSelectedItemElement()
+    if (selectedItem && !isElementComfortablyVisible(selectedItem)) {
+      userDetachedSelected.value = true
+    }
+  }
+  queueSelectedLocationStateUpdate()
+
   if (scrollTimer) clearTimeout(scrollTimer)
   scrollTimer = setTimeout(() => {
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 50) {
@@ -264,10 +450,31 @@ onMounted(() => {
   loadEntries(true)
 })
 
+watch(
+  () => props.selectedId,
+  (selectedId) => {
+    userDetachedSelected.value = false
+    selectedNeedsLocation.value = false
+    if (selectedId) {
+      void locateSelectedEntry(false)
+    } else {
+      updateSelectedLocationState()
+    }
+  }
+)
+
 onBeforeUnmount(() => {
   if (scrollTimer) {
     clearTimeout(scrollTimer)
     scrollTimer = null
+  }
+  if (programmaticScrollTimer) {
+    clearTimeout(programmaticScrollTimer)
+    programmaticScrollTimer = null
+  }
+  if (locationFrame) {
+    window.cancelAnimationFrame(locationFrame)
+    locationFrame = 0
   }
 })
 
@@ -275,12 +482,14 @@ function updateEntry(id: string, patch: Partial<DiaryEntry>): boolean {
   const idx = entries.value.findIndex((e) => e.id === id)
   if (idx !== -1) {
     entries.value[idx] = { ...entries.value[idx], ...patch }
+    syncSelectedLocationAfterMutation()
     return true
   }
 
   const draftIdx = draftEntries.value.findIndex((e) => e.id === id)
   if (draftIdx !== -1) {
     draftEntries.value[draftIdx] = { ...draftEntries.value[draftIdx], ...patch }
+    syncSelectedLocationAfterMutation()
     return true
   }
 
@@ -292,6 +501,7 @@ function removeEntry(id: string): void {
   if (idx !== -1) {
     entries.value.splice(idx, 1)
     loadedCount.value = Math.max(loadedCount.value - 1, 0)
+    syncSelectedLocationAfterMutation()
   }
 
   removeDraftEntry(id)
@@ -304,6 +514,7 @@ function prependDraftEntry(draft: DiaryEntryDraftInput): void {
     isDraft: true
   }
   draftEntries.value = [next, ...draftEntries.value.filter((entry) => entry.id !== draft.id)]
+  syncSelectedLocationAfterMutation()
 }
 
 function commitDraftEntry(tempId: string, saved: DiaryEntry): boolean {
@@ -314,6 +525,7 @@ function commitDraftEntry(tempId: string, saved: DiaryEntry): boolean {
   const existingIdx = entries.value.findIndex((entry) => entry.id === saved.id)
   if (existingIdx !== -1) {
     entries.value[existingIdx] = saved
+    syncSelectedLocationAfterMutation()
     return true
   }
 
@@ -324,6 +536,7 @@ function commitDraftEntry(tempId: string, saved: DiaryEntry): boolean {
     entries.value.splice(insertIdx, 0, saved)
   }
   loadedCount.value += 1
+  syncSelectedLocationAfterMutation()
   return true
 }
 
@@ -331,6 +544,7 @@ function removeDraftEntry(tempId: string): void {
   const draftIdx = draftEntries.value.findIndex((entry) => entry.id === tempId)
   if (draftIdx !== -1) {
     draftEntries.value.splice(draftIdx, 1)
+    syncSelectedLocationAfterMutation()
   }
 }
 
@@ -357,10 +571,27 @@ defineExpose({
   border-bottom: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
 }
 
-.list-body {
+.list-body-shell {
+  position: relative;
   flex: 1;
+  min-height: 0;
+}
+
+.list-body {
+  height: 100%;
   overflow-y: auto;
   padding: 8px;
+}
+
+.locate-selected-btn {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  box-shadow:
+    0 0 0 1px var(--app-accent-20, rgba(24, 160, 88, 0.2)),
+    0 10px 24px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(8px);
 }
 
 .diary-item {

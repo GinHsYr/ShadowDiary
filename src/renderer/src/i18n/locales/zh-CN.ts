@@ -128,6 +128,7 @@ const zhCN = {
     selectDate: '选择日期',
     confirm: '确定',
     delete: '删除',
+    locateSelected: '定位当前日记',
     weekdayShort: ['日', '一', '二', '三', '四', '五', '六'],
     dateFormat: '{month}月{day}日 周{weekday}'
   },

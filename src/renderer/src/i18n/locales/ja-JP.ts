@@ -128,6 +128,7 @@ const jaJP = {
     selectDate: '日付を選択',
     confirm: '確認',
     delete: '削除',
+    locateSelected: '選択中の日記へ移動',
     weekdayShort: ['日', '月', '火', '水', '木', '金', '土'],
     dateFormat: '{month}/{day} ({weekday})'
   },

@@ -729,6 +729,31 @@ const jumpToLastMonth = (): void => {
           <span>{{ t('dashboard.legend.today') }}</span>
         </div>
       </div>
+
+      <div class="calendar-progress">
+        <div class="calendar-progress-head">
+          <span class="calendar-progress-title">{{ t('dashboard.monthProgressTitle') }}</span>
+          <span class="calendar-progress-percent">{{ selectedMonthWrittenPercent }}%</span>
+        </div>
+        <n-progress
+          type="line"
+          :percentage="selectedMonthWrittenPercent"
+          :show-indicator="false"
+          :height="8"
+          :border-radius="999"
+          :fill-border-radius="999"
+          :color="'var(--app-accent-color, var(--n-color-target, #18a058))'"
+          :rail-color="'var(--app-accent-12, var(--n-border-color, rgba(0, 0, 0, 0.12)))'"
+        />
+        <div class="calendar-progress-meta">
+          {{
+            t('dashboard.monthProgressMeta', {
+              written: selectedMonthWrittenDays,
+              total: selectedMonthTotalDays
+            })
+          }}
+        </div>
+      </div>
     </n-card>
 
     <!-- 统计 -->
@@ -777,25 +802,6 @@ const jumpToLastMonth = (): void => {
     >
       <div class="chart-content">
         <v-chart :option="pieChartOption" autoresize class="pie-chart" @click="handlePieClick" />
-        <div class="month-progress-panel">
-          <div class="month-progress-title">{{ t('dashboard.monthProgressTitle') }}</div>
-          <n-progress
-            type="circle"
-            style="width: 150px"
-            :percentage="selectedMonthWrittenPercent"
-            :stroke-width="20"
-            :color="'var(--app-accent-color, var(--n-color-target, #18a058))'"
-            :rail-color="'var(--app-accent-12, var(--n-border-color, rgba(0, 0, 0, 0.12)))'"
-          />
-          <div class="month-progress-meta">
-            {{
-              t('dashboard.monthProgressMeta', {
-                written: selectedMonthWrittenDays,
-                total: selectedMonthTotalDays
-              })
-            }}
-          </div>
-        </div>
       </div>
     </n-card>
 
@@ -1147,6 +1153,39 @@ const jumpToLastMonth = (): void => {
 }
 
 /* ===== 统计 ===== */
+.calendar-progress {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
+}
+
+.calendar-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.calendar-progress-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--n-text-color, #333);
+}
+
+.calendar-progress-percent {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--app-accent-color, var(--n-color-target, #18a058));
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-progress-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--n-text-color-3, #888);
+}
+
 .stats-grid {
   margin-bottom: 24px;
 }
@@ -1184,54 +1223,12 @@ const jumpToLastMonth = (): void => {
 }
 
 .chart-content {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 210px;
-  align-items: center;
-  gap: 24px;
   width: 100%;
 }
 
 .pie-chart {
   width: 100%;
   height: 230px;
-}
-
-.month-progress-panel {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  color: var(--n-text-color, #333);
-  opacity: 0;
-  transform: translateY(var(--motion-distance-md)) scale(0.985);
-}
-
-.home-view--entered .month-progress-panel {
-  animation: month-progress-in var(--motion-spring-normal) var(--ease-spring-soft) both;
-  animation-delay: 260ms;
-}
-
-.month-progress-title {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.month-progress-meta {
-  font-size: 13px;
-  color: var(--n-text-color-3, #888);
-  text-align: center;
-}
-
-.month-progress-panel :deep(.n-progress-content) {
-  color: var(--app-accent-color, var(--n-color-target, #18a058));
-  font-weight: 700;
-}
-
-@media (max-width: 900px) {
-  .chart-content {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 .pie-chart {
@@ -1456,17 +1453,6 @@ const jumpToLastMonth = (): void => {
   }
 }
 
-@keyframes month-progress-in {
-  from {
-    opacity: 0;
-    transform: translateY(var(--motion-distance-md)) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
 @keyframes mention-modal-in {
   from {
     opacity: 0;
@@ -1479,8 +1465,7 @@ const jumpToLastMonth = (): void => {
 }
 
 :global(:root.reduced-motion) .motion-section,
-:global(:root.reduced-motion) .stat-card,
-:global(:root.reduced-motion) .month-progress-panel {
+:global(:root.reduced-motion) .stat-card {
   opacity: 1;
   transform: none;
   animation: none !important;

@@ -128,6 +128,7 @@ const koKR = {
     selectDate: '날짜 선택',
     confirm: '확인',
     delete: '삭제',
+    locateSelected: '선택한 일기로 이동',
     weekdayShort: ['일', '월', '화', '수', '목', '금', '토'],
     dateFormat: '{month}/{day} {weekday}'
   },

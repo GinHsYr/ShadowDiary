@@ -128,6 +128,7 @@ const enUS = {
     selectDate: 'Select Date',
     confirm: 'Confirm',
     delete: 'Delete',
+    locateSelected: 'Locate selected diary',
     weekdayShort: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
     dateFormat: '{month}/{day} {weekday}'
   },
