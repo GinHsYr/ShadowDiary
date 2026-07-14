@@ -35,7 +35,6 @@ const IMAGE_MIME_BY_EXT = {
 type SupportedImageExtension = keyof typeof IMAGE_MIME_BY_EXT
 
 const STORAGE_IMAGE_MAX_EDGE = 2560
-const STORAGE_JPEG_QUALITY = 82
 const STORAGE_WEBP_QUALITY = 82
 
 const SUBTYPE_TO_EXTENSION: Record<string, SupportedImageExtension> = {
@@ -114,52 +113,21 @@ export async function ensureImageDirs(): Promise<void> {
   ])
 }
 
-function shouldOptimizeBeforeStore(ext: SupportedImageExtension): boolean {
-  return ext !== 'gif' && ext !== 'svg'
-}
-
-async function optimizeImageBeforeStore(
-  imageBuffer: Buffer,
-  ext: SupportedImageExtension
-): Promise<{ buffer: Buffer; ext: SupportedImageExtension }> {
-  if (!shouldOptimizeBeforeStore(ext)) {
-    return { buffer: imageBuffer, ext }
-  }
-
+async function optimizeImageBeforeStore(imageBuffer: Buffer): Promise<Buffer> {
   try {
-    let outputExt: SupportedImageExtension = ext
-    const pipeline = sharp(imageBuffer).rotate().resize({
-      width: STORAGE_IMAGE_MAX_EDGE,
-      height: STORAGE_IMAGE_MAX_EDGE,
-      fit: 'inside',
-      withoutEnlargement: true
-    })
-
-    switch (ext) {
-      case 'jpg':
-      case 'jpeg':
-        pipeline.jpeg({ quality: STORAGE_JPEG_QUALITY, mozjpeg: true })
-        break
-      case 'png':
-        pipeline.png({ compressionLevel: 9, adaptiveFiltering: true })
-        break
-      case 'webp':
-        pipeline.webp({ quality: STORAGE_WEBP_QUALITY })
-        break
-      case 'bmp':
-        pipeline.png({ compressionLevel: 9, adaptiveFiltering: true })
-        outputExt = 'png'
-        break
-    }
-
-    const optimizedBuffer = await pipeline.toBuffer()
-    if (outputExt === ext && optimizedBuffer.length >= imageBuffer.length) {
-      return { buffer: imageBuffer, ext }
-    }
-    return { buffer: optimizedBuffer, ext: outputExt }
+    return await sharp(imageBuffer)
+      .rotate()
+      .resize({
+        width: STORAGE_IMAGE_MAX_EDGE,
+        height: STORAGE_IMAGE_MAX_EDGE,
+        fit: 'inside',
+        withoutEnlargement: true
+      })
+      .webp({ quality: STORAGE_WEBP_QUALITY })
+      .toBuffer()
   } catch (error) {
-    console.warn('优化图片失败，回退原图保存:', error)
-    return { buffer: imageBuffer, ext }
+    console.warn('Compress image to WebP failed:', error)
+    throw new Error('Failed to compress image as WebP')
   }
 }
 
@@ -167,23 +135,24 @@ async function saveImageBuffer(
   imageBuffer: Buffer,
   ext: SupportedImageExtension
 ): Promise<{ id: string; path: string; thumbnailPath: string }> {
+  void ext
   await ensureImageDirs()
-  const optimized = await optimizeImageBeforeStore(imageBuffer, ext)
+  const optimizedBuffer = await optimizeImageBeforeStore(imageBuffer)
 
   // 生成唯一 ID
   const id = randomUUID()
-  const filename = `${id}.${optimized.ext}`
+  const filename = `${id}.webp`
   const thumbnailFilename = `${id}_thumb.webp`
 
   const imagePath = join(getImageDir(), filename)
   const thumbnailPath = join(getThumbnailDir(), thumbnailFilename)
 
-  // 保存原图
-  await writeFile(imagePath, optimized.buffer)
+  // 保存压缩后的 WebP 图片
+  await writeFile(imagePath, optimizedBuffer)
 
   // 生成缩略图 (最大宽度 400px，使用 webp 格式)
   try {
-    await sharp(optimized.buffer)
+    await sharp(optimizedBuffer)
       .resize(400, null, {
         withoutEnlargement: true,
         fit: 'inside'
@@ -192,7 +161,6 @@ async function saveImageBuffer(
       .toFile(thumbnailPath)
   } catch (error) {
     console.error('生成缩略图失败:', error)
-    // 如果缩略图生成失败，使用原图
   }
 
   return {

@@ -1,6 +1,111 @@
 <template>
   <div ref="editorRootRef" class="diary-editor-wrapper" @contextmenu="handleContextMenu">
     <froala v-model:value="content" :tag="'textarea'" :config="editorConfig" />
+    <n-button
+      v-if="!showSearchPanel"
+      class="editor-search-trigger"
+      size="small"
+      circle
+      quaternary
+      :title="t('diaryEditor.searchOpen')"
+      :aria-label="t('diaryEditor.searchOpen')"
+      @click="openSearchPanel"
+    >
+      <template #icon>
+        <n-icon :component="SearchOutline" />
+      </template>
+    </n-button>
+    <transition name="editor-search-panel">
+      <div v-if="showSearchPanel" class="editor-search-panel" @keydown.stop>
+        <div class="editor-search-row">
+          <n-icon class="search-panel-icon" :component="SearchOutline" />
+          <n-input
+            ref="searchInputRef"
+            v-model:value="searchKeyword"
+            class="search-panel-input"
+            size="small"
+            clearable
+            :placeholder="t('diaryEditor.searchPlaceholder')"
+            @keydown.enter.prevent="handleSearchEnter"
+            @keydown.esc.prevent="closeSearchPanel"
+          />
+          <span
+            class="search-panel-count"
+            :class="{ 'is-empty': searchKeyword && searchMatches.length === 0 }"
+          >
+            {{ searchStatusText }}
+          </span>
+          <n-button
+            quaternary
+            circle
+            size="tiny"
+            :disabled="searchMatches.length === 0"
+            :title="t('diaryEditor.searchPrevious')"
+            :aria-label="t('diaryEditor.searchPrevious')"
+            @click="goToPreviousSearchMatch"
+          >
+            <template #icon>
+              <n-icon :component="ChevronUpOutline" />
+            </template>
+          </n-button>
+          <n-button
+            quaternary
+            circle
+            size="tiny"
+            :disabled="searchMatches.length === 0"
+            :title="t('diaryEditor.searchNext')"
+            :aria-label="t('diaryEditor.searchNext')"
+            @click="goToNextSearchMatch"
+          >
+            <template #icon>
+              <n-icon :component="ChevronDownOutline" />
+            </template>
+          </n-button>
+          <n-button
+            quaternary
+            circle
+            size="tiny"
+            :title="t('diaryEditor.searchClose')"
+            :aria-label="t('diaryEditor.searchClose')"
+            @click="closeSearchPanel"
+          >
+            <template #icon>
+              <n-icon :component="CloseOutline" />
+            </template>
+          </n-button>
+        </div>
+        <div class="editor-replace-row">
+          <n-icon class="search-panel-icon" :component="SwapHorizontalOutline" />
+          <n-input
+            v-model:value="replaceKeyword"
+            class="search-panel-input"
+            size="small"
+            clearable
+            :placeholder="t('diaryEditor.replacePlaceholder')"
+            @keydown.enter.prevent="replaceCurrentSearchMatch"
+            @keydown.esc.prevent="closeSearchPanel"
+          />
+          <n-button
+            size="tiny"
+            tertiary
+            type="primary"
+            :disabled="searchMatches.length === 0"
+            @click="replaceCurrentSearchMatch"
+          >
+            {{ t('diaryEditor.replaceOne') }}
+          </n-button>
+          <n-button
+            size="tiny"
+            tertiary
+            type="primary"
+            :disabled="searchMatches.length === 0"
+            @click="replaceAllSearchMatches"
+          >
+            {{ t('diaryEditor.replaceAll') }}
+          </n-button>
+        </div>
+      </div>
+    </transition>
     <n-dropdown
       placement="bottom-start"
       trigger="manual"
@@ -15,15 +120,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, h, onMounted, onBeforeUnmount, type Component } from 'vue'
-import { NDropdown, NIcon, useDialog } from 'naive-ui'
+import { ref, watch, computed, h, nextTick, onMounted, onBeforeUnmount, type Component } from 'vue'
+import { NButton, NDropdown, NIcon, NInput, useDialog } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import {
   CopyOutline,
   CutOutline,
   ClipboardOutline,
   TextOutline,
-  RemoveCircleOutline
+  RemoveCircleOutline,
+  SearchOutline,
+  ChevronUpOutline,
+  ChevronDownOutline,
+  CloseOutline,
+  SwapHorizontalOutline
 } from '@vicons/ionicons5'
 import { useThemeStore } from '@renderer/stores/themes'
 
@@ -103,17 +213,283 @@ interface FroalaEditorInstance {
   }
 }
 
+type SearchScrollBehavior = 'auto' | 'smooth'
+
+interface HighlightConstructorLike {
+  new (...ranges: Range[]): unknown
+}
+
+interface HighlightRegistryLike {
+  set(name: string, highlight: unknown): void
+  delete(name: string): boolean
+}
+
+interface BrowserHighlightSupport {
+  Highlight?: HighlightConstructorLike
+  CSS?: {
+    highlights?: HighlightRegistryLike
+  }
+}
+
 interface NativeFile extends File {
   path?: string
 }
 
 const editorInstance = ref<FroalaEditorInstance | null>(null)
+const searchInputRef = ref<InstanceType<typeof NInput> | null>(null)
+const showSearchPanel = ref(false)
+const searchKeyword = ref('')
+const replaceKeyword = ref('')
+const searchMatches = ref<Range[]>([])
+const currentSearchIndex = ref(-1)
+const searchStatusText = computed(() => {
+  if (!searchKeyword.value.trim()) return ''
+  if (searchMatches.value.length === 0) return t('diaryEditor.searchNoResult')
+  return `${currentSearchIndex.value + 1}/${searchMatches.value.length}`
+})
+
+const SEARCH_MATCH_HIGHLIGHT = 'shadow-diary-search-match'
+const SEARCH_ACTIVE_HIGHLIGHT = 'shadow-diary-search-active'
 
 function syncContentFromEditor(editor: FroalaEditorInstance | null): void {
   if (!editor) return
   const html = editor.html.get()
   if (html !== content.value) {
     content.value = html
+  }
+}
+
+function getEditorContentElement(): HTMLElement | null {
+  return editorRootRef.value?.querySelector('.fr-element.fr-view') as HTMLElement | null
+}
+
+function getHighlightSupport(): {
+  Highlight: HighlightConstructorLike
+  registry: HighlightRegistryLike
+} | null {
+  const browser = window as unknown as BrowserHighlightSupport
+  const Highlight = browser.Highlight
+  const registry = browser.CSS?.highlights
+  if (!Highlight || !registry) return null
+  return { Highlight, registry }
+}
+
+function clearSearchHighlights(): void {
+  const support = getHighlightSupport()
+  if (!support) return
+  support.registry.delete(SEARCH_MATCH_HIGHLIGHT)
+  support.registry.delete(SEARCH_ACTIVE_HIGHLIGHT)
+}
+
+function applySearchHighlights(): void {
+  const support = getHighlightSupport()
+  if (!support) return
+
+  support.registry.delete(SEARCH_MATCH_HIGHLIGHT)
+  support.registry.delete(SEARCH_ACTIVE_HIGHLIGHT)
+
+  if (searchMatches.value.length === 0) return
+
+  support.registry.set(SEARCH_MATCH_HIGHLIGHT, new support.Highlight(...searchMatches.value))
+  const activeRange = searchMatches.value[currentSearchIndex.value]
+  if (activeRange) {
+    support.registry.set(SEARCH_ACTIVE_HIGHLIGHT, new support.Highlight(activeRange))
+  }
+}
+
+function buildSearchMatches(keyword: string): Range[] {
+  const contentEl = getEditorContentElement()
+  const normalizedKeyword = keyword.trim().toLowerCase()
+  if (!contentEl || !normalizedKeyword) return []
+
+  const matches: Range[] = []
+  const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT)
+
+  while (walker.nextNode()) {
+    const textNode = walker.currentNode as Text
+    const rawText = textNode.textContent ?? ''
+    const normalizedText = rawText.toLowerCase()
+    let cursor = normalizedText.indexOf(normalizedKeyword)
+
+    while (cursor !== -1) {
+      const range = document.createRange()
+      range.setStart(textNode, cursor)
+      range.setEnd(textNode, cursor + normalizedKeyword.length)
+      matches.push(range)
+      cursor = normalizedText.indexOf(normalizedKeyword, cursor + normalizedKeyword.length)
+    }
+  }
+
+  return matches
+}
+
+function escapeSearchRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function syncContentAfterTextReplacement(): void {
+  clearSearchHighlights()
+  syncContentFromEditor(editorInstance.value)
+  void nextTick(() => refreshSearchMatches('auto'))
+}
+
+function scrollRangeIntoView(range: Range, behavior: SearchScrollBehavior = 'smooth'): void {
+  const contentEl = getEditorContentElement()
+  if (!contentEl) return
+
+  const rangeRect = range.getBoundingClientRect()
+  const containerRect = contentEl.getBoundingClientRect()
+  const targetScrollTop =
+    contentEl.scrollTop +
+    (rangeRect.top - containerRect.top) -
+    contentEl.clientHeight / 2 +
+    rangeRect.height / 2
+
+  contentEl.scrollTo({
+    top: Math.max(targetScrollTop, 0),
+    behavior
+  })
+}
+
+function setCurrentSearchIndex(index: number, behavior: SearchScrollBehavior = 'smooth'): void {
+  if (searchMatches.value.length === 0) {
+    currentSearchIndex.value = -1
+    applySearchHighlights()
+    return
+  }
+
+  const length = searchMatches.value.length
+  currentSearchIndex.value = ((index % length) + length) % length
+  applySearchHighlights()
+
+  const range = searchMatches.value[currentSearchIndex.value]
+  if (range) {
+    scrollRangeIntoView(range, behavior)
+  }
+}
+
+function refreshSearchMatches(behavior: SearchScrollBehavior = 'auto'): void {
+  const matches = buildSearchMatches(searchKeyword.value)
+  searchMatches.value = matches
+
+  if (matches.length === 0) {
+    currentSearchIndex.value = -1
+    clearSearchHighlights()
+    return
+  }
+
+  setCurrentSearchIndex(Math.max(currentSearchIndex.value, 0), behavior)
+}
+
+function focusSearchInput(selectText = true): void {
+  void nextTick(() => {
+    searchInputRef.value?.focus()
+    if (!selectText) return
+
+    const input = editorRootRef.value?.querySelector<HTMLInputElement>('.search-panel-input input')
+    input?.select()
+  })
+}
+
+function getSelectedEditorText(): string {
+  const selection = window.getSelection()
+  const contentEl = getEditorContentElement()
+  if (!selection || !contentEl || selection.rangeCount === 0) return ''
+
+  const anchorNode = selection.anchorNode
+  const focusNode = selection.focusNode
+  if (!anchorNode || !focusNode) return ''
+  if (!contentEl.contains(anchorNode) || !contentEl.contains(focusNode)) return ''
+
+  return selection.toString().trim()
+}
+
+function openSearchPanel(): void {
+  const selectedText = getSelectedEditorText()
+  if (selectedText && !/\s{2,}/.test(selectedText)) {
+    searchKeyword.value = selectedText
+  }
+
+  showSearchPanel.value = true
+  refreshSearchMatches('auto')
+  focusSearchInput()
+}
+
+function closeSearchPanel(): void {
+  showSearchPanel.value = false
+  clearSearchHighlights()
+}
+
+function goToNextSearchMatch(): void {
+  setCurrentSearchIndex(currentSearchIndex.value + 1)
+}
+
+function goToPreviousSearchMatch(): void {
+  setCurrentSearchIndex(currentSearchIndex.value - 1)
+}
+
+function handleSearchEnter(event: KeyboardEvent): void {
+  if (event.shiftKey) {
+    goToPreviousSearchMatch()
+  } else {
+    goToNextSearchMatch()
+  }
+}
+
+function replaceCurrentSearchMatch(): void {
+  const range = searchMatches.value[currentSearchIndex.value]
+  if (!range || range.startContainer !== range.endContainer) return
+
+  const textNode = range.startContainer
+  if (textNode.nodeType !== Node.TEXT_NODE) return
+
+  const rawText = textNode.textContent ?? ''
+  const nextText =
+    rawText.slice(0, range.startOffset) + replaceKeyword.value + rawText.slice(range.endOffset)
+  textNode.textContent = nextText
+  syncContentAfterTextReplacement()
+}
+
+function replaceAllSearchMatches(): void {
+  const keyword = searchKeyword.value.trim()
+  if (!keyword) return
+
+  const contentEl = getEditorContentElement()
+  if (!contentEl) return
+
+  const pattern = new RegExp(escapeSearchRegExp(keyword), 'gi')
+  const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT)
+  let replaced = false
+
+  while (walker.nextNode()) {
+    const textNode = walker.currentNode as Text
+    const rawText = textNode.textContent ?? ''
+    if (!pattern.test(rawText)) {
+      pattern.lastIndex = 0
+      continue
+    }
+
+    pattern.lastIndex = 0
+    textNode.textContent = rawText.replace(pattern, replaceKeyword.value)
+    replaced = true
+  }
+
+  if (replaced) {
+    syncContentAfterTextReplacement()
+  }
+}
+
+function handleSearchShortcut(event: KeyboardEvent): void {
+  const key = event.key.toLowerCase()
+  if ((event.ctrlKey || event.metaKey) && key === 'f') {
+    event.preventDefault()
+    openSearchPanel()
+    return
+  }
+
+  if (showSearchPanel.value && key === 'escape') {
+    event.preventDefault()
+    closeSearchPanel()
   }
 }
 
@@ -662,6 +1038,15 @@ watch(
 
 watch(content, (val) => {
   emit('update:modelValue', val)
+  if (showSearchPanel.value) {
+    void nextTick(() => refreshSearchMatches('auto'))
+  }
+})
+
+watch(searchKeyword, () => {
+  if (showSearchPanel.value) {
+    refreshSearchMatches('auto')
+  }
 })
 
 watch([isDark, froalaLanguage], () => {
@@ -682,15 +1067,18 @@ onMounted(() => {
   root.addEventListener('dragenter', preventFileDropDefault, true)
   root.addEventListener('dragover', preventFileDropDefault, true)
   root.addEventListener('drop', handleEditorDrop, true)
+  document.addEventListener('keydown', handleSearchShortcut)
 })
 
 onBeforeUnmount(() => {
   const root = editorRootRef.value
-  if (!root) return
-
-  root.removeEventListener('dragenter', preventFileDropDefault, true)
-  root.removeEventListener('dragover', preventFileDropDefault, true)
-  root.removeEventListener('drop', handleEditorDrop, true)
+  if (root) {
+    root.removeEventListener('dragenter', preventFileDropDefault, true)
+    root.removeEventListener('dragover', preventFileDropDefault, true)
+    root.removeEventListener('drop', handleEditorDrop, true)
+  }
+  document.removeEventListener('keydown', handleSearchShortcut)
+  clearSearchHighlights()
 })
 
 defineExpose({
@@ -782,6 +1170,95 @@ defineExpose({
 .diary-editor-wrapper :deep(.keyword-scroll-highlight) {
   background: var(--app-accent-16, rgba(24, 160, 88, 0.16));
   transition: background 0.3s ease;
+}
+
+.editor-search-trigger {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 8;
+  color: var(--n-text-color-3, #8a8f98);
+  background: transparent !important;
+  box-shadow: none;
+}
+
+.editor-search-trigger:hover {
+  color: var(--app-accent-color, #18a058);
+  background: transparent !important;
+}
+
+.editor-search-panel {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: min(520px, calc(100% - 28px));
+  padding: 6px;
+  border: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--n-color, #fff) 92%, transparent);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(10px);
+}
+
+.editor-search-row,
+.editor-replace-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.search-panel-icon {
+  flex: 0 0 auto;
+  color: var(--n-text-color-3, #8a8f98);
+}
+
+.search-panel-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.search-panel-count {
+  flex: 0 0 54px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--n-text-color-3, #888);
+}
+
+.search-panel-count.is-empty {
+  color: var(--n-error-color, #d03050);
+}
+
+.editor-replace-row :deep(.n-button) {
+  flex-shrink: 0;
+}
+
+.editor-search-panel-enter-active,
+.editor-search-panel-leave-active {
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-spring-fast) var(--ease-spring-soft);
+}
+
+.editor-search-panel-enter-from,
+.editor-search-panel-leave-to {
+  opacity: 0;
+  transform: translateY(calc(var(--motion-distance-sm) * -1)) scale(0.985);
+}
+
+:global(::highlight(shadow-diary-search-match)) {
+  background: rgba(250, 204, 21, 0.34);
+  color: inherit;
+}
+
+:global(::highlight(shadow-diary-search-active)) {
+  background: var(--app-accent-color, #18a058);
+  color: #fff;
 }
 
 .diary-editor-wrapper :deep(.fr-element blockquote) {
