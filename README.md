@@ -5,85 +5,169 @@
   <img src="resources/icon.png" width="120" alt="Shadow Diary Logo" />
 </p>
 
-A local-first diary desktop app built with Electron + Vue 3 + TypeScript.
+Shadow Diary is a local-first desktop diary application built with Electron, Vue 3, TypeScript, and an encrypted SQLite data store.
 
 [中文](README_CN.md) | English
 
-## Features
+## Overview
 
-- **Diary Writing**
-  - Rich text editor with image support
-  - Entry metadata management (title, mood, tags)
-- **Dashboard & Insights**
-  - Calendar-based writing prompts
-  - Statistics and trend views
-- **Archive System**
-  - Manage person/object/other archives
-  - Alias-aware search expansion
-- **Media Library**
-  - Unified media browsing from diaries and archives
-- **Global Search**
-  - `Ctrl/Cmd + K` quick search
-  - Combined filters by keyword, mood, tags, date range, and archive data
-- **Privacy & Security**
-  - App lock (6-digit PIN / Windows Hello)
-  - Auto-lock on idle and system lock linkage
-  - Encrypted SQLite database (SQLCipher)
-  - Optional disguise mode for privacy-sensitive scenarios
-- **Data Import & Export**
-  - One-click ZIP backup and restore
-  - Password-protected backup flow
-- **Auto Update**
-  - Check, download, and install updates via `electron-updater`
-- **Internationalization**
+Shadow Diary keeps the main application data on the local machine and uses Electron as the boundary between system capabilities and the Vue renderer. The main process owns persistence, filesystem access, image processing, app updates, import/export, Windows Hello verification, and the optional local MCP server. The renderer focuses on the user experience: writing, search, dashboards, archive management, media browsing, settings, privacy lock state, and internationalization.
 
-## Tech Stack
+## Core Features
 
-- Electron + electron-vite
-- Vue 3 + TypeScript + Pinia + Vue Router
-- Naive UI + ECharts
-- better-sqlite3-multiple-ciphers (SQLCipher)
-- sharp (image processing)
-- electron-builder (packaging)
+- Rich text diary editor with image insertion, paste, drag-and-drop, search, and replace.
+- Diary metadata including title, mood, tags, weather, creation time, and update time.
+- Dashboard with calendar activity, writing statistics, mood distribution, and person mention insights.
+- Archive system for people, objects, and other records, including aliases and image galleries.
+- Global search across diary text, metadata, tags, date ranges, and archive aliases.
+- Media library built from image references in diary entries and archive records.
+- Privacy controls with PIN or Windows Hello unlock, idle lock, system-lock integration, and disguise mode.
+- Local encrypted database using `better-sqlite3-multiple-ciphers`.
+- ZIP-based data import and export for database, images, thumbnails, attachments, and metadata.
+- Optional local MCP endpoint for controlled diary search/read access by external tools.
+- Multi-language UI: Simplified Chinese, English, Japanese, and Korean.
+- Auto-update flow through `electron-updater`.
 
-## Project Structure
+## Architecture
+
+```text
+Electron App
+├─ Main process
+│  ├─ BrowserWindow lifecycle, navigation policy, updater, IPC registration
+│  ├─ SQLite/SQLCipher database initialization and migrations
+│  ├─ Diary, archive, tag, attachment, media, settings, and stats services
+│  ├─ Image storage, thumbnail generation, and custom diary-image:// protocol
+│  ├─ Data import/export orchestration
+│  ├─ SafeStorage-backed local secrets
+│  ├─ Disguise-mode data/session handling
+│  ├─ Optional local MCP HTTP server
+│  └─ Windows Hello helper process integration
+├─ Preload
+│  └─ Typed `window.api` bridge backed by IPC
+└─ Renderer
+   ├─ Vue application shell, router, layout, and pages
+   ├─ Pinia stores for user, theme, privacy, disguise, locale, startup, and AI settings
+   ├─ Rich text editor, diary list, archive components, media lightbox, and settings views
+   └─ i18n locale bundles
+```
+
+## Source Layout
 
 ```text
 src/
-  main/                    # Electron main process
-    database/              # Data access and migrations
-    privacy/               # Disguise mode and privacy sessions
-    security/              # Local key management
-    utils/                 # Image storage, backup import/export, helpers
-  preload/                 # Safe APIs exposed via contextBridge
-  renderer/src/            # Vue frontend
-    components/            # Shared UI components
-    views/                 # Pages: dashboard/today/archives/media/settings
-    stores/                # Pinia stores
-    i18n/                  # Locale definitions and i18n bootstrap
-resources/                 # Icons and static packaging assets
+  main/
+    index.ts                 # Electron app bootstrap, window, IPC, updater, protocol handling
+    database/                # SQLCipher connection, migrations, repositories, search indexes
+    mcp/                     # Local MCP server and tool registration
+    privacy/                 # Disguise mode session and seed data
+    security/                # SafeStorage helpers and database key handling
+    utils/                   # Images, attachments, path checks, import/export helpers
+  preload/
+    index.ts                 # contextBridge API exposed to the renderer
+    index.d.ts               # Renderer-side window typing
+  renderer/src/
+    App.vue                  # App shell, privacy lock, sidebar/header layout
+    main.ts                  # Vue, Pinia, router, i18n bootstrap
+    router/                  # Hash-router page map
+    components/              # Shared UI components
+    views/                   # Dashboard, today, archives, media, settings
+    stores/                  # Pinia state modules
+    i18n/                    # Locale setup and language packs
+  native/
+    ShadowDiary.WindowsHello # .NET helper for Windows Hello support and verification
+  types/
+    api.ts                   # IPC API contracts
+    model.ts                 # Shared domain models
+resources/                   # Installer resources and app assets
+build/                       # Icons and platform packaging resources
 ```
 
-## Quick Start
+## Data Model
 
-### Requirements
+The application database is created and migrated by `src/main/database/migrations.ts`. Current domain areas include:
 
-- Node.js `>= 22` (22 LTS recommended)
-- npm (latest version compatible with your Node.js)
+- `diary_entries`: rich HTML content, plain-text content, mood, timestamps, and metadata.
+- `tags` / `diary_tags`: many-to-many diary tagging.
+- `attachments`: file metadata linked to diary entries.
+- `settings`: user, privacy, locale, theme, AI, and MCP preferences.
+- `archives`: person/object/other records with aliases and images.
+- `image_refs`: reference counts for stored diary images.
+- `person_mention_stats`: cached mention counts for archive people.
+- `media_source_refs`: normalized media-library index across diaries and archives.
 
-### Install Dependencies
+Search combines indexed diary text, structured filters, tags, and archive alias expansion. Media browsing uses source-reference rows so one image can point back to one or more diary/archive contexts.
+
+## Runtime Data
+
+Runtime data is stored under Electron `app.getPath('userData')`.
+
+Common files and folders:
+
+- `diary.db`: encrypted SQLite database.
+- `db-key.json`: local database key material stored through Electron `safeStorage`.
+- `images/`: stored full-size WebP images.
+- `thumbnails/`: generated WebP previews.
+- `attachments/`: copied attachment files.
+
+Diary images are referenced in content with the custom `diary-image://` protocol and resolved by the main process.
+
+## MCP Integration
+
+The optional MCP server is configured from the AI/MCP settings screen and listens on `127.0.0.1`. It exposes controlled tools for:
+
+- Searching diary entries.
+- Reading diary text by id or date range.
+- Fetching diary metadata in batches.
+- Searching archive records by name or alias.
+
+The runtime implementation is in `src/main/mcp/server.ts`, with request validation handled through `zod`.
+
+## Windows Hello Helper
+
+Windows Hello support is implemented as a small .NET helper project at `src/native/ShadowDiary.WindowsHello`. The Electron main process launches it for support checks and verification requests. Windows release builds run:
+
+```bash
+npm run build:windows-hello-helper
+```
+
+The compiled helper is packaged through `electron-builder.yml` as an extra resource.
+
+## Tech Stack
+
+- Electron 39 + electron-vite
+- Vue 3 + TypeScript
+- Pinia + Vue Router
+- Naive UI + Ionicons
+- Froala Editor
+- ECharts + vue-echarts
+- better-sqlite3-multiple-ciphers
+- sharp
+- @modelcontextprotocol/sdk
+- electron-updater
+- electron-builder
+- .NET Windows helper for Windows Hello
+
+## Requirements
+
+- Node.js `>= 22`
+- npm
+- .NET SDK for Windows builds that include the Windows Hello helper
+
+## Development
+
+Install dependencies:
 
 ```bash
 npm install
 ```
 
-### Development
+Run the desktop app in development mode:
 
 ```bash
 npm run dev
 ```
 
-### Preview Build
+Preview the built app:
 
 ```bash
 npm run start
@@ -97,8 +181,10 @@ npm run lint
 npm run format
 npm run typecheck
 
-# Build
+# Build renderer/main/preload bundles
 npm run build
+
+# Package variants
 npm run build:unpack
 npm run build:win
 npm run build:win:msi
@@ -106,31 +192,24 @@ npm run build:win:all
 npm run build:mac
 npm run build:linux
 
-# Release (GitHub Releases)
+# Windows Hello helper
+npm run build:windows-hello-helper
+
+# GitHub release publishing
 npm run release
 ```
 
-## Data & Security Notes
+## Packaging
 
-- App data is stored under Electron `app.getPath('userData')`.
-- Key files and folders include:
-  - `diary.db`: encrypted database (SQLCipher)
-  - `images/`, `thumbnails/`: image assets and thumbnails
-  - `db-key.json`: local DB key file (encrypted via Electron `safeStorage`)
-- Exported backups are ZIP packages containing database, attachments, metadata, and encrypted key envelope.
-- Backup password minimum length is 8 characters.
+Packaging is configured in `electron-builder.yml`.
 
-## Packaging & Installation
+- Windows: NSIS and MSI targets.
+- macOS: DMG and ZIP targets.
+- Linux: AppImage and DEB targets.
+- `asarUnpack` includes native `.node` modules.
+- `build/windows-hello-helper` is copied as an extra resource for Windows packages.
 
-### Multi-platform Packaging
-
-```bash
-npm run build:win
-npm run build:mac
-npm run build:linux
-```
-
-### Silent Install on Windows
+Example Windows silent install commands:
 
 ```bash
 # NSIS

@@ -27,7 +27,7 @@ import {
   CloseOutline
 } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
-import type { Archive, DiaryEntry, Mood } from '../../../types/model'
+import type { Archive, DiaryEntry, Mood, SearchHighlightKeyword } from '../../../types/model'
 import SafeHighlightedText from './SafeHighlightedText.vue'
 
 const router = useRouter()
@@ -39,6 +39,7 @@ const searchResults = ref<DiaryEntry[]>([])
 const searchTotal = ref(0)
 const archiveResults = ref<Archive[]>([])
 const expandedKeywords = ref<string[]>([]) // 扩展后的关键词（包含档案别名）
+const highlightKeywords = ref<SearchHighlightKeyword[]>([])
 const showPopover = ref(false)
 const searching = ref(false)
 const isFocused = ref(false)
@@ -151,25 +152,30 @@ function extractSnippet(
   html: string,
   rawKeyword: string,
   around = 40,
-  extraKeywords?: string[]
+  extraKeywords?: string[],
+  keywordRules?: SearchHighlightKeyword[]
 ): string {
   // lightweight 模式下 html 已经是纯文本
   const plain = html
 
-  // 收集所有关键词（原始 + 扩展）
-  const allKeywords = [...getKeywords(rawKeyword)]
-  if (extraKeywords && extraKeywords.length > 0) {
-    allKeywords.push(...extraKeywords)
-  }
+  const allKeywords: SearchHighlightKeyword[] =
+    keywordRules && keywordRules.length > 0
+      ? keywordRules
+      : [
+          ...getKeywords(rawKeyword).map((keyword) => ({ keyword })),
+          ...(extraKeywords ?? []).map((keyword) => ({ keyword }))
+        ]
 
   if (allKeywords.length === 0) return plain.slice(0, around * 2)
 
   // Find the earliest match among all keywords
   const lower = plain.toLowerCase()
   let bestIdx = -1
-  let bestKw = allKeywords[0]
-  for (const kw of allKeywords) {
-    const idx = lower.indexOf(kw.toLowerCase())
+  let bestKw = allKeywords[0].keyword
+  for (const rule of allKeywords) {
+    const kw = rule.keyword.trim()
+    if (!kw) continue
+    const idx = findKeywordIndex(lower, kw.toLowerCase(), Boolean(rule.standalone))
     if (idx !== -1 && (bestIdx === -1 || idx < bestIdx)) {
       bestIdx = idx
       bestKw = kw
@@ -186,6 +192,29 @@ function extractSnippet(
   return snippet
 }
 
+function isWordLikeChar(char: string | undefined): boolean {
+  if (!char) return false
+  return /[\p{L}\p{N}]/u.test(char)
+}
+
+function isStandaloneKeywordMatch(text: string, index: number, length: number): boolean {
+  const end = index + length
+  const prevChar = index > 0 ? text[index - 1] : undefined
+  const nextChar = end < text.length ? text[end] : undefined
+
+  return !isWordLikeChar(prevChar) && !isWordLikeChar(nextChar)
+}
+
+function findKeywordIndex(text: string, keyword: string, standalone: boolean): number {
+  let index = text.indexOf(keyword)
+  while (index !== -1) {
+    if (!standalone || isStandaloneKeywordMatch(text, index, keyword.length)) return index
+    index = text.indexOf(keyword, index + keyword.length)
+  }
+
+  return -1
+}
+
 // --- Search logic ---
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 let latestSearchRequestId = 0
@@ -199,6 +228,8 @@ function resetSearchResultsState(): void {
   searchResults.value = []
   searchTotal.value = 0
   archiveResults.value = []
+  expandedKeywords.value = []
+  highlightKeywords.value = []
 }
 
 async function triggerSearch(keyword?: string): Promise<void> {
@@ -238,6 +269,7 @@ async function triggerSearch(keyword?: string): Promise<void> {
     archiveResults.value = archives
     // 保存扩展后的关键词用于高亮
     expandedKeywords.value = diaryResult.expandedKeywords || []
+    highlightKeywords.value = diaryResult.highlightKeywords || []
     showPopover.value = true
   } catch (error) {
     if (requestId !== latestSearchRequestId) return
@@ -641,6 +673,7 @@ onBeforeUnmount(() => {
                         :text="entry.title || t('common.noTitle')"
                         :keyword="searchKeyword"
                         :extra-keywords="expandedKeywords"
+                        :highlight-keywords="highlightKeywords"
                       />
                     </template>
                     <template #description>
@@ -666,9 +699,18 @@ onBeforeUnmount(() => {
                       </n-space>
                       <div v-if="searchKeyword.trim()" class="content-snippet">
                         <SafeHighlightedText
-                          :text="extractSnippet(entry.content, searchKeyword, 40, expandedKeywords)"
+                          :text="
+                            extractSnippet(
+                              entry.content,
+                              searchKeyword,
+                              40,
+                              expandedKeywords,
+                              highlightKeywords
+                            )
+                          "
                           :keyword="searchKeyword"
                           :extra-keywords="expandedKeywords"
+                          :highlight-keywords="highlightKeywords"
                         />
                       </div>
                     </template>

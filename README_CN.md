@@ -5,91 +5,175 @@
   <img src="resources/icon.png" width="120" alt="Shadow Diary Logo" />
 </p>
 
-一个基于 Electron + Vue 3 + TypeScript 的本地优先日记桌面应用。
+影迹是一个本地优先的桌面日记应用，基于 Electron、Vue 3、TypeScript 和加密 SQLite 数据库构建。
 
 中文 | [English](README.md)
 
-## 功能特性
+## 项目概览
 
-- **日记写作**
-  - 富文本编辑（支持图片）
-  - 标题、心情、标签等信息管理
-- **概览与统计**
-  - 基于日历的写作提示
-  - 统计与趋势视图
-- **档案系统**
-  - 人物 / 物品 / 其他分类管理
-  - 基于别名的搜索扩展
-- **媒体库**
-  - 统一浏览日记与档案中的图片资源
-- **全局搜索**
-  - `Ctrl/Cmd + K` 快捷搜索
-  - 支持关键字、心情、标签、日期范围、档案等联合筛选
-- **隐私与安全**
-  - 应用锁（6 位 PIN / Windows 登录密码）
-  - 空闲自动锁定与系统锁屏联动
-  - SQLite 数据库加密（SQLCipher）
-  - 支持伪装模式（隐私场景）
-- **数据导入导出**
-  - 一键 ZIP 备份与恢复
-  - 备份口令保护
-- **自动更新**
-  - 基于 `electron-updater` 的检查、下载与安装更新
-- **多语言支持**
+影迹将主要应用数据保存在本机，并使用 Electron 作为系统能力与 Vue 渲染层之间的边界。主进程负责持久化、文件系统访问、图片处理、应用更新、数据导入导出、Windows Hello 验证以及可选的本地 MCP 服务。渲染层专注于用户体验，包括写作、搜索、概览、档案管理、媒体浏览、设置、隐私锁状态和多语言界面。
 
-## 技术栈
+## 核心功能
 
-- Electron + electron-vite
-- Vue 3 + TypeScript + Pinia + Vue Router
-- Naive UI + ECharts
-- better-sqlite3-multiple-ciphers (SQLCipher)
-- sharp（图片处理）
-- electron-builder（打包）
+- 富文本日记编辑器，支持图片插入、粘贴、拖拽、搜索和替换。
+- 日记元数据管理，包括标题、心情、标签、天气、创建时间和更新时间。
+- 概览页提供日历活动、写作统计、心情分布和人物提及分析。
+- 档案系统支持人物、物品和其他记录，并包含别名与图片集。
+- 全局搜索覆盖日记文本、元数据、标签、日期范围和档案别名。
+- 媒体库基于日记和档案中的图片引用构建。
+- 隐私控制支持 PIN 或 Windows Hello 解锁、空闲锁定、系统锁屏联动和伪装模式。
+- 使用 `better-sqlite3-multiple-ciphers` 管理本地加密数据库。
+- 基于 ZIP 的数据导入导出，覆盖数据库、图片、缩略图、附件和元数据。
+- 可选本地 MCP 端点，供外部工具受控搜索和读取日记内容。
+- 多语言界面：简体中文、英文、日文、韩文。
+- 基于 `electron-updater` 的自动更新流程。
 
-## 项目结构
+## 架构
+
+```text
+Electron App
+├─ Main process（主进程）
+│  ├─ BrowserWindow 生命周期、导航策略、更新器、IPC 注册
+│  ├─ SQLite/SQLCipher 数据库初始化与迁移
+│  ├─ 日记、档案、标签、附件、媒体、设置和统计服务
+│  ├─ 图片存储、缩略图生成和 diary-image:// 自定义协议
+│  ├─ 数据导入导出编排
+│  ├─ 基于 SafeStorage 的本地密钥管理
+│  ├─ 伪装模式数据与会话处理
+│  ├─ 可选本地 MCP HTTP 服务
+│  └─ Windows Hello 辅助进程集成
+├─ Preload（预加载）
+│  └─ 基于 IPC 的类型化 `window.api` 桥接层
+└─ Renderer（渲染层）
+   ├─ Vue 应用外壳、路由、布局和页面
+   ├─ Pinia stores：用户、主题、隐私、伪装、语言、启动和 AI 设置
+   ├─ 富文本编辑器、日记列表、档案组件、媒体灯箱和设置页面
+   └─ i18n 多语言资源
+```
+
+## 源码结构
 
 ```text
 src/
-  main/                    # Electron 主进程
-    database/              # 数据访问与迁移
-    privacy/               # 伪装模式与隐私会话
-    security/              # 本地密钥管理
-    utils/                 # 图片存储、备份导入导出、工具函数
-  preload/                 # 通过 contextBridge 暴露给渲染层的安全 API
-  renderer/src/            # Vue 前端
-    components/            # 通用 UI 组件
-    views/                 # 页面：dashboard/today/archives/media/settings
-    stores/                # Pinia 状态管理
-    i18n/                  # 多语言配置与初始化
-resources/                 # 图标与打包静态资源
+  main/
+    index.ts                 # Electron 启动、窗口、IPC、更新器、协议处理
+    database/                # SQLCipher 连接、迁移、仓储、搜索索引
+    mcp/                     # 本地 MCP 服务与工具注册
+    privacy/                 # 伪装模式会话与种子数据
+    security/                # SafeStorage 工具与数据库密钥处理
+    utils/                   # 图片、附件、路径检查、导入导出工具
+  preload/
+    index.ts                 # 通过 contextBridge 暴露给渲染层的 API
+    index.d.ts               # 渲染层 window 类型声明
+  renderer/src/
+    App.vue                  # 应用外壳、隐私锁、侧边栏/顶部栏布局
+    main.ts                  # Vue、Pinia、路由、i18n 初始化
+    router/                  # Hash 路由页面映射
+    components/              # 共享 UI 组件
+    views/                   # 概览、今日、档案、媒体、设置页面
+    stores/                  # Pinia 状态模块
+    i18n/                    # 多语言初始化和语言包
+  native/
+    ShadowDiary.WindowsHello # Windows Hello 支持与验证的 .NET 辅助程序
+  types/
+    api.ts                   # IPC API 契约
+    model.ts                 # 共享领域模型
+resources/                   # 安装器资源与应用素材
+build/                       # 图标和平台打包资源
 ```
 
-## 快速开始
+## 数据模型
 
-### 环境要求
+应用数据库由 `src/main/database/migrations.ts` 创建和迁移。当前主要领域包括：
 
-- Node.js `>= 22`（推荐 22 LTS）
-- npm（建议使用与 Node.js 版本匹配的最新版本）
+- `diary_entries`：富文本内容、纯文本内容、心情、时间戳和元数据。
+- `tags` / `diary_tags`：日记标签的多对多关系。
+- `attachments`：关联到日记条目的附件元数据。
+- `settings`：用户、隐私、语言、主题、AI 和 MCP 偏好。
+- `archives`：人物、物品和其他档案，支持别名和图片。
+- `image_refs`：已存储日记图片的引用计数。
+- `person_mention_stats`：人物档案的提及次数缓存。
+- `media_source_refs`：跨日记和档案的媒体库索引。
 
-### 安装依赖
+搜索逻辑会组合日记索引文本、结构化筛选、标签和档案别名扩展。媒体浏览依赖来源引用记录，因此同一张图片可以回溯到一个或多个日记/档案上下文。
+
+## 运行时数据
+
+运行时数据位于 Electron `app.getPath('userData')` 目录。
+
+常见文件与目录：
+
+- `diary.db`：加密 SQLite 数据库。
+- `db-key.json`：通过 Electron `safeStorage` 存储的本地数据库密钥材料。
+- `images/`：存储后的 WebP 原图。
+- `thumbnails/`：生成的 WebP 预览图。
+- `attachments/`：复制保存的附件文件。
+
+日记内容中的图片通过 `diary-image://` 自定义协议引用，并由主进程解析读取。
+
+## MCP 集成
+
+可选 MCP 服务可在 AI/MCP 设置页中配置，并监听 `127.0.0.1`。它提供受控工具用于：
+
+- 搜索日记条目。
+- 按 id 或日期范围读取日记文本。
+- 批量获取日记元数据。
+- 按名称或别名搜索档案记录。
+
+运行时实现位于 `src/main/mcp/server.ts`，请求校验使用 `zod`。
+
+## Windows Hello 辅助程序
+
+Windows Hello 支持由 `src/native/ShadowDiary.WindowsHello` 中的小型 .NET 辅助项目实现。Electron 主进程会启动该辅助程序执行支持检测和验证请求。Windows 发布构建会运行：
+
+```bash
+npm run build:windows-hello-helper
+```
+
+编译后的辅助程序会通过 `electron-builder.yml` 作为额外资源打包。
+
+## 技术栈
+
+- Electron 39 + electron-vite
+- Vue 3 + TypeScript
+- Pinia + Vue Router
+- Naive UI + Ionicons
+- Froala Editor
+- ECharts + vue-echarts
+- better-sqlite3-multiple-ciphers
+- sharp
+- @modelcontextprotocol/sdk
+- electron-updater
+- electron-builder
+- .NET Windows Hello 辅助程序
+
+## 环境要求
+
+- Node.js `>= 22`
+- npm
+- 构建包含 Windows Hello 辅助程序的 Windows 包时需要 .NET SDK
+
+## 开发
+
+安装依赖：
 
 ```bash
 npm install
 ```
 
-### 开发运行
+以开发模式运行桌面应用：
 
 ```bash
 npm run dev
 ```
 
-### 预览构建
+预览构建后的应用：
 
 ```bash
 npm run start
 ```
 
-## 常用脚本
+## 脚本
 
 ```bash
 # 代码质量
@@ -97,8 +181,10 @@ npm run lint
 npm run format
 npm run typecheck
 
-# 构建
+# 构建 renderer/main/preload 产物
 npm run build
+
+# 打包类型
 npm run build:unpack
 npm run build:win
 npm run build:win:msi
@@ -106,31 +192,24 @@ npm run build:win:all
 npm run build:mac
 npm run build:linux
 
-# 发布（GitHub Releases）
+# Windows Hello 辅助程序
+npm run build:windows-hello-helper
+
+# 发布到 GitHub Releases
 npm run release
 ```
 
-## 数据与安全说明
+## 打包
 
-- 应用数据位于 Electron `app.getPath('userData')` 目录。
-- 关键文件与目录包括：
-  - `diary.db`：加密数据库（SQLCipher）
-  - `images/`、`thumbnails/`：图片与缩略图
-  - `db-key.json`：本地数据库密钥文件（通过 Electron `safeStorage` 加密存储）
-- 导出备份为 ZIP，包含数据库、附件、元数据和加密密钥封装。
-- 备份口令最小长度为 8 位。
+打包配置位于 `electron-builder.yml`。
 
-## 打包与安装
+- Windows：NSIS 和 MSI。
+- macOS：DMG 和 ZIP。
+- Linux：AppImage 和 DEB。
+- `asarUnpack` 包含原生 `.node` 模块。
+- `build/windows-hello-helper` 会作为 Windows 包的额外资源复制。
 
-### 多平台打包
-
-```bash
-npm run build:win
-npm run build:mac
-npm run build:linux
-```
-
-### Windows 静默安装
+Windows 静默安装示例：
 
 ```bash
 # NSIS

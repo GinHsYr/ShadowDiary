@@ -6,15 +6,22 @@ interface HighlightPart {
   highlighted: boolean
 }
 
+interface HighlightKeyword {
+  keyword: string
+  standalone?: boolean
+}
+
 const props = withDefaults(
   defineProps<{
     text: string
     keyword?: string
     extraKeywords?: string[]
+    highlightKeywords?: HighlightKeyword[]
   }>(),
   {
     keyword: '',
-    extraKeywords: () => []
+    extraKeywords: () => [],
+    highlightKeywords: () => []
   }
 )
 
@@ -22,19 +29,44 @@ function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function getAllKeywords(): string[] {
-  const all = [
-    ...props.keyword.trim().split(/\s+/).filter(Boolean),
-    ...props.extraKeywords.map((item) => item.trim()).filter(Boolean)
-  ]
+function getAllKeywords(): HighlightKeyword[] {
+  const all: HighlightKeyword[] =
+    props.highlightKeywords.length > 0
+      ? props.highlightKeywords
+      : [
+          ...props.keyword
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+            .map((keyword) => ({ keyword })),
+          ...props.extraKeywords
+            .map((item) => item.trim())
+            .filter(Boolean)
+            .map((keyword) => ({ keyword }))
+        ]
 
-  const unique = new Map<string, string>()
-  for (const keyword of all) {
+  const unique = new Map<string, HighlightKeyword>()
+  for (const item of all) {
+    const keyword = item.keyword.trim()
+    if (!keyword) continue
     const key = keyword.toLowerCase()
-    if (!unique.has(key)) unique.set(key, keyword)
+    if (!unique.has(key)) unique.set(key, { keyword, standalone: item.standalone })
   }
 
-  return [...unique.values()].sort((a, b) => b.length - a.length)
+  return [...unique.values()].sort((a, b) => b.keyword.length - a.keyword.length)
+}
+
+function isWordLikeChar(char: string | undefined): boolean {
+  if (!char) return false
+  return /[\p{L}\p{N}]/u.test(char)
+}
+
+function isStandaloneMatch(source: string, index: number, length: number): boolean {
+  const end = index + length
+  const prevChar = index > 0 ? source[index - 1] : undefined
+  const nextChar = end < source.length ? source[end] : undefined
+
+  return !isWordLikeChar(prevChar) && !isWordLikeChar(nextChar)
 }
 
 const parts = computed<HighlightPart[]>(() => {
@@ -47,7 +79,8 @@ const parts = computed<HighlightPart[]>(() => {
     return [{ text: source, highlighted: false }]
   }
 
-  const pattern = keywords.map(escapeRegex).join('|')
+  const keywordByLower = new Map(keywords.map((item) => [item.keyword.toLowerCase(), item]))
+  const pattern = keywords.map((item) => escapeRegex(item.keyword)).join('|')
   const regex = new RegExp(`(${pattern})`, 'gi')
 
   const result: HighlightPart[] = []
@@ -57,6 +90,8 @@ const parts = computed<HighlightPart[]>(() => {
     const index = match.index ?? 0
     const value = match[0]
     if (!value) continue
+    const keywordRule = keywordByLower.get(value.toLowerCase())
+    if (keywordRule?.standalone && !isStandaloneMatch(source, index, value.length)) continue
     if (index > cursor) {
       result.push({ text: source.slice(cursor, index), highlighted: false })
     }

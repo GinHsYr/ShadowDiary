@@ -9,6 +9,7 @@ import type {
   SearchParams,
   HomePageStats,
   SearchResult,
+  SearchHighlightKeyword,
   PersonMentionDetailItem,
   PersonMentionDetailResult
 } from '../../types/model'
@@ -443,30 +444,6 @@ export function getDiaryDates(yearMonth: string): string[] {
   return rows.map((row) => row.diary_date).filter((date): date is string => Boolean(date))
 }
 
-// 根据关键词查找匹配的档案，返回该档案的所有名称（name + aliases）
-function expandKeywordWithArchiveAliases(keyword: string): string[] {
-  const db = getDatabase()
-  const lowerKw = keyword.toLowerCase()
-
-  // 查找 name 或 alias 包含该关键词的档案
-  const rows = db
-    .prepare('SELECT name, alias FROM archives WHERE LOWER(name) LIKE ? OR LOWER(alias) LIKE ?')
-    .all(`%${lowerKw}%`, `%${lowerKw}%`) as { name: string; alias: string | null }[]
-
-  const allNames = new Set<string>([keyword])
-
-  for (const row of rows) {
-    // 添加档案名称
-    allNames.add(row.name)
-    // 添加所有别名
-    for (const alias of splitArchiveAliases(row.alias)) {
-      allNames.add(alias)
-    }
-  }
-
-  return Array.from(allNames)
-}
-
 function quoteFtsToken(token: string): string | null {
   const trimmed = token.trim()
   if (!trimmed) return null
@@ -489,94 +466,189 @@ function buildFtsMatchExpression(keywordGroups: string[][]): string | null {
   return groupExpressions.join(' AND ')
 }
 
-export function searchDiaries(params: SearchParams): SearchResult {
-  const db = getDatabase()
-  const limit = params.limit ?? 20
-  const offset = params.offset ?? 0
-  const lightweight = params.lightweight ?? false
+interface ArchiveKeywordRow {
+  id: string
+  name: string
+  alias: string | null
+}
 
+interface KeywordAlternative {
+  value: string
+  standalone: boolean
+}
+
+interface KeywordExpansion {
+  primary: KeywordAlternative[]
+}
+
+interface SearchExecutionResult {
+  entries: DiaryEntry[]
+  total: number
+}
+
+function buildKeywordExpansion(keyword: string): KeywordExpansion {
+  const db = getDatabase()
+  const trimmedKeyword = keyword.trim()
+  const lowerKeyword = trimmedKeyword.toLocaleLowerCase()
+  const archiveLike = `%${escapeLikePattern(lowerKeyword)}%`
+
+  const rows = db
+    .prepare(
+      `SELECT id, name, alias FROM archives
+       WHERE LOWER(name) LIKE ? ESCAPE '\\'
+          OR LOWER(IFNULL(alias, '')) LIKE ? ESCAPE '\\'`
+    )
+    .all(archiveLike, archiveLike) as ArchiveKeywordRow[]
+
+  const exactArchiveIds = new Set<string>()
+  const fuzzyArchiveIds = new Set<string>()
+  const keywordsByArchiveId = new Map<string, string[]>()
+
+  for (const row of rows) {
+    const archiveKeywords = [row.name, ...splitArchiveAliases(row.alias)]
+      .map((item) => item.trim())
+      .filter(Boolean)
+
+    if (archiveKeywords.length === 0) continue
+    keywordsByArchiveId.set(row.id, archiveKeywords)
+
+    const hasExactMatch = archiveKeywords.some((item) => item.toLocaleLowerCase() === lowerKeyword)
+    const hasFuzzyMatch = archiveKeywords.some((item) =>
+      item.toLocaleLowerCase().includes(lowerKeyword)
+    )
+
+    if (hasExactMatch) {
+      exactArchiveIds.add(row.id)
+    } else if (hasFuzzyMatch) {
+      fuzzyArchiveIds.add(row.id)
+    }
+  }
+
+  const exactKeywords = collectArchiveSearchKeywords(exactArchiveIds, keywordsByArchiveId, true)
+  const fuzzyKeywords = collectArchiveSearchKeywords(fuzzyArchiveIds, keywordsByArchiveId, false)
+
+  if (exactKeywords.length === 0) {
+    const primary = dedupeKeywordAlternatives([
+      { value: trimmedKeyword, standalone: false },
+      ...fuzzyKeywords
+    ])
+    return {
+      primary
+    }
+  }
+
+  const primary = dedupeKeywordAlternatives(exactKeywords)
+  return {
+    primary
+  }
+}
+
+function collectArchiveSearchKeywords(
+  archiveIds: Set<string>,
+  keywordsByArchiveId: Map<string, string[]>,
+  standaloneSingleChar: boolean
+): KeywordAlternative[] {
+  const alternatives: KeywordAlternative[] = []
+
+  for (const archiveId of archiveIds) {
+    const keywords = keywordsByArchiveId.get(archiveId) ?? []
+    for (const keyword of keywords) {
+      alternatives.push({
+        value: keyword,
+        standalone: standaloneSingleChar && [...keyword].length === 1
+      })
+    }
+  }
+
+  return alternatives
+}
+
+function dedupeKeywordAlternatives(alternatives: KeywordAlternative[]): KeywordAlternative[] {
+  const byKey = new Map<string, KeywordAlternative>()
+
+  for (const alternative of alternatives) {
+    const value = alternative.value.trim()
+    if (!value) continue
+    const key = value.toLocaleLowerCase()
+    if (!byKey.has(key)) {
+      byKey.set(key, { value, standalone: alternative.standalone })
+    }
+  }
+
+  return [...byKey.values()]
+}
+
+function buildKeywordSearchCondition(keywordGroups: KeywordAlternative[][]): {
+  condition: string | null
+  values: unknown[]
+} {
+  if (keywordGroups.length === 0) {
+    return { condition: null, values: [] }
+  }
+
+  const ftsExpression = buildFtsMatchExpression(
+    keywordGroups.map((group) => group.map((keyword) => keyword.value))
+  )
+  const likeGroupConditions: string[] = []
+  const likeValues: unknown[] = []
+
+  for (const keywordGroup of keywordGroups) {
+    const orConditions: string[] = []
+    for (const keyword of keywordGroup) {
+      const likePattern = `%${escapeLikePattern(keyword.value)}%`
+      orConditions.push(
+        "(e.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR e.plain_content LIKE ? ESCAPE '\\' COLLATE NOCASE)"
+      )
+      likeValues.push(likePattern, likePattern)
+    }
+    if (orConditions.length > 0) {
+      likeGroupConditions.push(`(${orConditions.join(' OR ')})`)
+    }
+  }
+
+  const keywordClauses: string[] = []
+  const keywordValues: unknown[] = []
+
+  if (ftsExpression) {
+    keywordClauses.push(
+      'e.rowid IN (SELECT rowid FROM diary_search_fts WHERE diary_search_fts MATCH ?)'
+    )
+    keywordValues.push(ftsExpression)
+  }
+
+  if (likeGroupConditions.length > 0) {
+    keywordClauses.push(likeGroupConditions.join(' AND '))
+    keywordValues.push(...likeValues)
+  }
+
+  if (keywordClauses.length === 0) {
+    return { condition: null, values: [] }
+  }
+
+  return {
+    condition: keywordClauses.length === 1 ? keywordClauses[0] : `(${keywordClauses.join(' OR ')})`,
+    values: keywordValues
+  }
+}
+
+function buildDiarySearchConditions(
+  params: SearchParams,
+  keywordGroups: KeywordAlternative[][]
+): { conditions: string[]; values: unknown[] } {
   const conditions: string[] = []
   const values: unknown[] = []
-  const fromClause = 'diary_entries e'
-  const selectClause = lightweight
-    ? 'e.id, e.title, e.mood, e.weather, e.created_at, e.updated_at, e.plain_content as content'
-    : 'e.*'
+  const keywordCondition = buildKeywordSearchCondition(keywordGroups)
 
-  // 收集所有扩展后的关键词用于前端高亮
-  const allExpandedKeywords = new Set<string>()
-
-  const keywordGroups: string[][] = []
-
-  // Keyword search: split by spaces for multi-keyword AND matching
-  // 每个关键词如果匹配到档案，则扩展为该档案的所有名称（OR 逻辑）
-  if (params.keyword && params.keyword.trim()) {
-    const keywords = params.keyword.trim().split(/\s+/).filter(Boolean)
-    for (const kw of keywords) {
-      // 扩展关键词：如果匹配档案，加入该档案的所有别名
-      const expandedKeywords = [
-        ...new Set(expandKeywordWithArchiveAliases(kw).map((k) => k.trim()))
-      ].filter(Boolean)
-      if (expandedKeywords.length === 0) continue
-      keywordGroups.push(expandedKeywords)
-
-      // 收集所有扩展的关键词
-      for (const ek of expandedKeywords) {
-        allExpandedKeywords.add(ek)
-      }
-    }
+  if (keywordCondition.condition) {
+    conditions.push(keywordCondition.condition)
+    values.push(...keywordCondition.values)
   }
 
-  if (keywordGroups.length > 0) {
-    const ftsExpression = buildFtsMatchExpression(keywordGroups)
-    const likeGroupConditions: string[] = []
-    const likeValues: unknown[] = []
-
-    for (const keywordGroup of keywordGroups) {
-      const orConditions: string[] = []
-      for (const keyword of keywordGroup) {
-        const likePattern = `%${escapeLikePattern(keyword)}%`
-        orConditions.push(
-          "(e.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR e.plain_content LIKE ? ESCAPE '\\' COLLATE NOCASE)"
-        )
-        likeValues.push(likePattern, likePattern)
-      }
-      if (orConditions.length > 0) {
-        likeGroupConditions.push(`(${orConditions.join(' OR ')})`)
-      }
-    }
-
-    const keywordClauses: string[] = []
-    const keywordValues: unknown[] = []
-
-    if (ftsExpression) {
-      keywordClauses.push(
-        'e.rowid IN (SELECT rowid FROM diary_search_fts WHERE diary_search_fts MATCH ?)'
-      )
-      keywordValues.push(ftsExpression)
-    }
-
-    if (likeGroupConditions.length > 0) {
-      keywordClauses.push(likeGroupConditions.join(' AND '))
-      keywordValues.push(...likeValues)
-    }
-
-    if (keywordClauses.length === 1) {
-      conditions.push(keywordClauses[0])
-      values.push(...keywordValues)
-    } else if (keywordClauses.length > 1) {
-      // FTS 命中快，但中文连续文本场景可能被分词漏掉，补充 LIKE 保证不漏召回。
-      conditions.push(`(${keywordClauses.join(' OR ')})`)
-      values.push(...keywordValues)
-    }
-  }
-
-  // Mood filter
   if (params.mood) {
     conditions.push('e.mood = ?')
     values.push(params.mood)
   }
 
-  // Date range
   if (typeof params.dateFrom === 'number' && Number.isFinite(params.dateFrom)) {
     conditions.push('e.created_at >= ?')
     values.push(params.dateFrom)
@@ -592,7 +664,6 @@ export function searchDiaries(params: SearchParams): SearchResult {
     values.push(dateToExclusive)
   }
 
-  // Tag filter (AND logic: entry must have ALL specified tags)
   if (params.tags && params.tags.length > 0) {
     conditions.push(`e.id IN (
       SELECT dt.diary_id FROM diary_tags dt
@@ -604,22 +675,142 @@ export function searchDiaries(params: SearchParams): SearchResult {
     values.push(...params.tags, params.tags.length)
   }
 
+  return { conditions, values }
+}
+
+function requiresKeywordPostFilter(keywordGroups: KeywordAlternative[][]): boolean {
+  return keywordGroups.some((group) => group.some((keyword) => keyword.standalone))
+}
+
+function rowMatchesKeywordGroups(row: DiaryRow, keywordGroups: KeywordAlternative[][]): boolean {
+  if (keywordGroups.length === 0) return true
+
+  const text = `${row.title || ''}\n${row.plain_content || row.content || ''}`
+  const loweredText = text.toLocaleLowerCase()
+
+  return keywordGroups.every((group) =>
+    group.some((keyword) => {
+      const loweredKeyword = keyword.value.toLocaleLowerCase()
+      if (!keyword.standalone) {
+        return loweredText.includes(loweredKeyword)
+      }
+      return hasStandaloneMatch(loweredText, loweredKeyword)
+    })
+  )
+}
+
+function hasStandaloneMatch(text: string, keyword: string): boolean {
+  if (!keyword) return false
+
+  let index = text.indexOf(keyword)
+  while (index !== -1) {
+    const end = index + keyword.length
+    const prevChar = index > 0 ? text[index - 1] : undefined
+    const nextChar = end < text.length ? text[end] : undefined
+
+    if (!isWordLikeChar(prevChar) && !isWordLikeChar(nextChar)) {
+      return true
+    }
+
+    index = text.indexOf(keyword, index + keyword.length)
+  }
+
+  return false
+}
+
+function collectExpandedKeywords(keywordGroups: KeywordAlternative[][]): string[] | undefined {
+  const keywords = new Set<string>()
+
+  for (const group of keywordGroups) {
+    for (const keyword of group) {
+      keywords.add(keyword.value)
+    }
+  }
+
+  return keywords.size > 0 ? [...keywords] : undefined
+}
+
+function collectHighlightKeywords(
+  keywordGroups: KeywordAlternative[][]
+): SearchHighlightKeyword[] | undefined {
+  const keywords = new Map<string, SearchHighlightKeyword>()
+
+  for (const group of keywordGroups) {
+    for (const keyword of group) {
+      const key = keyword.value.toLocaleLowerCase()
+      if (!keywords.has(key)) {
+        keywords.set(key, {
+          keyword: keyword.value,
+          standalone: keyword.standalone || undefined
+        })
+      }
+    }
+  }
+
+  return keywords.size > 0 ? [...keywords.values()] : undefined
+}
+
+function executeDiarySearchPhase(
+  params: SearchParams,
+  keywordGroups: KeywordAlternative[][]
+): SearchExecutionResult {
+  const db = getDatabase()
+  const limit = params.limit ?? 20
+  const offset = params.offset ?? 0
+  const lightweight = params.lightweight ?? false
+  const fromClause = 'diary_entries e'
+  const selectClause = lightweight
+    ? 'e.id, e.title, e.mood, e.weather, e.created_at, e.updated_at, e.plain_content as content'
+    : 'e.*'
+  const { conditions, values } = buildDiarySearchConditions(params, keywordGroups)
   const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
+
+  if (requiresKeywordPostFilter(keywordGroups)) {
+    const querySql = `SELECT ${selectClause} FROM ${fromClause} ${whereClause} ORDER BY e.created_at DESC`
+    const allRows = db.prepare(querySql).all(...values) as DiaryRow[]
+    const rows = allRows.filter((row) => rowMatchesKeywordGroups(row, keywordGroups))
+    const pageRows = rows.slice(offset, offset + limit)
+    const tagsByDiaryId = getTagsByDiaryIds(pageRows.map((row) => row.id))
+    const entries = pageRows.map((row) => rowToEntry(row, tagsByDiaryId.get(row.id) ?? []))
+
+    return { entries, total: rows.length }
+  }
 
   const countSql = `SELECT COUNT(*) as count FROM ${fromClause} ${whereClause}`
   const total = (db.prepare(countSql).get(...values) as { count: number }).count
 
   const querySql = `SELECT ${selectClause} FROM ${fromClause} ${whereClause} ORDER BY e.created_at DESC LIMIT ? OFFSET ?`
   const rows = db.prepare(querySql).all(...values, limit, offset) as DiaryRow[]
-
   const tagsByDiaryId = getTagsByDiaryIds(rows.map((row) => row.id))
   const entries = rows.map((row) => rowToEntry(row, tagsByDiaryId.get(row.id) ?? []))
 
-  // 只有当关键词被扩展时才返回 expandedKeywords
-  const expandedKeywords =
-    allExpandedKeywords.size > 0 ? Array.from(allExpandedKeywords) : undefined
+  return { entries, total }
+}
 
-  return { entries, total, expandedKeywords }
+function searchDiariesWithArchivePriority(params: SearchParams): SearchResult {
+  const keywordGroups: KeywordAlternative[][] = []
+
+  if (params.keyword && params.keyword.trim()) {
+    const keywords = params.keyword.trim().split(/\s+/).filter(Boolean)
+    for (const kw of keywords) {
+      const expansion = buildKeywordExpansion(kw)
+      if (expansion.primary.length === 0) continue
+
+      keywordGroups.push(expansion.primary)
+    }
+  }
+
+  const result = executeDiarySearchPhase(params, keywordGroups)
+
+  return {
+    ...result,
+    expandedKeywords: collectExpandedKeywords(keywordGroups),
+    highlightKeywords: collectHighlightKeywords(keywordGroups)
+  }
+}
+
+export function searchDiaries(params: SearchParams): SearchResult {
+  return searchDiariesWithArchivePriority(params)
 }
 
 export function getStats(): HomePageStats {

@@ -56,6 +56,16 @@ function rowToArchive(row: ArchiveRow): Archive {
   }
 }
 
+function archiveMatchesExactSearch(archive: Archive, loweredSearch: string): boolean {
+  if (archive.name.toLocaleLowerCase() === loweredSearch) return true
+  return archive.aliases.some((alias) => alias.toLocaleLowerCase() === loweredSearch)
+}
+
+function archiveMatchesFuzzySearch(archive: Archive, loweredSearch: string): boolean {
+  if (archive.name.toLocaleLowerCase().includes(loweredSearch)) return true
+  return archive.aliases.some((alias) => alias.toLocaleLowerCase().includes(loweredSearch))
+}
+
 export const archives = {
   list(params?: { type?: string; search?: string }): Archive[] {
     const db = getDatabase()
@@ -67,9 +77,10 @@ export const archives = {
       args.push(params.type)
     }
 
-    if (params?.search) {
-      sql += ' AND (name LIKE ? OR alias LIKE ?)'
-      const term = `%${params.search}%`
+    const trimmedSearch = params?.search?.trim()
+    if (trimmedSearch) {
+      sql += " AND (LOWER(name) LIKE ? ESCAPE '\\' OR LOWER(IFNULL(alias, '')) LIKE ? ESCAPE '\\')"
+      const term = `%${trimmedSearch.toLocaleLowerCase().replace(/[\\%_]/g, '\\$&')}%`
       args.push(term, term)
     }
 
@@ -77,7 +88,17 @@ export const archives = {
 
     const stmt = db.prepare(sql)
     const rows = stmt.all(...args) as ArchiveRow[]
-    return rows.map(rowToArchive)
+    const result = rows.map(rowToArchive)
+
+    if (!trimmedSearch) return result
+
+    const loweredSearch = trimmedSearch.toLocaleLowerCase()
+    const exactMatches = result.filter((archive) =>
+      archiveMatchesExactSearch(archive, loweredSearch)
+    )
+    if (exactMatches.length > 0) return exactMatches
+
+    return result.filter((archive) => archiveMatchesFuzzySearch(archive, loweredSearch))
   },
 
   get(id: string): Archive | null {
@@ -176,15 +197,14 @@ export const archives = {
       ORDER BY match_rank ASC, updated_at DESC
       LIMIT ?
     `
-    const rows = db
-      .prepare(sql)
-      .all(lowered, lowered, like, like, like, safeLimit) as ArchiveRow[]
+    const rows = db.prepare(sql).all(lowered, lowered, like, like, like, safeLimit) as ArchiveRow[]
 
-    return rows
-      .map(rowToArchive)
-      .filter((archive) => {
-        if (archive.name.toLowerCase().includes(lowered)) return true
-        return archive.aliases.some((alias) => alias.toLowerCase().includes(lowered))
-      })
+    const result = rows.map(rowToArchive)
+    const exactMatches = result.filter((archive) => archiveMatchesExactSearch(archive, lowered))
+    if (exactMatches.length > 0) return exactMatches.slice(0, safeLimit)
+
+    return result
+      .filter((archive) => archiveMatchesFuzzySearch(archive, lowered))
+      .slice(0, safeLimit)
   }
 }
