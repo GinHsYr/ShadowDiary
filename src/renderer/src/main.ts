@@ -45,6 +45,7 @@ async function initUnlockedAppData(): Promise<void> {
 }
 
 let froalaLoader: Promise<void> | null = null
+let diaryEditorComponentLoader: Promise<unknown> | null = null
 
 async function ensureFroalaLoaded(): Promise<void> {
   if (app.component('Froala')) return
@@ -66,9 +67,21 @@ async function ensureFroalaLoaded(): Promise<void> {
   await froalaLoader
 }
 
+async function ensureDiaryEditorComponentLoaded(): Promise<void> {
+  if (!diaryEditorComponentLoader) {
+    diaryEditorComponentLoader = import('./components/DiaryEditor.vue')
+  }
+
+  await diaryEditorComponentLoader
+}
+
+async function ensureEditorLoaded(): Promise<void> {
+  await Promise.all([ensureFroalaLoaded(), ensureDiaryEditorComponentLoaded()])
+}
+
 router.beforeEach(async (to) => {
   if (to.path === '/today' && privacyStore.isInitialized && !privacyStore.isLocked) {
-    await ensureFroalaLoaded()
+    await ensureEditorLoaded()
   }
 })
 
@@ -78,7 +91,7 @@ watch(
     if (!isInitialized || isLocked) return
     await initUnlockedAppData()
     if (router.currentRoute.value.path === '/today') {
-      await ensureFroalaLoaded()
+      await ensureEditorLoaded()
     }
   },
   { immediate: true }
@@ -86,6 +99,7 @@ watch(
 
 async function bootstrap(): Promise<void> {
   try {
+    await ensureEditorLoaded()
     await localeStore.initFromStorage()
     await privacyStore.initFromStorage()
     await disguiseStore.initFromMain()
@@ -94,10 +108,6 @@ async function bootstrap(): Promise<void> {
     }
 
     await router.isReady()
-
-    if (router.currentRoute.value.path === '/today' && !privacyStore.isLocked) {
-      await ensureFroalaLoaded()
-    }
   } catch (error) {
     console.error('应用启动初始化失败:', error)
   } finally {

@@ -7,7 +7,6 @@ import {
   NInputOtp,
   NLayout,
   NLayoutContent,
-  NSkeleton,
   dateEnUS,
   dateJaJP,
   dateKoKR,
@@ -38,6 +37,7 @@ const privacy = usePrivacyStore()
 const disguise = useDisguiseStore()
 const startup = useStartupStore()
 const route = useRoute()
+const appIconUrl = new URL('../../../resources/icon.png', import.meta.url).href
 const OTP_LENGTH = 6
 const USER_ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'] as const
 // Dev-only switch: VITE_DEBUG_BYPASS_PRIVACY_LOCK=1 can bypass the privacy lock locally.
@@ -413,33 +413,15 @@ onBeforeUnmount(() => {
   >
     <n-dialog-provider>
       <div class="app-shell" :class="{ 'app-shell--locked': showLockOverlay }">
-        <div v-if="startup.isBooting" class="startup-skeleton">
-          <div class="startup-skeleton-titlebar">
-            <n-skeleton width="100%" height="32px" />
+        <transition name="startup-mask-fade">
+          <div v-if="startup.isBooting" class="startup-mask">
+            <div class="startup-mask-icon-shell">
+              <img class="startup-mask-icon" :src="appIconUrl" alt="" aria-hidden="true" />
+            </div>
           </div>
-          <div class="startup-skeleton-layout">
-            <aside class="startup-skeleton-sidebar">
-              <n-skeleton class="startup-skeleton-avatar" width="56px" height="56px" />
-              <n-skeleton class="startup-skeleton-line" width="100%" height="12px" />
-              <n-skeleton class="startup-skeleton-line" width="100%" height="12px" />
-              <n-skeleton class="startup-skeleton-line" width="86%" height="12px" />
-              <n-skeleton class="startup-skeleton-line" width="100%" height="12px" />
-              <n-skeleton class="startup-skeleton-line" width="68%" height="12px" />
-            </aside>
-            <main class="startup-skeleton-main">
-              <div class="startup-skeleton-header">
-                <n-skeleton class="startup-skeleton-search" width="420px" height="34px" />
-              </div>
-              <div class="startup-skeleton-content">
-                <n-skeleton class="startup-skeleton-card tall" width="100%" height="100%" />
-                <n-skeleton class="startup-skeleton-card" width="100%" height="100%" />
-                <n-skeleton class="startup-skeleton-card" width="100%" height="100%" />
-              </div>
-            </main>
-          </div>
-        </div>
+        </transition>
 
-        <template v-else>
+        <template v-if="!startup.isBooting">
           <TitleBar />
           <n-layout has-sider position="absolute" style="top: var(--app-title-bar-height)">
             <AppSidebar />
@@ -536,86 +518,60 @@ body {
   z-index: 5000 !important;
 }
 
-.startup-skeleton {
-  height: 100%;
+.startup-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 6000;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background:
     radial-gradient(
-      120% 70% at 15% -20%,
+      90% 62% at 50% -18%,
       var(--app-accent-12, rgba(24, 160, 88, 0.12)) 0%,
-      transparent 60%
+      transparent 64%
     ),
-    radial-gradient(
-      110% 80% at 100% 120%,
-      var(--app-accent-08, rgba(24, 160, 88, 0.08)) 0%,
-      transparent 58%
-    ),
-    var(--n-body-color, #f5f7fa);
+    color-mix(in srgb, var(--n-body-color, #f5f7fa) 94%, transparent);
+  will-change: opacity;
 }
 
-.startup-skeleton-titlebar {
-  height: var(--app-title-bar-height);
+.startup-mask-fade-leave-active {
+  transition: opacity 360ms var(--ease-standard);
 }
 
-.startup-skeleton-layout {
-  height: calc(100% - var(--app-title-bar-height));
+.startup-mask-fade-leave-to {
+  opacity: 0;
+}
+
+.startup-mask-icon-shell {
+  width: 132px;
+  height: 132px;
   display: flex;
-}
-
-.startup-skeleton-sidebar {
-  width: 220px;
-  padding: 24px 14px 16px;
-  border-right: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.08));
-  box-sizing: border-box;
-}
-
-.startup-skeleton-avatar {
-  border-radius: 50%;
-  overflow: hidden;
-  margin: 0 auto 22px;
-}
-
-.startup-skeleton-line {
-  border-radius: 999px;
-  overflow: hidden;
-  margin-bottom: 14px;
-}
-
-.startup-skeleton-main {
-  flex: 1;
-  padding: 14px 18px 18px;
-  box-sizing: border-box;
-}
-
-.startup-skeleton-header {
-  display: flex;
-  justify-content: center;
   align-items: center;
-  height: 42px;
+  justify-content: center;
 }
 
-.startup-skeleton-search {
-  width: min(420px, 56vw) !important;
-  max-width: 100%;
-  border-radius: 999px;
-  overflow: hidden;
+.startup-mask-icon {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 8px 16px rgba(15, 23, 42, 0.14));
+  animation: startup-mask-pulse 1.8s var(--ease-standard) infinite;
 }
 
-.startup-skeleton-content {
-  margin-top: 18px;
-  height: calc(100% - 60px);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(140px, 1fr));
-  gap: 14px;
-}
-
-.startup-skeleton-card {
-  border-radius: 16px;
-  overflow: hidden;
-}
-
-.startup-skeleton-card.tall {
-  grid-row: span 2;
+@keyframes startup-mask-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.035);
+    opacity: 0.9;
+  }
 }
 
 /* 禁止 Naive UI 布局组件的滚动 */
@@ -695,37 +651,25 @@ body {
   .page-slide-back-leave-to {
     transform: none;
   }
+
+  .startup-mask-icon-shell {
+    animation: none;
+  }
+
+  .startup-mask-icon {
+    animation: none;
+  }
 }
 
 @media (max-width: 900px) {
-  .startup-skeleton-sidebar {
-    width: 64px;
-    padding: 16px 10px;
+  .startup-mask-icon-shell {
+    width: 116px;
+    height: 116px;
   }
 
-  .startup-skeleton-avatar {
-    width: 40px !important;
-    height: 40px !important;
-    margin-bottom: 16px;
-  }
-
-  .startup-skeleton-line {
-    width: 100% !important;
-    margin-bottom: 10px;
-    height: 10px !important;
-  }
-
-  .startup-skeleton-search {
-    width: min(320px, 70vw) !important;
-  }
-
-  .startup-skeleton-content {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(3, minmax(120px, 1fr));
-  }
-
-  .startup-skeleton-card.tall {
-    grid-row: auto;
+  .startup-mask-icon {
+    width: 84px;
+    height: 84px;
   }
 }
 
