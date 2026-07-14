@@ -43,8 +43,9 @@ type AccentStyleVars = Record<
 const SETTINGS_THEME_KEY = 'settings.theme'
 const SETTINGS_THEME_ACCENT_KEY = 'settings.themeAccent'
 const SETTINGS_THEME_MOTION_KEY = 'settings.themeMotion'
-const DEFAULT_THEME_ACCENT = ThemeAccent.Green
-const DEFAULT_ACCENT_COLOR = '#18a058'
+const DEFAULT_THEME_ACCENT = ThemeAccent.Black
+const DARK_MODE_FALLBACK_THEME_ACCENT = ThemeAccent.Green
+const DEFAULT_ACCENT_COLOR = '#1a1a1a'
 
 export const THEME_ACCENT_PALETTES: Record<ThemeAccent, ThemeAccentPalette> = {
   [ThemeAccent.Green]: {
@@ -100,7 +101,7 @@ function normalizeThemeAccent(value: string | null): ThemeAccent {
 
 function normalizeAccentByMode(mode: ThemeMode, accent: ThemeAccent): ThemeAccent {
   if (mode === ThemeMode.Dark && accent === ThemeAccent.Black) {
-    return DEFAULT_THEME_ACCENT
+    return DARK_MODE_FALLBACK_THEME_ACCENT
   }
   return accent
 }
