@@ -129,6 +129,7 @@ const jaJP = {
     confirm: '確認',
     delete: '削除',
     locateSelected: '選択中の日記へ移動',
+    quickScroll: '日記リストをすばやくスクロール',
     weekdayShort: ['日', '月', '火', '水', '木', '金', '土'],
     dateFormat: '{month}/{day} ({weekday})'
   },

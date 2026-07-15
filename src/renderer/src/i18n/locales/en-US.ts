@@ -129,6 +129,7 @@ const enUS = {
     confirm: 'Confirm',
     delete: 'Delete',
     locateSelected: 'Locate selected diary',
+    quickScroll: 'Quick-scroll diary list',
     weekdayShort: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
     dateFormat: '{month}/{day} {weekday}'
   },

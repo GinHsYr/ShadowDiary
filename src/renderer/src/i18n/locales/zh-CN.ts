@@ -129,6 +129,7 @@ const zhCN = {
     confirm: '确定',
     delete: '删除',
     locateSelected: '定位当前日记',
+    quickScroll: '快速滑动日记列表',
     weekdayShort: ['日', '一', '二', '三', '四', '五', '六'],
     dateFormat: '{month}月{day}日 周{weekday}'
   },
