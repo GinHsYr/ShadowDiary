@@ -156,6 +156,7 @@ const koKR = {
     replacePlaceholder: '바꿀 내용...',
     replaceOne: '바꾸기',
     replaceAll: '전체',
+    characterCount: '{count}자',
     paragraph: '본문',
     heading1: '제목 1',
     heading2: '제목 2',

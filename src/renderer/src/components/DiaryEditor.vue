@@ -106,6 +106,12 @@
         </div>
       </div>
     </transition>
+    <div
+      class="editor-character-count"
+      :aria-label="t('diaryEditor.characterCount', { count: characterCount })"
+    >
+      {{ t('diaryEditor.characterCount', { count: characterCount }) }}
+    </div>
     <n-dropdown
       placement="bottom-start"
       trigger="manual"
@@ -165,6 +171,14 @@ const emit = defineEmits<{
 
 const editorRootRef = ref<HTMLElement | null>(null)
 const content = ref(props.modelValue || '')
+const characterCount = computed(() => {
+  if (!content.value) return 0
+
+  const container = document.createElement('div')
+  container.innerHTML = content.value
+  const plainText = container.textContent || container.innerText || ''
+  return Array.from(plainText.replace(/\s/gu, '')).length
+})
 
 const IMAGE_MIME_BY_EXT: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -1139,7 +1153,7 @@ defineExpose({
   font-size: 16px;
   line-height: 1.75;
   color: var(--editor-text-color, #37352f);
-  padding: 8px 16px;
+  padding: 8px 16px 36px;
 }
 
 .diary-editor-wrapper :deep(.fr-element h1) {
@@ -1185,6 +1199,22 @@ defineExpose({
 .editor-search-trigger:hover {
   color: var(--app-accent-color, #18a058);
   background: transparent !important;
+}
+
+.editor-character-count {
+  position: absolute;
+  right: 16px;
+  bottom: 10px;
+  z-index: 7;
+  padding: 3px 8px;
+  border-radius: 10px;
+  color: var(--n-text-color-3, #8a8f98);
+  background: color-mix(in srgb, var(--n-color, #fff) 84%, transparent);
+  font-size: 12px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
 }
 
 .editor-search-panel {

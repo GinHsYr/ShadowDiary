@@ -156,6 +156,7 @@ const zhCN = {
     replacePlaceholder: '替换为...',
     replaceOne: '替换',
     replaceAll: '全部',
+    characterCount: '{count} 字',
     paragraph: '正文',
     heading1: '标题 1',
     heading2: '标题 2',

@@ -156,6 +156,7 @@ const enUS = {
     replacePlaceholder: 'Replace with...',
     replaceOne: 'Replace',
     replaceAll: 'All',
+    characterCount: '{count} characters',
     paragraph: 'Paragraph',
     heading1: 'Heading 1',
     heading2: 'Heading 2',

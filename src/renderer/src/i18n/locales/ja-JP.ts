@@ -156,6 +156,7 @@ const jaJP = {
     replacePlaceholder: '置換後の文字列...',
     replaceOne: '置換',
     replaceAll: 'すべて',
+    characterCount: '{count} 文字',
     paragraph: '本文',
     heading1: '見出し 1',
     heading2: '見出し 2',
