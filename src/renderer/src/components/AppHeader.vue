@@ -457,7 +457,6 @@ onBeforeUnmount(() => {
             <n-input
               ref="searchInputRef"
               :value="searchKeyword"
-              round
               :placeholder="t('header.searchPlaceholder')"
               size="small"
               :class="['search-input', { 'search-input--focused': isFocused }]"
@@ -486,6 +485,7 @@ onBeforeUnmount(() => {
             </n-input>
             <n-badge :value="activeFilterCount" :show="activeFilterCount > 0" :offset="[-4, 4]">
               <n-button
+                class="search-filter-button"
                 circle
                 size="small"
                 :type="showFilter ? 'primary' : 'default'"
@@ -754,10 +754,13 @@ onBeforeUnmount(() => {
 <style scoped>
 .app-header {
   position: fixed;
-  top: 2px;
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
   z-index: 1100;
+  height: var(--app-title-bar-height);
+  display: flex;
+  align-items: center;
 }
 
 .header-left {
@@ -771,7 +774,9 @@ onBeforeUnmount(() => {
 
 .search-input {
   width: 240px;
-  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .search-input--focused {
@@ -788,15 +793,55 @@ onBeforeUnmount(() => {
   opacity: 0.8;
 }
 
+:deep(.search-input.n-input) {
+  --n-color: var(--app-material-control) !important;
+  --n-color-focus: var(--app-material-control-hover) !important;
+  --n-border: 1px solid var(--app-material-border) !important;
+  --n-border-hover: 1px solid color-mix(in srgb, var(--app-accent-color) 46%, transparent) !important;
+  --n-border-focus: 1px solid color-mix(in srgb, var(--app-accent-color) 72%, transparent) !important;
+  --n-box-shadow-focus: 0 0 0 2px var(--app-accent-12) !important;
+  --n-border-radius: 8px !important;
+  box-shadow:
+    inset 0 1px 0 var(--app-material-border-soft),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(18px) saturate(1.16);
+  -webkit-backdrop-filter: blur(18px) saturate(1.16);
+}
+
+:deep(.search-filter-button.n-button) {
+  background: var(--app-material-control);
+  box-shadow:
+    inset 0 1px 0 var(--app-material-border-soft),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(18px) saturate(1.16);
+  -webkit-backdrop-filter: blur(18px) saturate(1.16);
+}
+
+:deep(.search-filter-button.n-button:hover) {
+  background: var(--app-material-control-hover);
+}
+
 .search-popover {
-  background: var(--n-color, #fff);
-  border-radius: 10px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-  border: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
+  background: var(--app-material-popover);
+  border-radius: 12px;
+  box-shadow:
+    0 18px 46px var(--app-material-shadow),
+    inset 0 1px 0 var(--app-material-border-soft);
+  border: 1px solid var(--app-material-border);
+  backdrop-filter: blur(30px) saturate(1.22);
+  -webkit-backdrop-filter: blur(30px) saturate(1.22);
   max-height: 480px;
   overflow-y: auto;
   overflow-x: hidden;
   animation: search-popover-in var(--motion-normal) var(--ease-enter);
+}
+
+.search-popover :deep(.n-list) {
+  background: transparent;
+}
+
+.search-popover :deep(.n-list-item) {
+  border-color: var(--app-material-border);
 }
 
 /* Filter panel */
@@ -993,7 +1038,7 @@ onBeforeUnmount(() => {
 /* Footer shortcuts hint */
 .search-footer {
   padding: 6px 14px;
-  border-top: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
+  border-top: 1px solid var(--app-material-border);
   display: flex;
   justify-content: center;
 }
@@ -1012,8 +1057,8 @@ onBeforeUnmount(() => {
   font-size: 10px;
   font-family: inherit;
   line-height: 18px;
-  background: var(--n-color-modal, rgba(0, 0, 0, 0.04));
-  border: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.08));
+  background: var(--app-material-control);
+  border: 1px solid var(--app-material-border);
   border-radius: 3px;
   min-width: 18px;
   text-align: center;

@@ -205,7 +205,6 @@ const toggleTheme = (): void => {
 
 <template>
   <n-layout-sider
-    bordered
     collapse-mode="width"
     :collapsed-width="64"
     :width="220"
@@ -365,8 +364,12 @@ const toggleTheme = (): void => {
 
 <style scoped>
 .app-sidebar {
-  background-color: var(--n-color);
-  height: 100vh;
+  height: 100%;
+  background: transparent !important;
+  border-right: 1px solid var(--app-material-border);
+  box-sizing: border-box;
+  --n-toggle-button-color: var(--app-material-popover) !important;
+  --n-toggle-button-border: 1px solid var(--app-material-border) !important;
 }
 
 .sidebar-content {
@@ -381,7 +384,7 @@ const toggleTheme = (): void => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px 0;
+  padding: 22px 0 20px;
   gap: 10px;
   transition: all 0.3s;
 }
@@ -403,7 +406,7 @@ const toggleTheme = (): void => {
 
 .sidebar-footer {
   padding: 12px 12px 6px;
-  border-top: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
+  border-top: 1px solid var(--app-material-border);
   display: flex;
   flex-direction: row;
   gap: 8px;
@@ -428,7 +431,34 @@ const toggleTheme = (): void => {
 }
 
 .footer-btn.active {
-  background-color: var(--n-color-hover, rgba(0, 0, 0, 0.04));
+  background-color: var(--app-material-control-hover);
+}
+
+:deep(.n-layout-sider-scroll-container),
+:deep(.n-menu) {
+  background: transparent !important;
+}
+
+:deep(.n-layout-toggle-button) {
+  box-shadow:
+    0 5px 14px var(--app-material-shadow),
+    inset 0 1px 0 var(--app-material-border-soft);
+  backdrop-filter: blur(20px) saturate(1.18);
+  -webkit-backdrop-filter: blur(20px) saturate(1.18);
+}
+
+:deep(.n-layout-toggle-button:hover) {
+  background: var(--app-material-control-hover);
+}
+
+:deep(.n-menu-item-content::before) {
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+:deep(.n-menu-item-content--selected::before) {
+  box-shadow: inset 0 0 0 1px var(--app-material-border-soft);
 }
 
 :deep(.sidebar-ripple-button),

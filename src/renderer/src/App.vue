@@ -423,10 +423,15 @@ onBeforeUnmount(() => {
 
         <template v-if="!startup.isBooting">
           <TitleBar />
-          <n-layout has-sider position="absolute" style="top: var(--app-title-bar-height)">
+          <n-layout
+            has-sider
+            position="absolute"
+            class="app-navigation-layout"
+            style="top: var(--app-title-bar-height)"
+          >
             <AppSidebar />
 
-            <n-layout>
+            <n-layout class="app-workspace">
               <AppHeader />
               <n-layout-content class="main-content">
                 <router-view
@@ -486,6 +491,27 @@ onBeforeUnmount(() => {
 <style>
 :root {
   --app-title-bar-height: 32px;
+  --app-material-tint: rgba(243, 243, 243, 0.72);
+  --app-material-control: rgba(255, 255, 255, 0.58);
+  --app-material-control-hover: rgba(255, 255, 255, 0.78);
+  --app-material-control-active: rgba(255, 255, 255, 0.46);
+  --app-material-popover: rgba(248, 248, 248, 0.88);
+  --app-material-border: rgba(0, 0, 0, 0.1);
+  --app-material-border-soft: rgba(255, 255, 255, 0.56);
+  --app-material-shadow: rgba(0, 0, 0, 0.16);
+  --app-content-surface: rgba(250, 250, 250, 0.97);
+}
+
+html.dark {
+  --app-material-tint: rgba(20, 20, 23, 0.76);
+  --app-material-control: rgba(255, 255, 255, 0.075);
+  --app-material-control-hover: rgba(255, 255, 255, 0.12);
+  --app-material-control-active: rgba(255, 255, 255, 0.055);
+  --app-material-popover: rgba(28, 28, 32, 0.9);
+  --app-material-border: rgba(255, 255, 255, 0.11);
+  --app-material-border-soft: rgba(255, 255, 255, 0.08);
+  --app-material-shadow: rgba(0, 0, 0, 0.42);
+  --app-content-surface: rgba(15, 15, 18, 0.97);
 }
 
 /* 全局重置 */
@@ -495,6 +521,7 @@ body {
   padding: 0;
   height: 100%;
   overflow: hidden;
+  background: transparent;
   font-family:
     v-sans,
     system-ui,
@@ -507,11 +534,26 @@ body {
 #app {
   height: 100%;
   overflow: hidden;
+  background: transparent;
 }
 
 .app-shell {
   height: 100%;
   overflow: hidden;
+  background: var(--app-material-tint);
+  color-scheme: light;
+  transition: background-color 180ms ease;
+}
+
+html.dark .app-shell {
+  color-scheme: dark;
+}
+
+.app-navigation-layout,
+.app-navigation-layout > .n-layout-scroll-container,
+.app-workspace,
+.app-workspace > .n-layout-scroll-container {
+  background-color: transparent !important;
 }
 
 .app-shell--locked .title-bar {
@@ -584,6 +626,8 @@ body {
   height: calc(100vh - var(--app-title-bar-height)); /* 仅减去 TitleBar 高度 */
   overflow: hidden;
   position: relative;
+  background: var(--app-content-surface);
+  box-shadow: inset 0 1px 0 var(--app-material-border);
 }
 
 .route-page {

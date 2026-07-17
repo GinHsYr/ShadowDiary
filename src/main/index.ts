@@ -5,6 +5,7 @@ import {
   ipcMain,
   dialog,
   nativeImage,
+  nativeTheme,
   clipboard,
   protocol,
   powerMonitor
@@ -120,6 +121,7 @@ const DISGUISE_AUTO_ENABLE_ON_LAUNCH_KEY = 'disguise.autoEnableOnLaunch'
 const DISGUISE_SHORTCUT_KEY = 'disguise.shortcut'
 const DISGUISE_LAST_ENABLED_KEY = 'disguise.lastEnabled'
 const AI_SETTINGS_CONFIG_KEY = 'settings.ai.config.v1'
+const SETTINGS_THEME_KEY = 'settings.theme'
 const DEFAULT_DISGUISE_SHORTCUT = 'Ctrl+Shift+M'
 const DISGUISE_RESTRICTED_ERROR = '浼妯″紡涓嬩笉鍙敤'
 const SECURE_SETTINGS_KEY_ALLOWLIST = new Set<string>([AI_SETTINGS_CONFIG_KEY])
@@ -405,6 +407,10 @@ function parseBooleanSetting(value: string | null | undefined, defaultValue = fa
   const normalized = value?.trim().toLowerCase()
   if (!normalized) return defaultValue
   return normalized === '1' || normalized === 'true'
+}
+
+function applyNativeTheme(value: string | null | undefined): void {
+  nativeTheme.themeSource = value === 'dark' ? 'dark' : 'light'
 }
 
 function normalizeDisguiseShortcut(value: string | null | undefined): string {
@@ -894,6 +900,8 @@ function createWindow(): void {
     minHeight: 550,
     minWidth: 700,
     frame: false,
+    backgroundColor: '#00000000',
+    ...(process.platform === 'win32' ? { backgroundMaterial: 'tabbed' as const } : {}),
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
@@ -954,6 +962,7 @@ app
     await migrateLegacyAvatarSetting()
     applyDisguiseModeOnLaunch()
     await applyMcpConfigFromStoredAiSettings()
+    applyNativeTheme(getSetting(SETTINGS_THEME_KEY))
 
     // Register IPC handlers
     registerIpcHandlers()
@@ -1154,6 +1163,9 @@ function registerIpcHandlers(): void {
       throw new Error('请使用专用伪装设置接口')
     }
     const releasedIds = setSetting(key, value)
+    if (key === SETTINGS_THEME_KEY) {
+      applyNativeTheme(value)
+    }
     if (!isDisguiseModeEnabled()) {
       await cleanupReleasedImages(releasedIds)
     }

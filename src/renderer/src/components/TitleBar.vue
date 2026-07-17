@@ -90,11 +90,19 @@ const close = (): void => {
   z-index: 1000;
   display: flex;
   height: 32px;
-  background: #ffffff;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  background: transparent;
+  border: 0;
   user-select: none;
   -webkit-app-region: drag;
+}
+
+.title-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--app-material-border-soft), transparent 52%);
+  opacity: 0.34;
 }
 
 .title-bar-drag-region {
@@ -112,6 +120,7 @@ const close = (): void => {
 
 .title-bar-controls {
   display: flex;
+  position: relative;
   -webkit-app-region: no-drag;
 }
 
@@ -120,16 +129,22 @@ const close = (): void => {
   height: 32px;
   border: none;
   background: transparent;
-  color: #333333;
+  color: rgba(24, 24, 27, 0.86);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.2s;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
 }
 
 .title-bar-button:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--app-material-control-hover);
+}
+
+.title-bar-button:active {
+  background: var(--app-material-control-active);
 }
 
 .title-bar-button.close:hover {
@@ -143,8 +158,7 @@ const close = (): void => {
 
 /* 暗色主题适配 */
 html.dark .title-bar {
-  background: #18181c;
-  border-bottom-color: rgba(255, 255, 255, 0.12);
+  background: transparent;
 }
 
 html.dark .title-bar-button {
@@ -152,7 +166,7 @@ html.dark .title-bar-button {
 }
 
 html.dark .title-bar-button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--app-material-control-hover);
 }
 
 html.dark .title-bar-button.close:hover {
