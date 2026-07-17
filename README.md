@@ -161,6 +161,8 @@ Install dependencies:
 npm install
 ```
 
+Native modules used by Electron, Sharp, SQLite, and the build toolchain are OS-specific. Windows and WSL/Linux can share the source tree and `package-lock.json`, but must not share one `node_modules` directory. Run `npm ci` separately in a Windows working directory and a Linux working directory; use `npm run build:win` on Windows and `npm run build:linux` on Linux.
+
 Run the desktop app in development mode:
 
 ```bash

@@ -93,6 +93,7 @@
         @pointermove="handleFastScrollPointerMove"
         @pointerup="handleFastScrollPointerUp"
         @pointercancel="handleFastScrollPointerCancel"
+        @wheel.passive="handleFastScrollWheel"
         @keydown="handleFastScrollKeydown"
       >
         <div class="fast-scroll-track" aria-hidden="true" />
@@ -550,6 +551,26 @@ function handleFastScrollPointerCancel(event: PointerEvent): void {
   finishFastScrollPointer(event, false)
 }
 
+function handleFastScrollWheel(event: WheelEvent): void {
+  const el = listRef.value
+  if (!el) return
+
+  handleUserScrollIntent()
+
+  const pageSize = Math.max(1, el.clientHeight)
+  const deltaScale =
+    event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? 16
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? pageSize
+        : 1
+  el.scrollBy({
+    top: event.deltaY * deltaScale,
+    left: event.deltaX * deltaScale,
+    behavior: 'auto'
+  })
+}
+
 function handleFastScrollKeydown(event: KeyboardEvent): void {
   if (loading.value || totalCount.value <= 1) return
 
@@ -996,24 +1017,23 @@ defineExpose({
 }
 
 .list-body {
+  width: 100%;
   height: 100%;
+  box-sizing: border-box;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 8px;
 }
 
 .list-body.has-fast-scroll {
-  padding-right: 14px;
-  scrollbar-width: none;
-}
-
-.list-body.has-fast-scroll::-webkit-scrollbar {
-  width: 0;
+  padding-right: 18px;
+  scrollbar-gutter: stable;
 }
 
 .fast-scroll-rail {
   position: absolute;
   top: 8px;
-  right: 2px;
+  right: 4px;
   bottom: 8px;
   z-index: 3;
   width: 10px;

@@ -161,6 +161,8 @@ npm run build:windows-hello-helper
 npm install
 ```
 
+注意：Electron、Sharp、SQLite 和构建工具包含操作系统相关的原生模块。Windows 和 WSL/Linux 可以共用源码与 `package-lock.json`，但不要共用同一个 `node_modules`；请分别在 Windows 工作目录和 Linux 工作目录执行 `npm ci`。在 Windows 使用 `npm run build:win`，在 Linux 使用 `npm run build:linux`。
+
 以开发模式运行桌面应用：
 
 ```bash
