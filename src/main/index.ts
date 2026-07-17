@@ -901,7 +901,7 @@ function createWindow(): void {
     minWidth: 700,
     frame: false,
     backgroundColor: '#00000000',
-    ...(process.platform === 'win32' ? { backgroundMaterial: 'tabbed' as const } : {}),
+    ...(process.platform === 'win32' ? { backgroundMaterial: 'acrylic' as const } : {}),
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {

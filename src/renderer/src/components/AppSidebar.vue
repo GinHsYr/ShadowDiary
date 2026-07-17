@@ -366,7 +366,6 @@ const toggleTheme = (): void => {
 .app-sidebar {
   height: 100%;
   background: transparent !important;
-  border-right: 1px solid var(--app-material-border);
   box-sizing: border-box;
   --n-toggle-button-color: var(--app-material-popover) !important;
   --n-toggle-button-border: 1px solid var(--app-material-border) !important;
@@ -377,7 +376,7 @@ const toggleTheme = (): void => {
   flex-direction: column;
   height: 100%;
   box-sizing: border-box;
-  padding-bottom: 36px;
+  padding-bottom: 0;
 }
 
 .logo-container {

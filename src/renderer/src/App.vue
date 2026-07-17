@@ -491,7 +491,8 @@ onBeforeUnmount(() => {
 <style>
 :root {
   --app-title-bar-height: 32px;
-  --app-material-tint: rgba(243, 243, 243, 0.72);
+  --app-content-radius: 8px;
+  --app-material-tint: rgba(243, 243, 243, 0.48);
   --app-material-control: rgba(255, 255, 255, 0.58);
   --app-material-control-hover: rgba(255, 255, 255, 0.78);
   --app-material-control-active: rgba(255, 255, 255, 0.46);
@@ -503,7 +504,7 @@ onBeforeUnmount(() => {
 }
 
 html.dark {
-  --app-material-tint: rgba(20, 20, 23, 0.76);
+  --app-material-tint: rgba(20, 20, 23, 0.6);
   --app-material-control: rgba(255, 255, 255, 0.075);
   --app-material-control-hover: rgba(255, 255, 255, 0.12);
   --app-material-control-active: rgba(255, 255, 255, 0.055);
@@ -627,7 +628,8 @@ html.dark .app-shell {
   overflow: hidden;
   position: relative;
   background: var(--app-content-surface);
-  box-shadow: inset 0 1px 0 var(--app-material-border);
+  border-radius: var(--app-content-radius);
+  box-shadow: inset 0 0 0 1px var(--app-material-border);
 }
 
 .route-page {
