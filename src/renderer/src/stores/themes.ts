@@ -170,7 +170,21 @@ export const useThemeStore = defineStore('theme', {
           primaryColor: accentPalette.primaryColor,
           primaryColorHover: accentPalette.primaryColorHover,
           primaryColorPressed: accentPalette.primaryColorPressed,
-          primaryColorSuppl: accentPalette.primaryColorSuppl
+          primaryColorSuppl: accentPalette.primaryColorSuppl,
+          ...(this.isDark
+            ? {
+                bodyColor: '#202126',
+                cardColor: '#292a31',
+                modalColor: '#303138',
+                popoverColor: '#363740',
+                tableColor: '#292a31',
+                tableHeaderColor: 'rgba(255, 255, 255, 0.07)',
+                inputColor: 'rgba(255, 255, 255, 0.09)',
+                actionColor: 'rgba(255, 255, 255, 0.07)',
+                hoverColor: 'rgba(255, 255, 255, 0.1)',
+                pressedColor: 'rgba(255, 255, 255, 0.065)'
+              }
+            : {})
         }
       }
     },

@@ -215,6 +215,14 @@ const jaJP = {
     other: 'その他',
     mentionChartTitle: '人物の言及頻度',
     mentionTooltip: '{name}: {count} 回 ({percent}%)',
+    moodChartTitle: '気分の推移',
+    moodRange: {
+      days7: '7日',
+      days30: '30日',
+      days90: '90日'
+    },
+    moodLevels: ['😢 悲しい', '😴 疲れた', '😌 穏やか', '🤩 興奮', '😊 楽しい'],
+    moodEmpty: 'この期間の気分記録はありません',
     monthLabel: '{year}/{month}',
     yearLabel: '{year}',
     weekDays: ['日', '月', '火', '水', '木', '金', '土'],

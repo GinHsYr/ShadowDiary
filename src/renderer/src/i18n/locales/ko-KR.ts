@@ -215,6 +215,14 @@ const koKR = {
     other: '기타',
     mentionChartTitle: '인물 언급 빈도',
     mentionTooltip: '{name}: {count}회 ({percent}%)',
+    moodChartTitle: '기분 변화',
+    moodRange: {
+      days7: '7일',
+      days30: '30일',
+      days90: '90일'
+    },
+    moodLevels: ['😢 슬픔', '😴 피곤함', '😌 평온함', '🤩 신남', '😊 행복함'],
+    moodEmpty: '이 기간에는 기분 기록이 없습니다',
     monthLabel: '{year}년 {month}월',
     yearLabel: '{year}',
     weekDays: ['일', '월', '화', '수', '목', '금', '토'],

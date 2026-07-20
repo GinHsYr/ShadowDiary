@@ -572,6 +572,7 @@ defineExpose({ flushSave })
   height: 100%;
   min-width: 200px;
   max-width: 480px;
+  background: var(--app-list-panel-surface);
 }
 
 .resize-handle {
@@ -758,6 +759,24 @@ html.dark .title-input::placeholder {
   border-color: var(--app-accent-40, rgba(24, 160, 88, 0.4));
   color: var(--app-accent-color, #18a058);
   font-weight: 600;
+}
+
+html.dark .mood-btn {
+  color: rgba(255, 255, 255, 0.74);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+html.dark .mood-btn:hover {
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .mood-btn.active {
+  color: var(--app-accent-color, #18a058);
+  background: var(--app-accent-16, rgba(24, 160, 88, 0.16));
+  border-color: var(--app-accent-40, rgba(24, 160, 88, 0.4));
 }
 
 .editor-body {

@@ -215,6 +215,14 @@ const enUS = {
     other: 'Other',
     mentionChartTitle: 'Person Mention Frequency',
     mentionTooltip: '{name}: {count} times ({percent}%)',
+    moodChartTitle: 'Mood Trends',
+    moodRange: {
+      days7: '7D',
+      days30: '30D',
+      days90: '90D'
+    },
+    moodLevels: ['😢 Sad', '😴 Tired', '😌 Calm', '🤩 Excited', '😊 Happy'],
+    moodEmpty: 'No mood records in this period',
     monthLabel: '{month}/{year}',
     yearLabel: '{year}',
     weekDays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],

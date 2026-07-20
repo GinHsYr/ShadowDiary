@@ -244,6 +244,7 @@ defineExpose({ flushSave })
   height: 100%;
   min-width: 200px;
   max-width: 480px;
+  background: var(--app-list-panel-surface);
 }
 
 .resize-handle {

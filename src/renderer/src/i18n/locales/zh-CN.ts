@@ -215,6 +215,14 @@ const zhCN = {
     other: '其他',
     mentionChartTitle: '人物提及次数',
     mentionTooltip: '{name}: {count}次 ({percent}%)',
+    moodChartTitle: '心情曲线',
+    moodRange: {
+      days7: '7天',
+      days30: '30天',
+      days90: '90天'
+    },
+    moodLevels: ['😢 难过', '😴 疲惫', '😌 平静', '🤩 兴奋', '😊 开心'],
+    moodEmpty: '这段时间还没有心情记录',
     monthLabel: '{year}年{month}月',
     yearLabel: '{year}年',
     weekDays: ['日', '一', '二', '三', '四', '五', '六'],

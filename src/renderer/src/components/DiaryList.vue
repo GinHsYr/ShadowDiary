@@ -1002,7 +1002,7 @@ defineExpose({
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--n-color, #fff);
+  background: var(--app-list-panel-surface, var(--n-color, #fff));
 }
 
 .list-topbar {
@@ -1084,7 +1084,7 @@ defineExpose({
   min-width: max-content;
   padding: 4px 8px;
   border-radius: 6px;
-  background: rgba(24, 24, 28, 0.9);
+  background: var(--app-editor-elevated-surface, rgba(24, 24, 28, 0.9));
   color: #fff;
   font-size: 12px;
   line-height: 18px;

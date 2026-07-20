@@ -1381,10 +1381,14 @@ html.dark {
   --editor-hr-color: rgba(255, 255, 255, 0.09);
 }
 
+html.dark .editor-search-trigger {
+  color: rgba(255, 255, 255, 0.72);
+}
+
 /* 深色模式下的 Froala 编辑器样式覆盖 */
 html.dark .diary-editor-wrapper :deep(.fr-toolbar),
 html.dark .diary-editor-wrapper :deep(.fr-second-toolbar) {
-  background: #101014 !important;
+  background: var(--app-editor-toolbar-surface, #2c2d33) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.09) !important;
   border-top: none !important;
   border-left: none !important;
@@ -1427,35 +1431,64 @@ html.dark .diary-editor-wrapper :deep(.fr-box .fr-view) {
 
 html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn),
 html.dark .diary-editor-wrapper :deep(.fr-btn) {
-  color: rgba(255, 255, 255, 0.82) !important;
+  color: rgba(255, 255, 255, 0.88) !important;
+}
+
+html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn svg path) {
+  fill: rgba(255, 255, 255, 0.88) !important;
+}
+
+html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn i),
+html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn span:not(.fr-sr-only)) {
+  color: rgba(255, 255, 255, 0.88) !important;
+}
+
+html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn.fr-dropdown::after) {
+  border-top-color: rgba(255, 255, 255, 0.76) !important;
 }
 
 html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn:hover),
 html.dark .diary-editor-wrapper :deep(.fr-btn:hover) {
-  background: rgba(255, 255, 255, 0.08) !important;
-}
-
-html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn.fr-active),
-html.dark .diary-editor-wrapper :deep(.fr-btn.fr-active) {
   background: rgba(255, 255, 255, 0.12) !important;
   color: #fff !important;
 }
 
+html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn:hover svg path) {
+  fill: #fff !important;
+}
+
+html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn.fr-active),
+html.dark .diary-editor-wrapper :deep(.fr-btn.fr-active),
+html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn.fr-btn-active-popup) {
+  background: rgba(255, 255, 255, 0.16) !important;
+  color: #fff !important;
+}
+
+html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn.fr-active svg path),
+html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn.fr-btn-active-popup svg path) {
+  fill: #fff !important;
+}
+
+html.dark .diary-editor-wrapper :deep(.fr-command.fr-btn:focus-visible) {
+  outline: 2px solid var(--app-accent-40, rgba(24, 160, 88, 0.4)) !important;
+  outline-offset: -2px;
+}
+
 html.dark .diary-editor-wrapper :deep(.fr-separator) {
-  background: rgba(255, 255, 255, 0.09) !important;
+  background: rgba(255, 255, 255, 0.15) !important;
 }
 
 /* 下拉菜单 */
 html.dark .diary-editor-wrapper :deep(.fr-dropdown-menu),
 html.dark .diary-editor-wrapper :deep(.fr-popup) {
-  background: #252526 !important;
+  background: var(--app-editor-elevated-surface, #393a42) !important;
   border-color: rgba(255, 255, 255, 0.09) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
 }
 
 html.dark .diary-editor-wrapper :deep(.fr-dropdown-menu .fr-dropdown-wrapper),
 html.dark .diary-editor-wrapper :deep(.fr-popup .fr-dropdown-wrapper) {
-  background: #252526 !important;
+  background: var(--app-editor-elevated-surface, #393a42) !important;
 }
 
 html.dark
@@ -1475,7 +1508,7 @@ html.dark .diary-editor-wrapper :deep(.fr-command.fr-dropdown-item:hover) {
 /* 底部栏 */
 html.dark .diary-editor-wrapper :deep(.fr-counter),
 html.dark .diary-editor-wrapper :deep(.fr-bottom) {
-  background: #252526 !important;
+  background: var(--app-editor-elevated-surface, #393a42) !important;
   border-top-color: rgba(255, 255, 255, 0.09) !important;
   border-left: none !important;
   border-right: none !important;
@@ -1552,7 +1585,7 @@ html.dark .diary-editor-wrapper :deep(.fr-color-hex-layer input) {
 
 /* 链接编辑弹窗 */
 html.dark .diary-editor-wrapper :deep(.fr-link-insert-layer) {
-  background: #252526 !important;
+  background: var(--app-editor-elevated-surface, #393a42) !important;
 }
 
 /* 图片编辑工具栏 */
@@ -1563,7 +1596,7 @@ html.dark .diary-editor-wrapper :deep(.fr-image-overlay) {
 
 /* 快速插入按钮 */
 html.dark .diary-editor-wrapper :deep(.fr-quick-insert) {
-  background: #252526 !important;
+  background: var(--app-editor-elevated-surface, #393a42) !important;
   border-color: rgba(255, 255, 255, 0.09) !important;
   color: rgba(255, 255, 255, 0.82) !important;
 }

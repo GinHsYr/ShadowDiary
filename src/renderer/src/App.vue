@@ -501,18 +501,22 @@ onBeforeUnmount(() => {
   --app-material-border-soft: rgba(255, 255, 255, 0.56);
   --app-material-shadow: rgba(0, 0, 0, 0.16);
   --app-content-surface: rgba(250, 250, 250, 0.97);
+  --app-list-panel-surface: rgba(255, 255, 255, 0.96);
 }
 
 html.dark {
-  --app-material-tint: rgba(20, 20, 23, 0.6);
+  --app-material-tint: rgba(48, 49, 55, 0.56);
   --app-material-control: rgba(255, 255, 255, 0.075);
   --app-material-control-hover: rgba(255, 255, 255, 0.12);
   --app-material-control-active: rgba(255, 255, 255, 0.055);
-  --app-material-popover: rgba(28, 28, 32, 0.9);
-  --app-material-border: rgba(255, 255, 255, 0.11);
+  --app-material-popover: rgba(54, 55, 62, 0.92);
+  --app-material-border: rgba(255, 255, 255, 0.12);
   --app-material-border-soft: rgba(255, 255, 255, 0.08);
-  --app-material-shadow: rgba(0, 0, 0, 0.42);
-  --app-content-surface: rgba(15, 15, 18, 0.97);
+  --app-material-shadow: rgba(0, 0, 0, 0.34);
+  --app-content-surface: rgba(32, 33, 38, 0.97);
+  --app-list-panel-surface: rgba(50, 51, 58, 0.98);
+  --app-editor-toolbar-surface: #2c2d33;
+  --app-editor-elevated-surface: #393a42;
 }
 
 /* 全局重置 */

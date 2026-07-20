@@ -604,7 +604,7 @@ defineExpose({
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--n-color, #fff);
+  background: var(--app-list-panel-surface, var(--n-color, #fff));
 }
 
 .list-header {
@@ -655,7 +655,11 @@ defineExpose({
   color: var(--n-text-color-3, #8a8f98);
   font-size: 11px;
   font-weight: 700;
-  background: color-mix(in srgb, var(--n-color, #fff) 86%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--app-list-panel-surface, var(--n-color, #fff)) 86%,
+    transparent
+  );
   backdrop-filter: blur(8px);
 }
 
@@ -671,7 +675,11 @@ defineExpose({
   gap: 1px;
   padding: 4px 2px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--n-color, #fff) 78%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--app-list-panel-surface, var(--n-color, #fff)) 78%,
+    transparent
+  );
   border: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.08));
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
   transform: translateY(-50%);

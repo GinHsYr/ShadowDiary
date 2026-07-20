@@ -2,8 +2,6 @@
 import { onBeforeUnmount, onMounted, ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  NGrid,
-  NGi,
   NCard,
   NStatistic,
   NSpace,
@@ -15,21 +13,37 @@ import {
   NTag,
   NSpin,
   NPagination,
-  NProgress
+  NProgress,
+  NButtonGroup,
+  useThemeVars
 } from 'naive-ui'
 import { ChevronBackOutline, ChevronForwardOutline, TodayOutline } from '@vicons/ionicons5'
 import { useRouter } from 'vue-router'
 import type { DiaryEntry, PersonMentionDetailItem } from '../../../../types/model'
 import { use } from 'echarts/core'
-import { PieChart } from 'echarts/charts'
-import { TitleComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { LineChart, PieChart } from 'echarts/charts'
+import {
+  GridComponent,
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent
+} from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 
-use([PieChart, TitleComponent, TooltipComponent, LegendComponent, CanvasRenderer])
+use([
+  PieChart,
+  LineChart,
+  GridComponent,
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  CanvasRenderer
+])
 
 const router = useRouter()
-const { t, tm } = useI18n()
+const { t, tm, locale } = useI18n()
+const themeVars = useThemeVars()
 
 // 真实数据
 const totalEntries = ref(0)
@@ -38,6 +52,8 @@ const totalCharacters = ref(0)
 const recentEntries = ref<DiaryEntry[]>([])
 const diaryDates = ref<Set<string>>(new Set())
 const personMentionData = ref<{ name: string; count: number }[]>([])
+const moodMap = ref<Record<string, number>>({})
+const moodRange = ref<7 | 30 | 90>(30)
 const showMentionModal = ref(false)
 const mentionLoading = ref(false)
 const selectedPerson = ref('')
@@ -128,6 +144,7 @@ async function loadStats(): Promise<void> {
     totalEntries.value = stats.totalEntries
     currentStreak.value = stats.currentStreak
     totalCharacters.value = stats.totalCharacters
+    moodMap.value = stats.moodMap
   } catch (error) {
     console.error('加载统计失败:', error)
   }
@@ -187,7 +204,8 @@ const pieChartOption = computed(() => {
       top: 8,
       textStyle: {
         fontSize: 14,
-        fontWeight: 600
+        fontWeight: 600,
+        color: themeVars.value.textColor1
       }
     },
     tooltip: {
@@ -204,7 +222,10 @@ const pieChartOption = computed(() => {
       orient: 'horizontal',
       left: 12,
       right: 12,
-      bottom: 0
+      bottom: 0,
+      textStyle: {
+        color: themeVars.value.textColor2
+      }
     },
     series: [
       {
@@ -214,7 +235,7 @@ const pieChartOption = computed(() => {
         avoidLabelOverlap: true,
         itemStyle: {
           borderRadius: 6,
-          borderColor: '#fff',
+          borderColor: themeVars.value.cardColor,
           borderWidth: 2
         },
         label: {
@@ -232,6 +253,134 @@ const pieChartOption = computed(() => {
     ]
   }
 })
+
+const moodRangeOptions = [
+  { days: 7 as const, labelKey: 'dashboard.moodRange.days7' },
+  { days: 30 as const, labelKey: 'dashboard.moodRange.days30' },
+  { days: 90 as const, labelKey: 'dashboard.moodRange.days90' }
+]
+
+function startOfLocalDay(date: Date): Date {
+  const result = new Date(date)
+  result.setHours(0, 0, 0, 0)
+  return result
+}
+
+function parseLocalDate(date: string): number {
+  const [year, month, day] = date.split('-').map(Number)
+  return new Date(year, month - 1, day).getTime()
+}
+
+const moodRangeBounds = computed(() => {
+  const end = startOfLocalDay(new Date())
+  const start = new Date(end)
+  start.setDate(start.getDate() - moodRange.value + 1)
+  return { start: start.getTime(), end: end.getTime() }
+})
+
+const moodPoints = computed<[number, number][]>(() =>
+  Object.entries(moodMap.value)
+    .map(([date, value]) => [parseLocalDate(date), value] as [number, number])
+    .filter(([date]) => date >= moodRangeBounds.value.start && date <= moodRangeBounds.value.end)
+    .sort(([dateA], [dateB]) => dateA - dateB)
+)
+
+function moodLabel(value: number): string {
+  const levels = tm('dashboard.moodLevels') as string[]
+  return levels[value - 1] ?? String(value)
+}
+
+function formatMoodDate(value: number, options: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat(locale.value, options).format(new Date(value))
+}
+
+interface MoodTooltipParam {
+  marker?: string
+  value: [number, number]
+}
+
+const moodChartOption = computed(() => ({
+  animationDuration: shouldReduceMotion() ? 0 : 450,
+  grid: {
+    top: 18,
+    right: 20,
+    bottom: 32,
+    left: 68
+  },
+  tooltip: {
+    trigger: 'axis',
+    formatter: (rawParams: MoodTooltipParam | MoodTooltipParam[]) => {
+      const params = Array.isArray(rawParams) ? rawParams[0] : rawParams
+      if (!params) return ''
+      const [date, mood] = params.value
+      const dateLabel = formatMoodDate(date, { year: 'numeric', month: 'short', day: 'numeric' })
+      return `${dateLabel}<br/>${params.marker ?? ''}${moodLabel(mood)}`
+    }
+  },
+  xAxis: {
+    type: 'time',
+    min: moodRangeBounds.value.start,
+    max: moodRangeBounds.value.end,
+    boundaryGap: false,
+    axisLine: {
+      lineStyle: { color: themeVars.value.borderColor }
+    },
+    axisTick: { show: false },
+    axisLabel: {
+      color: themeVars.value.textColor3,
+      hideOverlap: true,
+      formatter: (value: number) => formatMoodDate(value, { month: 'short', day: 'numeric' })
+    },
+    splitLine: { show: false }
+  },
+  yAxis: {
+    type: 'value',
+    min: 1,
+    max: 5,
+    interval: 1,
+    axisLine: { show: false },
+    axisTick: { show: false },
+    axisLabel: {
+      color: themeVars.value.textColor3,
+      formatter: (value: number) => moodLabel(value)
+    },
+    splitLine: {
+      lineStyle: {
+        color: themeVars.value.borderColor,
+        type: 'dashed',
+        opacity: 0.65
+      }
+    }
+  },
+  series: [
+    {
+      type: 'line',
+      data: moodPoints.value,
+      smooth: 0.35,
+      symbol: 'circle',
+      symbolSize: 7,
+      showSymbol: moodPoints.value.length <= 30,
+      lineStyle: {
+        color: themeVars.value.primaryColor,
+        width: 3,
+        cap: 'round'
+      },
+      itemStyle: {
+        color: themeVars.value.primaryColor,
+        borderColor: themeVars.value.cardColor,
+        borderWidth: 2
+      },
+      areaStyle: {
+        color: themeVars.value.primaryColor,
+        opacity: 0.1
+      },
+      emphasis: {
+        focus: 'series',
+        scale: 1.35
+      }
+    }
+  ]
+}))
 
 onMounted(() => {
   loadStats()
@@ -608,202 +757,233 @@ const jumpToLastMonth = (): void => {
       </h2>
     </div>
 
-    <!-- 日历卡片 -->
-    <n-card :bordered="false" class="calendar-card motion-section" style="--section-index: 1">
-      <!-- 日历头部：月份导航 + 快捷跳转 -->
-      <div class="calendar-top">
-        <div class="month-nav">
-          <n-button quaternary circle size="small" @click="prevMonth">
-            <template #icon>
-              <n-icon><ChevronBackOutline /></n-icon>
-            </template>
-          </n-button>
+    <div class="dashboard-primary-grid">
+      <!-- 日历卡片 -->
+      <n-card :bordered="false" class="calendar-card motion-section" style="--section-index: 1">
+        <!-- 日历头部：月份导航 + 快捷跳转 -->
+        <div class="calendar-top">
+          <div class="month-nav">
+            <n-button quaternary circle size="small" @click="prevMonth">
+              <template #icon>
+                <n-icon><ChevronBackOutline /></n-icon>
+              </template>
+            </n-button>
 
-          <n-popover
-            v-model:show="showYearMonthPicker"
-            trigger="click"
-            placement="bottom"
-            :show-arrow="false"
-            raw
-            class="ym-popover"
-          >
-            <template #trigger>
-              <span class="month-label clickable" @click="openYearMonthPicker">{{
-                monthLabel
-              }}</span>
-            </template>
-            <div class="ym-picker">
-              <div class="ym-year-nav">
-                <n-button quaternary circle size="tiny" @click="pickerPrevYear">
-                  <template #icon>
-                    <n-icon size="14"><ChevronBackOutline /></n-icon>
-                  </template>
-                </n-button>
-                <span class="ym-year-label">{{
-                  t('dashboard.yearLabel', { year: pickerYear })
+            <n-popover
+              v-model:show="showYearMonthPicker"
+              trigger="click"
+              placement="bottom"
+              :show-arrow="false"
+              raw
+              class="ym-popover"
+            >
+              <template #trigger>
+                <span class="month-label clickable" @click="openYearMonthPicker">{{
+                  monthLabel
                 }}</span>
-                <n-button quaternary circle size="tiny" @click="pickerNextYear">
-                  <template #icon>
-                    <n-icon size="14"><ChevronForwardOutline /></n-icon>
-                  </template>
-                </n-button>
-              </div>
-              <div class="ym-month-grid">
-                <div
-                  v-for="(m, idx) in months"
-                  :key="idx"
-                  class="ym-month-cell"
-                  :class="{
-                    'is-active': isCurrentYearMonth(idx),
-                    'is-now': isNowYearMonth(idx)
-                  }"
-                  @click="selectMonth(idx)"
-                >
-                  {{ m }}
+              </template>
+              <div class="ym-picker">
+                <div class="ym-year-nav">
+                  <n-button quaternary circle size="tiny" @click="pickerPrevYear">
+                    <template #icon>
+                      <n-icon size="14"><ChevronBackOutline /></n-icon>
+                    </template>
+                  </n-button>
+                  <span class="ym-year-label">{{
+                    t('dashboard.yearLabel', { year: pickerYear })
+                  }}</span>
+                  <n-button quaternary circle size="tiny" @click="pickerNextYear">
+                    <template #icon>
+                      <n-icon size="14"><ChevronForwardOutline /></n-icon>
+                    </template>
+                  </n-button>
+                </div>
+                <div class="ym-month-grid">
+                  <div
+                    v-for="(m, idx) in months"
+                    :key="idx"
+                    class="ym-month-cell"
+                    :class="{
+                      'is-active': isCurrentYearMonth(idx),
+                      'is-now': isNowYearMonth(idx)
+                    }"
+                    @click="selectMonth(idx)"
+                  >
+                    {{ m }}
+                  </div>
                 </div>
               </div>
-            </div>
-          </n-popover>
+            </n-popover>
 
-          <n-button quaternary circle size="small" @click="nextMonth">
-            <template #icon>
-              <n-icon><ChevronForwardOutline /></n-icon>
-            </template>
-          </n-button>
-          <n-button quaternary size="tiny" class="today-btn" @click="goToToday">
-            <template #icon>
-              <n-icon size="14"><TodayOutline /></n-icon>
-            </template>
-            {{ t('dashboard.backToToday') }}
-          </n-button>
+            <n-button quaternary circle size="small" @click="nextMonth">
+              <template #icon>
+                <n-icon><ChevronForwardOutline /></n-icon>
+              </template>
+            </n-button>
+            <n-button quaternary size="tiny" class="today-btn" @click="goToToday">
+              <template #icon>
+                <n-icon size="14"><TodayOutline /></n-icon>
+              </template>
+              {{ t('dashboard.backToToday') }}
+            </n-button>
+          </div>
+          <n-space :size="8" class="quick-jump">
+            <n-button size="tiny" secondary @click="jumpToToday">{{
+              t('dashboard.quickJump.today')
+            }}</n-button>
+            <n-button size="tiny" secondary @click="jumpToYesterday">{{
+              t('dashboard.quickJump.yesterday')
+            }}</n-button>
+            <n-button size="tiny" secondary @click="jumpToLastWeek">{{
+              t('dashboard.quickJump.lastWeek')
+            }}</n-button>
+            <n-button size="tiny" secondary @click="jumpToLastMonth">{{
+              t('dashboard.quickJump.lastMonth')
+            }}</n-button>
+          </n-space>
         </div>
-        <n-space :size="8" class="quick-jump">
-          <n-button size="tiny" secondary @click="jumpToToday">{{
-            t('dashboard.quickJump.today')
-          }}</n-button>
-          <n-button size="tiny" secondary @click="jumpToYesterday">{{
-            t('dashboard.quickJump.yesterday')
-          }}</n-button>
-          <n-button size="tiny" secondary @click="jumpToLastWeek">{{
-            t('dashboard.quickJump.lastWeek')
-          }}</n-button>
-          <n-button size="tiny" secondary @click="jumpToLastMonth">{{
-            t('dashboard.quickJump.lastMonth')
-          }}</n-button>
-        </n-space>
-      </div>
 
-      <!-- 星期头 -->
-      <div class="weekday-row">
-        <div v-for="w in weekDays" :key="w" class="weekday-cell">{{ w }}</div>
-      </div>
+        <!-- 星期头 -->
+        <div class="weekday-row">
+          <div v-for="w in weekDays" :key="w" class="weekday-cell">{{ w }}</div>
+        </div>
 
-      <!-- 日期格子 -->
-      <transition :name="monthGridTransitionName" mode="out-in">
-        <div :key="monthGridKey" class="days-grid">
-          <div
-            v-for="(day, idx) in calendarDays"
-            :key="idx"
-            class="day-cell"
-            :class="{
-              'other-month': !day.isCurrentMonth,
-              'is-today': day.isToday,
-              'has-diary': day.hasDiary && day.isCurrentMonth
-            }"
-            @click="handleDateClick(day)"
-          >
-            <span class="day-number">{{ day.date }}</span>
-            <span v-if="day.hasDiary && day.isCurrentMonth" class="diary-dot"></span>
+        <!-- 日期格子 -->
+        <transition :name="monthGridTransitionName" mode="out-in">
+          <div :key="monthGridKey" class="days-grid">
+            <div
+              v-for="(day, idx) in calendarDays"
+              :key="idx"
+              class="day-cell"
+              :class="{
+                'other-month': !day.isCurrentMonth,
+                'is-today': day.isToday,
+                'has-diary': day.hasDiary && day.isCurrentMonth
+              }"
+              @click="handleDateClick(day)"
+            >
+              <span class="day-number">{{ day.date }}</span>
+              <span v-if="day.hasDiary && day.isCurrentMonth" class="diary-dot"></span>
+            </div>
+          </div>
+        </transition>
+
+        <!-- 图例 -->
+        <div class="calendar-legend">
+          <div class="legend-item">
+            <span class="legend-dot"></span>
+            <span>{{ t('dashboard.legend.hasDiary') }}</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-today-box"></span>
+            <span>{{ t('dashboard.legend.today') }}</span>
           </div>
         </div>
-      </transition>
 
-      <!-- 图例 -->
-      <div class="calendar-legend">
-        <div class="legend-item">
-          <span class="legend-dot"></span>
-          <span>{{ t('dashboard.legend.hasDiary') }}</span>
+        <div class="calendar-progress">
+          <div class="calendar-progress-head">
+            <span class="calendar-progress-title">{{ t('dashboard.monthProgressTitle') }}</span>
+            <span class="calendar-progress-percent">{{ selectedMonthWrittenPercent }}%</span>
+          </div>
+          <n-progress
+            type="line"
+            :percentage="selectedMonthWrittenPercent"
+            :show-indicator="false"
+            :height="8"
+            :border-radius="999"
+            :fill-border-radius="999"
+            :color="'var(--app-accent-color, var(--n-color-target, #18a058))'"
+            :rail-color="'var(--app-accent-12, var(--n-border-color, rgba(0, 0, 0, 0.12)))'"
+          />
+          <div class="calendar-progress-meta">
+            {{
+              t('dashboard.monthProgressMeta', {
+                written: selectedMonthWrittenDays,
+                total: selectedMonthTotalDays
+              })
+            }}
+          </div>
         </div>
-        <div class="legend-item">
-          <span class="legend-today-box"></span>
-          <span>{{ t('dashboard.legend.today') }}</span>
-        </div>
-      </div>
+      </n-card>
 
-      <div class="calendar-progress">
-        <div class="calendar-progress-head">
-          <span class="calendar-progress-title">{{ t('dashboard.monthProgressTitle') }}</span>
-          <span class="calendar-progress-percent">{{ selectedMonthWrittenPercent }}%</span>
-        </div>
-        <n-progress
-          type="line"
-          :percentage="selectedMonthWrittenPercent"
-          :show-indicator="false"
-          :height="8"
-          :border-radius="999"
-          :fill-border-radius="999"
-          :color="'var(--app-accent-color, var(--n-color-target, #18a058))'"
-          :rail-color="'var(--app-accent-12, var(--n-border-color, rgba(0, 0, 0, 0.12)))'"
-        />
-        <div class="calendar-progress-meta">
-          {{
-            t('dashboard.monthProgressMeta', {
-              written: selectedMonthWrittenDays,
-              total: selectedMonthTotalDays
-            })
-          }}
-        </div>
-      </div>
-    </n-card>
-
-    <!-- 统计 -->
-    <n-grid
-      :x-gap="24"
-      :cols="3"
-      class="stats-grid motion-section"
-      style="--section-index: 2"
-      :class="{
-        'stats-grid--entered': statsEntered,
-        'stats-grid--skip-enter': skipStatsEnterAnimation
-      }"
-    >
-      <n-gi>
+      <!-- 统计轨道 -->
+      <aside
+        class="stats-rail motion-section"
+        style="--section-index: 2"
+        :class="{
+          'stats-rail--entered': statsEntered,
+          'stats-rail--skip-enter': skipStatsEnterAnimation
+        }"
+      >
         <n-card embedded :bordered="false" class="stat-card" style="--stat-index: 0">
           <n-statistic :label="t('dashboard.stats.totalEntriesLabel')" tabular-nums>
             <n-number-animation :from="0" :to="totalEntries" />
             <template #suffix> {{ t('dashboard.stats.totalEntriesSuffix') }} </template>
           </n-statistic>
         </n-card>
-      </n-gi>
-      <n-gi>
         <n-card embedded :bordered="false" class="stat-card" style="--stat-index: 1">
           <n-statistic :label="t('dashboard.stats.streakLabel')" tabular-nums>
             <n-number-animation :from="0" :to="currentStreak" />
             <template #suffix>{{ t('dashboard.stats.streakSuffix') }}</template>
           </n-statistic>
         </n-card>
-      </n-gi>
-      <n-gi>
         <n-card embedded :bordered="false" class="stat-card" style="--stat-index: 2">
           <n-statistic :label="t('dashboard.stats.charsLabel')" tabular-nums>
             <n-number-animation :from="0" :to="totalCharacters" />
             <template #suffix>{{ t('dashboard.stats.charsSuffix') }}</template>
           </n-statistic>
         </n-card>
-      </n-gi>
-    </n-grid>
+      </aside>
+    </div>
 
-    <!-- 人物提及饼图 -->
-    <n-card
-      v-if="personMentionData.length > 0"
-      :bordered="false"
-      class="chart-card motion-section"
-      style="--section-index: 3"
-    >
-      <div class="chart-content">
-        <v-chart :option="pieChartOption" autoresize class="pie-chart" @click="handlePieClick" />
-      </div>
-    </n-card>
+    <div class="charts-grid">
+      <!-- 人物提及饼图 -->
+      <n-card
+        v-if="personMentionData.length > 0"
+        :bordered="false"
+        class="chart-card motion-section"
+        style="--section-index: 3"
+      >
+        <div class="chart-content">
+          <v-chart :option="pieChartOption" autoresize class="pie-chart" @click="handlePieClick" />
+        </div>
+      </n-card>
+
+      <!-- 心情曲线 -->
+      <n-card
+        :bordered="false"
+        class="chart-card mood-chart-card motion-section"
+        :class="{ 'mood-chart-card--solo': personMentionData.length === 0 }"
+        style="--section-index: 4"
+      >
+        <div class="mood-chart-head">
+          <span class="mood-chart-title">{{ t('dashboard.moodChartTitle') }}</span>
+          <n-button-group size="tiny" class="mood-range-switcher">
+            <n-button
+              v-for="option in moodRangeOptions"
+              :key="option.days"
+              :type="moodRange === option.days ? 'primary' : 'default'"
+              :secondary="moodRange === option.days"
+              :tertiary="moodRange !== option.days"
+              :aria-pressed="moodRange === option.days"
+              @click="moodRange = option.days"
+            >
+              {{ t(option.labelKey) }}
+            </n-button>
+          </n-button-group>
+        </div>
+        <v-chart
+          v-if="moodPoints.length > 0"
+          :option="moodChartOption"
+          autoresize
+          class="mood-chart"
+        />
+        <div v-else class="mood-chart-empty">
+          <span class="mood-chart-empty-icon" aria-hidden="true">◌</span>
+          <span>{{ t('dashboard.moodEmpty') }}</span>
+        </div>
+      </n-card>
+    </div>
 
     <n-modal
       v-model:show="showMentionModal"
@@ -916,17 +1096,29 @@ const jumpToLastMonth = (): void => {
 }
 
 /* ===== 日历卡片 ===== */
-.calendar-card {
+.dashboard-primary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 240px);
+  align-items: stretch;
+  gap: 16px;
   margin-bottom: 24px;
+}
+
+.calendar-card {
+  height: 100%;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.calendar-card :deep(.n-card__content) {
+  padding: 18px 22px;
 }
 
 .calendar-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
   flex-wrap: wrap;
   gap: 8px;
 }
@@ -1030,7 +1222,7 @@ const jumpToLastMonth = (): void => {
 .weekday-row {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .weekday-cell {
@@ -1038,14 +1230,14 @@ const jumpToLastMonth = (): void => {
   font-size: 12px;
   font-weight: 600;
   color: var(--n-text-color-3);
-  padding: 6px 0;
+  padding: 3px 0;
 }
 
 /* 日期网格 */
 .days-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  gap: 1px 2px;
 }
 
 .day-cell {
@@ -1054,7 +1246,7 @@ const jumpToLastMonth = (): void => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 40px;
+  height: 34px;
   border-radius: 8px;
   cursor: pointer;
   overflow: hidden;
@@ -1125,8 +1317,8 @@ const jumpToLastMonth = (): void => {
 .calendar-legend {
   display: flex;
   gap: 20px;
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
   font-size: 12px;
   color: var(--n-text-color-3);
@@ -1154,8 +1346,8 @@ const jumpToLastMonth = (): void => {
 
 /* ===== 统计 ===== */
 .calendar-progress {
-  margin-top: 14px;
-  padding-top: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid var(--n-border-color, rgba(0, 0, 0, 0.06));
 }
 
@@ -1164,7 +1356,7 @@ const jumpToLastMonth = (): void => {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .calendar-progress-title {
@@ -1181,35 +1373,115 @@ const jumpToLastMonth = (): void => {
 }
 
 .calendar-progress-meta {
-  margin-top: 6px;
+  margin-top: 4px;
   font-size: 12px;
   color: var(--n-text-color-3, #888);
 }
 
-.stats-grid {
-  margin-bottom: 24px;
+.stats-rail {
+  display: grid;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
 }
 
 .stat-card {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   border-radius: 12px;
+  border: 1px solid var(--app-material-border);
+  background: var(--n-color-embedded, rgba(255, 255, 255, 0.74));
+  box-shadow:
+    inset 0 1px 0 var(--app-material-border-soft),
+    0 8px 22px rgba(15, 23, 42, 0.045);
   opacity: 0;
   transform: translateY(var(--motion-distance-md)) scale(0.985);
 }
 
-.stats-grid--entered .stat-card {
+.stat-card :deep(.n-card__content) {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 16px 18px;
+  box-sizing: border-box;
+}
+
+.stat-card :deep(.n-statistic) {
+  --n-label-font-size: 12px !important;
+  --n-value-font-size: 27px !important;
+  --n-value-font-weight: 680 !important;
+  width: 100%;
+}
+
+.stat-card :deep(.n-statistic__label) {
+  letter-spacing: 0.02em;
+}
+
+.stat-card :deep(.n-statistic-value) {
+  margin-top: 10px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card :deep(.n-statistic-value__suffix) {
+  margin-left: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--n-text-color-3, #888);
+}
+
+.stats-rail--entered .stat-card {
   animation: stats-card-in var(--motion-spring-normal) var(--ease-spring-pop) both;
   animation-delay: calc(var(--stat-index, 0) * 60ms);
 }
 
-.stats-grid--skip-enter .stat-card {
+.stats-rail--skip-enter .stat-card {
   opacity: 1;
   transform: none;
   animation: none;
 }
 
-/* ===== 饼图 ===== */
-.chart-card {
+@media (max-width: 940px) {
+  .dashboard-primary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stats-rail {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: none;
+  }
+
+  .stat-card {
+    min-height: 108px;
+  }
+}
+
+@media (max-width: 720px) {
+  .stats-rail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stat-card {
+    min-height: 96px;
+  }
+}
+
+/* ===== 图表 ===== */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 16px;
   margin-bottom: 24px;
+}
+
+.chart-card {
+  min-width: 0;
+  height: 100%;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   transition:
@@ -1233,6 +1505,82 @@ const jumpToLastMonth = (): void => {
 
 .pie-chart {
   cursor: pointer;
+}
+
+.mood-chart-card--solo {
+  grid-column: 1 / -1;
+}
+
+.mood-chart-card :deep(.n-card__content) {
+  display: flex;
+  flex-direction: column;
+}
+
+.mood-chart-head {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mood-chart-title {
+  color: var(--n-text-color-1, #333);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mood-range-switcher {
+  flex-shrink: 0;
+}
+
+.mood-range-switcher :deep(.n-button) {
+  padding: 0 9px;
+}
+
+.mood-chart,
+.mood-chart-empty {
+  width: 100%;
+  height: 202px;
+}
+
+.mood-chart-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--n-text-color-3, #999);
+  font-size: 13px;
+}
+
+.mood-chart-empty-icon {
+  color: var(--app-accent-color, #18a058);
+  font-size: 28px;
+  line-height: 1;
+}
+
+@media (max-width: 780px) {
+  .charts-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mood-chart-card--solo {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 460px) {
+  .mood-chart-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mood-chart,
+  .mood-chart-empty {
+    height: 220px;
+  }
 }
 
 /* ===== 提及明细弹窗 ===== */
