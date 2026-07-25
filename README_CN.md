@@ -8,6 +8,12 @@
 影迹是一个本地优先的桌面日记应用，基于 Electron、Vue 3、TypeScript 和加密 SQLite 数据库构建。
 
 中文 | [English](README.md)
+## 展示
+<img src="screenshots/首页.png" width="340" alt="首页" />
+<img src="screenshots/设置.png" width="340" alt="设置" />
+<img src="screenshots/今日.png" width="340" alt="今日" />
+<img src="screenshots/隐私保护.png" width="340" alt="隐私保护" />  
+
 
 ## 项目概览
 

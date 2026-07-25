@@ -9,6 +9,12 @@ Shadow Diary is a local-first desktop diary application built with Electron, Vue
 
 [中文](README_CN.md) | English
 
+## Display
+<img src="screenshots/home.png" width="340" alt="home" />
+<img src="screenshots/setting.png" width="340" alt="setting" />
+<img src="screenshots/today.png" width="340" alt="today" />
+<img src="screenshots/PrivacyProtection.png" width="340" alt="PrivacyProtection" />
+
 ## Overview
 
 Shadow Diary keeps the main application data on the local machine and uses Electron as the boundary between system capabilities and the Vue renderer. The main process owns persistence, filesystem access, image processing, app updates, import/export, Windows Hello verification, and the optional local MCP server. The renderer focuses on the user experience: writing, search, dashboards, archive management, media browsing, settings, privacy lock state, and internationalization.
