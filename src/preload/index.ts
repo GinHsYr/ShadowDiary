@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DataTransferProgress, DiaryAPI, UpdateDownloadProgress } from '../types/api'
+import type {
+  DataTransferProgress,
+  DiaryAPI,
+  SyncRuntimeState,
+  UpdateDownloadProgress
+} from '../types/api'
 
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => {
   return ipcRenderer.invoke(channel, ...args) as Promise<T>
@@ -62,6 +67,37 @@ const api: DiaryAPI = {
     }
     ipcRenderer.on('data:import-progress', listener)
     return () => ipcRenderer.removeListener('data:import-progress', listener)
+  },
+
+  // 局域网同步
+  getSyncState: () => invoke('sync:getState'),
+  setSyncEnabled: (enabled) => invoke('sync:setEnabled', enabled),
+  beginSyncPairing: () => invoke('sync:beginPairing'),
+  getSyncConflicts: () => invoke('sync:getConflicts'),
+  resolveSyncConflict: (id, choice) => invoke('sync:resolveConflict', id, choice),
+  unpairSyncDevice: (deviceId) => invoke('sync:unpairDevice', deviceId),
+  setSyncPrivacyPaused: (paused) => invoke('sync:setPrivacyPaused', paused),
+  onSyncStateChanged: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: SyncRuntimeState): void => {
+      callback(state)
+    }
+    ipcRenderer.on('sync:state-changed', listener)
+    return () => ipcRenderer.removeListener('sync:state-changed', listener)
+  },
+  onSyncDataChanged: (callback) => {
+    const listener = (): void => callback()
+    ipcRenderer.on('sync:data-changed', listener)
+    return () => ipcRenderer.removeListener('sync:data-changed', listener)
+  },
+  onSyncPrepare: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, requestId: string): void => {
+      void callback(requestId)
+    }
+    ipcRenderer.on('sync:prepare', listener)
+    return () => ipcRenderer.removeListener('sync:prepare', listener)
+  },
+  notifySyncPrepareDone: (requestId) => {
+    ipcRenderer.send('sync:prepare-done', requestId)
   },
 
   // 统计

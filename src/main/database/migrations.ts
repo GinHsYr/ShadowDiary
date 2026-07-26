@@ -425,6 +425,46 @@ const migrations: Migration[] = [
         )
       }
     }
+  },
+
+  // Version 9: Add LAN synchronization metadata, tombstones, and conflicts
+  (db) => {
+    db.exec(`
+      CREATE TABLE sync_devices (
+        device_id    TEXT PRIMARY KEY,
+        name         TEXT NOT NULL,
+        paired_at    INTEGER NOT NULL,
+        last_seen_at INTEGER,
+        last_sync_at INTEGER
+      );
+
+      CREATE TABLE sync_records (
+        entity_type   TEXT NOT NULL CHECK (entity_type IN ('diary', 'archive')),
+        entity_id     TEXT NOT NULL,
+        version_vector TEXT NOT NULL,
+        content_hash  TEXT NOT NULL,
+        deleted_at    INTEGER,
+        modified_at   INTEGER NOT NULL,
+        PRIMARY KEY (entity_type, entity_id)
+      );
+
+      CREATE INDEX idx_sync_records_modified ON sync_records(modified_at);
+      CREATE INDEX idx_sync_records_deleted ON sync_records(deleted_at);
+
+      CREATE TABLE sync_conflicts (
+        id             TEXT PRIMARY KEY,
+        entity_type    TEXT NOT NULL CHECK (entity_type IN ('diary', 'archive')),
+        entity_id      TEXT NOT NULL,
+        peer_device_id TEXT NOT NULL,
+        local_payload  TEXT,
+        remote_payload TEXT,
+        local_vector   TEXT NOT NULL,
+        remote_vector  TEXT NOT NULL,
+        created_at     INTEGER NOT NULL
+      );
+
+      CREATE INDEX idx_sync_conflicts_created ON sync_conflicts(created_at);
+    `)
   }
 ]
 

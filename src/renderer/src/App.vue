@@ -7,6 +7,7 @@ import {
   NInputOtp,
   NLayout,
   NLayoutContent,
+  NMessageProvider,
   dateEnUS,
   dateJaJP,
   dateKoKR,
@@ -52,6 +53,7 @@ let idleTimer: number | null = null
 let lastActivityAt = Date.now()
 let removeSystemLockListener: (() => void) | null = null
 let removeBeforeQuitListener: (() => void) | null = null
+let removeSyncPrepareListener: (() => void) | null = null
 let isHandlingBeforeQuit = false
 let removeReducedMotionListener: (() => void) | null = null
 const switchingDisguiseMode = ref(false)
@@ -247,6 +249,16 @@ async function flushBeforeQuit(): Promise<void> {
   }
 }
 
+async function flushBeforeSync(requestId: string): Promise<void> {
+  try {
+    await activeRouteViewRef.value?.flushSave?.()
+  } catch (error) {
+    console.error('同步前保存失败:', error)
+  } finally {
+    window.api.notifySyncPrepareDone(requestId)
+  }
+}
+
 async function handleUnlock(): Promise<void> {
   if (unlocking.value) return
 
@@ -319,6 +331,7 @@ watch(
       privacy.idleLockMs
     ] as const,
   ([isInitialized, isEnabled, hasCredential, isLocked], previous) => {
+    if (isInitialized) void window.api.setSyncPrivacyPaused(isLocked)
     const shouldMonitor = isInitialized && isEnabled && hasCredential
     if (!shouldMonitor || isLocked) {
       clearIdleTimer()
@@ -374,6 +387,7 @@ onMounted(() => {
   removeBeforeQuitListener = window.api.onAppBeforeQuit(() => {
     void flushBeforeQuit()
   })
+  removeSyncPrepareListener = window.api.onSyncPrepare((requestId) => flushBeforeSync(requestId))
 
   evaluateIdleLock()
 })
@@ -401,6 +415,10 @@ onBeforeUnmount(() => {
     removeBeforeQuitListener()
     removeBeforeQuitListener = null
   }
+  if (removeSyncPrepareListener) {
+    removeSyncPrepareListener()
+    removeSyncPrepareListener = null
+  }
 })
 </script>
 
@@ -412,78 +430,80 @@ onBeforeUnmount(() => {
     :date-locale="naiveDateLocale"
   >
     <n-dialog-provider>
-      <div class="app-shell" :class="{ 'app-shell--locked': showLockOverlay }">
-        <transition name="startup-mask-fade">
-          <div v-if="startup.isBooting" class="startup-mask">
-            <div class="startup-mask-icon-shell">
-              <img class="startup-mask-icon" :src="appIconUrl" alt="" aria-hidden="true" />
-            </div>
-          </div>
-        </transition>
-
-        <template v-if="!startup.isBooting">
-          <TitleBar />
-          <n-layout
-            has-sider
-            position="absolute"
-            class="app-navigation-layout"
-            style="top: var(--app-title-bar-height)"
-          >
-            <AppSidebar />
-
-            <n-layout class="app-workspace">
-              <AppHeader />
-              <n-layout-content class="main-content">
-                <router-view
-                  v-if="canRenderUnlockedContent"
-                  v-slot="{ Component, route: currentRoute }"
-                >
-                  <transition :name="routeTransitionName" mode="out-in">
-                    <div :key="currentRoute.fullPath" class="route-page">
-                      <component :is="Component" ref="activeRouteViewRef" />
-                    </div>
-                  </transition>
-                </router-view>
-              </n-layout-content>
-            </n-layout>
-          </n-layout>
-
-          <transition name="privacy-lock-fade" :duration="{ enter: 640, leave: 260 }">
-            <div v-if="showLockOverlay" class="privacy-lock-overlay">
-              <n-card class="privacy-lock-card" :bordered="false">
-                <h2 class="privacy-lock-title">{{ t('app.privacy.title') }}</h2>
-                <p class="privacy-lock-description">
-                  {{
-                    privacy.usesWindowsHello
-                      ? t('app.privacy.unlockWithWindowsHello')
-                      : t('app.privacy.unlockWithPin')
-                  }}
-                </p>
-
-                <div
-                  class="privacy-lock-form"
-                  :class="{ 'privacy-lock-form--windows-hello': privacy.usesWindowsHello }"
-                >
-                  <n-input-otp
-                    v-if="!privacy.usesWindowsHello"
-                    :value="password"
-                    :length="OTP_LENGTH"
-                    mask
-                    :allow-input="allowDigitInput"
-                    size="large"
-                    :status="unlockStatus"
-                    @update:value="handlePasswordInput"
-                    @finish="handlePasswordFinish"
-                  />
-                  <n-button v-else type="primary" :loading="unlocking" @click="handleUnlock">
-                    {{ t('app.privacy.windowsHelloAction') }}
-                  </n-button>
-                </div>
-              </n-card>
+      <n-message-provider>
+        <div class="app-shell" :class="{ 'app-shell--locked': showLockOverlay }">
+          <transition name="startup-mask-fade">
+            <div v-if="startup.isBooting" class="startup-mask">
+              <div class="startup-mask-icon-shell">
+                <img class="startup-mask-icon" :src="appIconUrl" alt="" aria-hidden="true" />
+              </div>
             </div>
           </transition>
-        </template>
-      </div>
+
+          <template v-if="!startup.isBooting">
+            <TitleBar />
+            <n-layout
+              has-sider
+              position="absolute"
+              class="app-navigation-layout"
+              style="top: var(--app-title-bar-height)"
+            >
+              <AppSidebar />
+
+              <n-layout class="app-workspace">
+                <AppHeader />
+                <n-layout-content class="main-content">
+                  <router-view
+                    v-if="canRenderUnlockedContent"
+                    v-slot="{ Component, route: currentRoute }"
+                  >
+                    <transition :name="routeTransitionName" mode="out-in">
+                      <div :key="currentRoute.fullPath" class="route-page">
+                        <component :is="Component" ref="activeRouteViewRef" />
+                      </div>
+                    </transition>
+                  </router-view>
+                </n-layout-content>
+              </n-layout>
+            </n-layout>
+
+            <transition name="privacy-lock-fade" :duration="{ enter: 640, leave: 260 }">
+              <div v-if="showLockOverlay" class="privacy-lock-overlay">
+                <n-card class="privacy-lock-card" :bordered="false">
+                  <h2 class="privacy-lock-title">{{ t('app.privacy.title') }}</h2>
+                  <p class="privacy-lock-description">
+                    {{
+                      privacy.usesWindowsHello
+                        ? t('app.privacy.unlockWithWindowsHello')
+                        : t('app.privacy.unlockWithPin')
+                    }}
+                  </p>
+
+                  <div
+                    class="privacy-lock-form"
+                    :class="{ 'privacy-lock-form--windows-hello': privacy.usesWindowsHello }"
+                  >
+                    <n-input-otp
+                      v-if="!privacy.usesWindowsHello"
+                      :value="password"
+                      :length="OTP_LENGTH"
+                      mask
+                      :allow-input="allowDigitInput"
+                      size="large"
+                      :status="unlockStatus"
+                      @update:value="handlePasswordInput"
+                      @finish="handlePasswordFinish"
+                    />
+                    <n-button v-else type="primary" :loading="unlocking" @click="handleUnlock">
+                      {{ t('app.privacy.windowsHelloAction') }}
+                    </n-button>
+                  </div>
+                </n-card>
+              </div>
+            </transition>
+          </template>
+        </div>
+      </n-message-provider>
     </n-dialog-provider>
   </n-config-provider>
 </template>

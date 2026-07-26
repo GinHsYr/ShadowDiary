@@ -121,6 +121,55 @@ export interface DataTransferProgress {
   message: string
 }
 
+export type SyncPhase =
+  | 'disabled'
+  | 'discovering'
+  | 'pairing'
+  | 'connecting'
+  | 'syncing'
+  | 'conflicts'
+  | 'completed'
+  | 'failed'
+
+export interface PairedSyncDevice {
+  deviceId: string
+  name: string
+  pairedAt: number
+  lastSeenAt?: number
+  lastSyncAt?: number
+}
+
+export interface SyncRuntimeState {
+  enabled: boolean
+  phase: SyncPhase
+  port?: number
+  pairingCode?: string
+  pairingExpiresAt?: number
+  pairedDevices: PairedSyncDevice[]
+  conflictCount: number
+  activeDeviceId?: string
+  completedRecords: number
+  totalRecords: number
+  completedBytes: number
+  totalBytes: number
+  lastSyncAt?: number
+  error?: string
+}
+
+export interface SyncConflict {
+  id: string
+  entityType: 'diary' | 'archive'
+  entityId: string
+  peerDeviceId: string
+  localPayload?: Record<string, unknown>
+  remotePayload?: Record<string, unknown>
+  localVector: Record<string, number>
+  remoteVector: Record<string, number>
+  createdAt: number
+}
+
+export type SyncConflictChoice = 'keepLocal' | 'keepRemote' | 'keepBoth'
+
 export interface DiaryAPI {
   // 档案
   getArchives(params?: ArchiveQueryParams): Promise<Archive[]>
@@ -170,6 +219,19 @@ export interface DiaryAPI {
   cancelDataTransfer(): Promise<boolean>
   onExportProgress(callback: (progress: DataTransferProgress) => void): () => void
   onImportProgress(callback: (progress: DataTransferProgress) => void): () => void
+
+  // 局域网同步
+  getSyncState(): Promise<SyncRuntimeState>
+  setSyncEnabled(enabled: boolean): Promise<SyncRuntimeState>
+  beginSyncPairing(): Promise<SyncRuntimeState>
+  getSyncConflicts(): Promise<SyncConflict[]>
+  resolveSyncConflict(id: string, choice: SyncConflictChoice): Promise<SyncRuntimeState>
+  unpairSyncDevice(deviceId: string): Promise<SyncRuntimeState>
+  setSyncPrivacyPaused(paused: boolean): Promise<void>
+  onSyncStateChanged(callback: (state: SyncRuntimeState) => void): () => void
+  onSyncDataChanged(callback: () => void): () => void
+  onSyncPrepare(callback: (requestId: string) => void | Promise<void>): () => void
+  notifySyncPrepareDone(requestId: string): void
 
   // 统计
   getStats(): Promise<HomePageStats>

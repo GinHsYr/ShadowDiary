@@ -90,6 +90,18 @@
           </n-space>
         </n-card>
 
+        <n-card :title="t('settings.sync.card')" :bordered="false" class="settings-card">
+          <div class="setting-item setting-entry">
+            <div class="setting-info">
+              <label class="setting-label">{{ t('settings.sync.title') }}</label>
+              <span class="setting-description">{{ t('settings.sync.description') }}</span>
+            </div>
+            <n-button @click="handleOpenSyncSettings">
+              {{ t('settings.sync.open') }}
+            </n-button>
+          </div>
+        </n-card>
+
         <!-- 闂呮劗顫嗘穱婵囧Б -->
         <n-card :title="t('settings.privacy.card')" :bordered="false" class="settings-card">
           <n-space vertical :size="16">
@@ -844,6 +856,12 @@ const handleOpenAISettings = (): void => {
 const handleOpenMcpSettings = (): void => {
   router.push('/settings/mcp').catch((error) => {
     console.error('打开 MCP 设置页面失败:', error)
+  })
+}
+
+const handleOpenSyncSettings = (): void => {
+  router.push('/settings/sync').catch((error) => {
+    console.error('打开局域网同步设置页面失败:', error)
   })
 }
 

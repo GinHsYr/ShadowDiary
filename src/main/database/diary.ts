@@ -170,7 +170,7 @@ const blockedHtmlTags = [
 ]
 const blockedHtmlTagPattern = blockedHtmlTags.join('|')
 
-function sanitizeDiaryHtml(content: string): string {
+export function sanitizeDiaryHtml(content: string): string {
   let sanitized = content
 
   sanitized = sanitized.replace(

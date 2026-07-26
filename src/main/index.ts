@@ -20,6 +20,7 @@ import type {
   UpdateCheckOptions,
   WindowsHelloVerificationResult
 } from '../types/api'
+import type { SyncConflictChoice, SyncRuntimeState } from '../types/api'
 
 let mainWindow: BrowserWindow | null = null
 import { join } from 'path'
@@ -103,6 +104,18 @@ import {
   normalizeMcpServerConfig,
   stopMcpServer
 } from './mcp/server'
+import {
+  beginSyncPairing,
+  getSyncState,
+  initializeSyncServer,
+  listSyncConflicts,
+  pauseSyncServer,
+  resolveSyncConflict,
+  resumeSyncServer,
+  setSyncEnabled,
+  shutdownSyncServer,
+  unpairSyncDevice
+} from './sync/server'
 
 const IMAGE_MIME_MAP: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -132,6 +145,12 @@ let hasClosedDatabase = false
 let pendingQuitAckIds: Set<number> | null = null
 let quitPrepareTimer: ReturnType<typeof setTimeout> | null = null
 let resolveQuitPreparation: (() => void) | null = null
+let pendingSyncPreparation: {
+  id: string
+  timer: ReturnType<typeof setTimeout>
+  resolve: () => void
+} | null = null
+let syncPreparationSequence = 0
 const trustedRendererOrigins = new Set<string>()
 
 const rendererDevUrl = process.env['ELECTRON_RENDERER_URL']
@@ -312,6 +331,7 @@ function requestAppQuit(): void {
       console.error('搴旂敤閫€鍑哄噯澶囧け璐?', error)
     } finally {
       await stopMcpServer()
+      await shutdownSyncServer()
       closeDatabaseSafely()
       app.exit(0)
     }
@@ -689,7 +709,43 @@ function broadcastToAllWindows(channel: string): void {
 
 function registerSystemSecurityEvents(): void {
   powerMonitor.on('lock-screen', () => {
+    void pauseSyncServer()
     broadcastToAllWindows('system:lock-screen')
+  })
+  powerMonitor.on('unlock-screen', () => {
+    if (!isDisguiseModeEnabled()) void resumeSyncServer()
+  })
+}
+
+function publishSyncState(state: SyncRuntimeState, dataChanged = false): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    win.webContents.send('sync:state-changed', state)
+    if (dataChanged) win.webContents.send('sync:data-changed')
+  }
+}
+
+function prepareRendererForSync(): Promise<void> {
+  const target = mainWindow
+  if (!target || target.isDestroyed() || target.webContents.isDestroyed()) {
+    return Promise.resolve()
+  }
+  if (pendingSyncPreparation) {
+    clearTimeout(pendingSyncPreparation.timer)
+    pendingSyncPreparation.resolve()
+    pendingSyncPreparation = null
+  }
+  const id = `${Date.now()}-${++syncPreparationSequence}`
+  return new Promise<void>((resolve) => {
+    const finish = (): void => {
+      if (pendingSyncPreparation?.id !== id) return
+      clearTimeout(pendingSyncPreparation.timer)
+      pendingSyncPreparation = null
+      resolve()
+    }
+    const timer = setTimeout(finish, 3000)
+    pendingSyncPreparation = { id, timer, resolve }
+    target.webContents.send('sync:prepare', id)
   })
 }
 
@@ -961,6 +1017,10 @@ app
 
     await migrateLegacyAvatarSetting()
     applyDisguiseModeOnLaunch()
+    await initializeSyncServer(publishSyncState, prepareRendererForSync)
+    if (isDisguiseModeEnabled() || getRealSetting('privacy.enabled') === '1') {
+      await pauseSyncServer()
+    }
     await applyMcpConfigFromStoredAiSettings()
     applyNativeTheme(getSetting(SETTINGS_THEME_KEY))
 
@@ -1015,6 +1075,14 @@ function getPreviousDiaryForSave(
 function registerIpcHandlers(): void {
   onTrustedIpc('app:before-quit-done', (event) => {
     acknowledgeQuitPreparation(event.sender.id)
+  })
+
+  onTrustedIpc('sync:prepare-done', (_event, requestId: string) => {
+    const pending = pendingSyncPreparation
+    if (!pending || pending.id !== requestId) return
+    clearTimeout(pending.timer)
+    pendingSyncPreparation = null
+    pending.resolve()
   })
 
   // 鏃ヨ CRUD
@@ -1193,6 +1261,47 @@ function registerIpcHandlers(): void {
     return getAllSettings()
   })
 
+  handleTrustedIpc('sync:getState', () => {
+    assertDisguiseAvailable('局域网同步')
+    return getSyncState()
+  })
+
+  handleTrustedIpc('sync:setEnabled', async (_event, enabled: boolean) => {
+    assertDisguiseAvailable('局域网同步')
+    return await setSyncEnabled(Boolean(enabled))
+  })
+
+  handleTrustedIpc('sync:beginPairing', async () => {
+    assertDisguiseAvailable('局域网同步配对')
+    return await beginSyncPairing()
+  })
+
+  handleTrustedIpc('sync:getConflicts', () => {
+    assertDisguiseAvailable('局域网同步冲突')
+    return listSyncConflicts()
+  })
+
+  handleTrustedIpc('sync:resolveConflict', (_event, id: string, choice: SyncConflictChoice) => {
+    assertDisguiseAvailable('局域网同步冲突')
+    if (!['keepLocal', 'keepRemote', 'keepBoth'].includes(choice)) {
+      throw new Error('invalid_sync_conflict_choice')
+    }
+    return resolveSyncConflict(String(id), choice)
+  })
+
+  handleTrustedIpc('sync:unpairDevice', (_event, deviceId: string) => {
+    assertDisguiseAvailable('局域网同步设备')
+    return unpairSyncDevice(String(deviceId))
+  })
+
+  handleTrustedIpc('sync:setPrivacyPaused', async (_event, paused: boolean) => {
+    if (paused) {
+      await pauseSyncServer()
+    } else if (!isDisguiseModeEnabled()) {
+      await resumeSyncServer()
+    }
+  })
+
   handleTrustedIpc('mcp:getStatus', () => {
     return getMcpServerStatus()
   })
@@ -1218,11 +1327,13 @@ function registerIpcHandlers(): void {
     return getDisguiseConfig()
   })
 
-  handleTrustedIpc('disguise:setEnabled', (_event, enabled: boolean) => {
+  handleTrustedIpc('disguise:setEnabled', async (_event, enabled: boolean) => {
     if (enabled) {
+      await pauseSyncServer()
       enableDisguiseMode()
     } else {
       disableDisguiseMode()
+      await resumeSyncServer()
     }
     setDisguiseLastEnabled(Boolean(enabled))
     rebuildPersonMentionStatsIndex()

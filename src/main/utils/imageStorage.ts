@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { extname, isAbsolute, join, relative, resolve } from 'path'
-import { writeFile, mkdir, readFile, unlink, readdir } from 'fs/promises'
+import { writeFile, mkdir, readFile, unlink, readdir, rename } from 'fs/promises'
 import { existsSync } from 'fs'
 import { randomUUID } from 'crypto'
 import sharp from 'sharp'
@@ -259,6 +259,39 @@ export async function getImage(filename: string): Promise<Buffer> {
   }
 
   return await readFile(filePath)
+}
+
+export async function storeSyncedImage(imageId: string, bytes: Uint8Array): Promise<void> {
+  const normalizedFilename = imageId.trim().toLowerCase()
+  const isThumbnail = THUMBNAIL_FILENAME_RE.test(normalizedFilename)
+  const isOriginal = IMAGE_FILENAME_RE.test(normalizedFilename)
+  if ((!isThumbnail && !isOriginal) || !normalizedFilename.endsWith('.webp')) {
+    throw new Error('Invalid synchronized image identifier')
+  }
+  if (bytes.byteLength === 0 || bytes.byteLength > 32 * 1024 * 1024) {
+    throw new Error('Synchronized image exceeds the allowed size')
+  }
+
+  await ensureImageDirs()
+  const imageBuffer = Buffer.from(bytes)
+  const metadata = await sharp(imageBuffer).metadata()
+  if (!metadata.width || !metadata.height) {
+    throw new Error('Synchronized image is invalid')
+  }
+
+  const normalizedId = normalizedFilename.replace(/(?:_thumb)?\.webp$/, '')
+  const targetDirectory = isThumbnail ? getThumbnailDir() : getImageDir()
+  const targetPath = join(targetDirectory, normalizedFilename)
+  const temporaryPath = join(targetDirectory, `.${normalizedId}-${randomUUID()}.part`)
+  await writeFile(temporaryPath, imageBuffer)
+  await rename(temporaryPath, targetPath)
+
+  if (isThumbnail) return
+  const thumbnailPath = join(getThumbnailDir(), `${normalizedId}_thumb.webp`)
+  await sharp(imageBuffer)
+    .resize(400, null, { withoutEnlargement: true, fit: 'inside' })
+    .webp({ quality: 80 })
+    .toFile(thumbnailPath)
 }
 
 // 删除图片及其缩略图

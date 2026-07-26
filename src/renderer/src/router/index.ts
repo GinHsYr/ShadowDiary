@@ -63,6 +63,11 @@ const routes: RouteRecordRaw[] = [
         path: 'mcp',
         name: 'SettingsMcp',
         component: () => import('../views/settings/mcp.vue')
+      },
+      {
+        path: 'sync',
+        name: 'SettingsSync',
+        component: () => import('../views/settings/sync.vue')
       }
     ]
   }
