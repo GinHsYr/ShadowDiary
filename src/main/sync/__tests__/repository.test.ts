@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   compareVectors,
   mergeVectors,
-  payloadsEquivalentIgnoringUpdatedAt,
+  payloadsEquivalentForSync,
   stableStringify
 } from '../repository'
 
@@ -43,7 +43,71 @@ describe('sync record semantics', () => {
       updatedAt: 1784625068382
     }
 
-    expect(payloadsEquivalentIgnoringUpdatedAt(desktop, phone)).toBe(true)
-    expect(payloadsEquivalentIgnoringUpdatedAt(desktop, { ...phone, title: 'Edited' })).toBe(false)
+    expect(payloadsEquivalentForSync('diary', desktop, phone)).toBe(true)
+    expect(payloadsEquivalentForSync('diary', desktop, { ...phone, title: 'Edited' })).toBe(false)
+  })
+
+  it('treats missing and empty archive media fields as equivalent', () => {
+    const shared = {
+      id: 'archive-1',
+      name: 'Camera',
+      type: 'object',
+      createdAt: 1,
+      updatedAt: 1
+    }
+
+    expect(
+      payloadsEquivalentForSync('archive', { ...shared, mainImage: null, images: [] }, shared)
+    ).toBe(true)
+  })
+
+  it('normalizes equivalent archive image locations before comparing', () => {
+    const mainImageId = '123e4567-e89b-12d3-a456-426614174000.webp'
+    const galleryImageId = '223e4567-e89b-42d3-a456-426614174001.jpg'
+    const shared = {
+      id: 'archive-1',
+      name: 'Camera',
+      type: 'object',
+      createdAt: 1
+    }
+    const desktop = {
+      ...shared,
+      mainImage: `diary-image://${mainImageId}`,
+      images: [`C:\\ShadowDiary\\images\\${galleryImageId}`],
+      updatedAt: 200
+    }
+    const phone = {
+      ...shared,
+      mainImage: `/data/user/0/app/media/${mainImageId}`,
+      images: [`file:///data/user/0/app/media/${galleryImageId}`],
+      updatedAt: 100
+    }
+
+    expect(payloadsEquivalentForSync('archive', desktop, phone)).toBe(true)
+  })
+
+  it('keeps genuinely different archive images non-equivalent', () => {
+    const shared = {
+      id: 'archive-1',
+      name: 'Camera',
+      type: 'object',
+      images: [],
+      createdAt: 1,
+      updatedAt: 1
+    }
+
+    expect(
+      payloadsEquivalentForSync(
+        'archive',
+        {
+          ...shared,
+          mainImage: 'diary-image://123e4567-e89b-12d3-a456-426614174000.webp'
+        },
+        {
+          ...shared,
+          mainImage: 'diary-image://323e4567-e89b-42d3-b456-426614174002.webp'
+        }
+      )
+    ).toBe(false)
   })
 })

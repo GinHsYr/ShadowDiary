@@ -67,9 +67,9 @@ export interface ReconcileResult {
 }
 
 const ASSET_ID_RE =
-  /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?:_thumb)?\.webp$/
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?:_thumb\.webp|\.(?:webp|png|jpe?g))$/
 const ASSET_URI_RE =
-  /diary-image:\/\/([a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?:_thumb)?\.webp)/gi
+  /diary-image:\/\/([a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?:_thumb\.webp|\.(?:webp|png|jpe?g)))/gi
 const TAG_DELIMITER = '\u001f'
 
 export class DesktopSyncRepository {
@@ -159,8 +159,9 @@ export class DesktopSyncRepository {
     const conflicts: SyncConflict[] = []
     let appliedCount = 0
 
-    for (const remote of remoteRecords) {
-      validateRecord(remote)
+    for (const receivedRemote of remoteRecords) {
+      validateRecord(receivedRemote)
+      const remote = normalizeRecordForSync(receivedRemote)
       const key = recordKey(remote)
       const local = localRecords.get(key)
       localRecords.delete(key)
@@ -184,7 +185,7 @@ export class DesktopSyncRepository {
       }
       if (
         Boolean(local.deletedAt) === Boolean(remote.deletedAt) &&
-        payloadsEquivalentIgnoringUpdatedAt(local.payload, remote.payload)
+        payloadsEquivalentForSync(local.entityType, local.payload, remote.payload)
       ) {
         const useRemote = payloadUpdatedAt(remote) > payloadUpdatedAt(local)
         const preferred = useRemote ? remote : local
@@ -280,7 +281,7 @@ export class DesktopSyncRepository {
           id,
           size: bytes.byteLength,
           sha256: sha256(bytes),
-          mimeType: 'image/webp'
+          mimeType: syncAssetMimeType(id)
         })
       } catch {
         // A missing local image remains visible as missing instead of aborting all records.
@@ -396,8 +397,8 @@ export class DesktopSyncRepository {
         aliases: splitArchiveAliases(row.alias),
         description: row.description,
         type: row.type,
-        mainImage: row.main_image ? canonicalizeMediaSources(row.main_image) : null,
-        images: decodeStringList(row.images).map(canonicalizeMediaSources),
+        mainImage: canonicalizeArchiveMediaSource(row.main_image),
+        images: normalizeArchiveImageList(decodeStringList(row.images)),
         createdAt: row.created_at,
         updatedAt: row.updated_at
       }
@@ -412,7 +413,8 @@ export class DesktopSyncRepository {
     })
   }
 
-  private applyRemoteRecord(record: SyncRecord): void {
+  private applyRemoteRecord(receivedRecord: SyncRecord): void {
+    const record = normalizeRecordForSync(receivedRecord)
     validateRecord(record)
     const db = getDatabase()
     db.transaction(() => {
@@ -467,6 +469,8 @@ export class DesktopSyncRepository {
   }
 
   private applyArchive(payload: Record<string, unknown>): void {
+    const mainImage = canonicalizeArchiveMediaSource(payload.mainImage)
+    const images = normalizeArchiveImageList(payload.images)
     getDatabase()
       .prepare(
         `INSERT INTO archives(
@@ -490,8 +494,8 @@ export class DesktopSyncRepository {
         ['person', 'object', 'other'].includes(String(payload.type))
           ? String(payload.type)
           : 'other',
-        typeof payload.mainImage === 'string' ? payload.mainImage : null,
-        JSON.stringify(stringArray(payload.images)),
+        mainImage,
+        JSON.stringify(images),
         requiredNumber(payload.createdAt, 'archive.createdAt'),
         requiredNumber(payload.updatedAt, 'archive.updatedAt')
       )
@@ -626,16 +630,37 @@ export function stableStringify(value: unknown): string {
   return JSON.stringify(value) ?? 'null'
 }
 
-export function payloadsEquivalentIgnoringUpdatedAt(
+export function payloadsEquivalentForSync(
+  entityType: SyncEntityType,
   local: Record<string, unknown> | undefined,
   remote: Record<string, unknown> | undefined
 ): boolean {
   if (!local || !remote) return local === remote
-  const localContent = { ...local }
-  const remoteContent = { ...remote }
+  const localContent = normalizePayloadForSync(entityType, local)!
+  const remoteContent = normalizePayloadForSync(entityType, remote)!
   delete localContent.updatedAt
   delete remoteContent.updatedAt
   return stableStringify(localContent) === stableStringify(remoteContent)
+}
+
+function normalizeRecordForSync(record: SyncRecord): SyncRecord {
+  if (!record.payload) return record
+  const payload = normalizePayloadForSync(record.entityType, record.payload)!
+  if (stableStringify(payload) === stableStringify(record.payload)) return record
+  return { ...record, payload, contentHash: payloadHash(payload) }
+}
+
+function normalizePayloadForSync(
+  entityType: SyncEntityType,
+  payload: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!payload) return undefined
+  const normalized = { ...payload }
+  if (entityType !== 'archive') return normalized
+
+  normalized.mainImage = canonicalizeArchiveMediaSource(payload.mainImage)
+  normalized.images = normalizeArchiveImageList(payload.images)
+  return normalized
 }
 
 function payloadUpdatedAt(record: SyncRecord): number {
@@ -653,9 +678,34 @@ function sha256(value: Uint8Array): string {
 
 function canonicalizeMediaSources(value: string): string {
   return value.replace(
-    /(?:file:(?:\/\/)?[^"'<>\s]*|[A-Za-z]:[\\/][^"'<>\s]*)([a-fA-F0-9-]{36}(?:_thumb)?\.webp)/gi,
+    /(?:file:(?:\/\/)?[^"'<>\s]*|[A-Za-z]:[\\/][^"'<>\s]*)([a-fA-F0-9-]{36}(?:_thumb\.webp|\.(?:webp|png|jpe?g)))/gi,
     (_match, filename: string) => `diary-image://${filename.toLowerCase()}`
   )
+}
+
+function syncAssetMimeType(id: string): string {
+  const extension = id.toLowerCase().split('.').at(-1)
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg'
+  if (extension === 'png') return 'image/png'
+  return 'image/webp'
+}
+
+function canonicalizeArchiveMediaSource(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  if (!normalized) return null
+
+  const assetScheme = 'diary-image://'
+  const filename = normalized.toLowerCase().startsWith(assetScheme)
+    ? normalized.slice(assetScheme.length).toLowerCase()
+    : (normalized.replaceAll('\\', '/').split('/').at(-1) ?? '').toLowerCase()
+  return ASSET_ID_RE.test(filename) ? `${assetScheme}${filename}` : normalized
+}
+
+function normalizeArchiveImageList(value: unknown): string[] {
+  return stringArray(value)
+    .map(canonicalizeArchiveMediaSource)
+    .filter((item): item is string => item !== null)
 }
 
 function decodeStringList(value: string | null): string[] {

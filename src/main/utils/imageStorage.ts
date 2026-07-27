@@ -20,6 +20,9 @@ const UUID_PATTERN = '[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}
 const IMAGE_ID_RE = new RegExp(`^${UUID_PATTERN}$`)
 const IMAGE_FILENAME_RE = new RegExp(`^${UUID_PATTERN}\\.(jpg|jpeg|png|gif|webp|bmp|svg)$`)
 const THUMBNAIL_FILENAME_RE = new RegExp(`^${UUID_PATTERN}_thumb\\.webp$`)
+const SYNC_IMAGE_FILENAME_RE = new RegExp(
+  `^${UUID_PATTERN}(?:_thumb\\.webp|\\.(?:webp|png|jpe?g))$`
+)
 const IMAGE_DATA_URL_RE = /^data:image\/([a-z0-9.+-]+);base64,([\s\S]+)$/i
 
 const IMAGE_MIME_BY_EXT = {
@@ -264,8 +267,8 @@ export async function getImage(filename: string): Promise<Buffer> {
 export async function storeSyncedImage(imageId: string, bytes: Uint8Array): Promise<void> {
   const normalizedFilename = imageId.trim().toLowerCase()
   const isThumbnail = THUMBNAIL_FILENAME_RE.test(normalizedFilename)
-  const isOriginal = IMAGE_FILENAME_RE.test(normalizedFilename)
-  if ((!isThumbnail && !isOriginal) || !normalizedFilename.endsWith('.webp')) {
+  const isOriginal = !isThumbnail && SYNC_IMAGE_FILENAME_RE.test(normalizedFilename)
+  if (!isThumbnail && !isOriginal) {
     throw new Error('Invalid synchronized image identifier')
   }
   if (bytes.byteLength === 0 || bytes.byteLength > 32 * 1024 * 1024) {
@@ -279,7 +282,7 @@ export async function storeSyncedImage(imageId: string, bytes: Uint8Array): Prom
     throw new Error('Synchronized image is invalid')
   }
 
-  const normalizedId = normalizedFilename.replace(/(?:_thumb)?\.webp$/, '')
+  const normalizedId = normalizedFilename.replace(/_thumb\.webp$/, '').replace(/\.[a-z0-9]+$/, '')
   const targetDirectory = isThumbnail ? getThumbnailDir() : getImageDir()
   const targetPath = join(targetDirectory, normalizedFilename)
   const temporaryPath = join(targetDirectory, `.${normalizedId}-${randomUUID()}.part`)
