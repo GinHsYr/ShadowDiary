@@ -14,21 +14,6 @@
 
     <main class="sync-content">
       <section class="sync-hero" :class="`is-${syncState.phase}`">
-        <div
-          class="radar"
-          :class="{ active: syncState.enabled && isActivePhase }"
-          aria-hidden="true"
-        >
-          <span class="radar-ring ring-one" />
-          <span class="radar-ring ring-two" />
-          <span class="radar-ring ring-three" />
-          <span class="radar-sweep" />
-          <span class="radar-core"
-            ><n-icon :size="22"><SparklesOutline /></n-icon
-          ></span>
-          <span class="radar-orbit-dot" />
-        </div>
-
         <div class="hero-copy">
           <div class="hero-title-row">
             <h2>{{ statusLabel }}</h2>
@@ -273,8 +258,7 @@ import {
   ChevronForwardOutline,
   GitCompareOutline,
   PhonePortraitOutline,
-  ShieldCheckmarkOutline,
-  SparklesOutline
+  ShieldCheckmarkOutline
 } from '@vicons/ionicons5'
 import type { SyncConflict, SyncConflictChoice, SyncRuntimeState } from '../../../../types/api'
 import {
@@ -306,9 +290,6 @@ const now = ref(Date.now())
 let clockTimer: ReturnType<typeof setInterval> | null = null
 let removeStateListener: (() => void) | null = null
 
-const isActivePhase = computed(() =>
-  ['discovering', 'pairing', 'connecting', 'syncing'].includes(syncState.value.phase)
-)
 const statusLabel = computed(() => t(`settings.sync.status.${syncState.value.phase}`))
 const statusShortLabel = computed(() =>
   syncState.value.enabled ? t('settings.sync.running') : t('settings.sync.stopped')
@@ -545,9 +526,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   padding: 24px;
   box-sizing: border-box;
-  background:
-    radial-gradient(circle at 82% 8%, var(--app-accent-08), transparent 34%),
-    linear-gradient(180deg, transparent, var(--app-accent-06));
+  background: var(--app-content-surface);
 }
 
 .page-header {
@@ -576,80 +555,12 @@ onBeforeUnmount(() => {
 }
 
 .sync-hero {
-  display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 34px;
-  align-items: center;
-  min-height: 218px;
-  padding: 30px 38px;
+  padding: 32px 40px;
   border-radius: 26px;
   overflow: hidden;
   position: relative;
-  background:
-    linear-gradient(135deg, var(--app-accent-16), var(--app-accent-06) 58%, transparent),
-    var(--n-card-color);
-  box-shadow: 0 20px 55px rgba(0, 0, 0, 0.08);
-  border: 1px solid var(--app-accent-20);
-}
-
-.radar {
-  width: 164px;
-  aspect-ratio: 1;
-  position: relative;
-  display: grid;
-  place-items: center;
-}
-.radar-ring {
-  position: absolute;
-  border: 1px solid var(--app-accent-20);
-  border-radius: 50%;
-}
-.ring-one {
-  inset: 35%;
-}
-.ring-two {
-  inset: 18%;
-}
-.ring-three {
-  inset: 1%;
-}
-.radar-core {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: white;
-  background: var(--app-accent-color);
-  z-index: 2;
-  box-shadow: 0 0 28px var(--app-accent-40);
-}
-.radar-sweep {
-  position: absolute;
-  inset: 3%;
-  border-radius: 50%;
-  opacity: 0;
-  background: conic-gradient(from 0deg, transparent 72%, var(--app-accent-20), transparent);
-}
-.radar-orbit-dot {
-  position: absolute;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  top: 22%;
-  left: 76%;
-  background: var(--app-accent-color);
-  box-shadow: 0 0 12px var(--app-accent-color);
-}
-.radar.active .radar-sweep {
-  opacity: 1;
-  animation: radar-spin 2.2s linear infinite;
-}
-.radar.active .radar-core {
-  animation: core-breathe 1.8s var(--ease-enter) infinite alternate;
-}
-.radar.active .radar-orbit-dot {
-  animation: dot-pulse 1.2s var(--ease-enter) infinite alternate;
+  background: color-mix(in srgb, var(--n-card-color) 97%, var(--app-accent-color));
+  box-shadow: 0 20px 50px color-mix(in srgb, var(--app-material-shadow) 34%, transparent);
 }
 
 .hero-copy h2 {
@@ -1014,22 +925,6 @@ onBeforeUnmount(() => {
   transform: translateY(8px) scale(0.98);
 }
 
-@keyframes radar-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@keyframes core-breathe {
-  to {
-    transform: scale(1.07);
-  }
-}
-@keyframes dot-pulse {
-  to {
-    transform: scale(1.5);
-    opacity: 0.65;
-  }
-}
 @keyframes row-enter {
   from {
     opacity: 0;
@@ -1037,13 +932,11 @@ onBeforeUnmount(() => {
   }
 }
 
-:global(.reduced-motion) .radar *,
 :global(.reduced-motion) .entrance-row {
   animation: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .radar *,
   .entrance-row {
     animation: none !important;
   }
@@ -1060,10 +953,7 @@ onBeforeUnmount(() => {
     padding: 16px;
   }
   .sync-hero {
-    grid-template-columns: 1fr;
-    justify-items: center;
     padding: 24px;
-    gap: 16px;
   }
   .hero-copy {
     width: 100%;
