@@ -159,7 +159,6 @@ class ShadowDiarySyncServer {
   private async start(): Promise<void> {
     if (this.webSocketServer || this.paused) return
     const server = new WebSocketServer({
-      host: '0.0.0.0',
       port: 0,
       maxPayload: 48 * 1024 * 1024,
       handleProtocols: (protocols) => (protocols.has(SYNC_SUBPROTOCOL) ? SYNC_SUBPROTOCOL : false)
