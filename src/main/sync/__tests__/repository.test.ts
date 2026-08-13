@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canonicalizeMediaSources,
   compareVectors,
   mergeVectors,
   payloadsEquivalentForSync,
@@ -45,6 +46,21 @@ describe('sync record semantics', () => {
 
     expect(payloadsEquivalentForSync('diary', desktop, phone)).toBe(true)
     expect(payloadsEquivalentForSync('diary', desktop, { ...phone, title: 'Edited' })).toBe(false)
+  })
+
+  it('keeps diary image URIs stable while canonicalizing legacy paths', () => {
+    const imageId = '123e4567-e89b-42d3-a456-426614174000.webp'
+    const source = 'diary-image://' + imageId
+    const image = (value: string): string => '<img src="' + value + '">'
+
+    expect(canonicalizeMediaSources(image(source))).toBe(image(source))
+    expect(canonicalizeMediaSources(image('diary-imag' + source))).toBe(image(source))
+    expect(canonicalizeMediaSources(image('C:\\ShadowDiary\\images\\' + imageId))).toBe(
+      image(source)
+    )
+    expect(canonicalizeMediaSources(image('file:///C:/ShadowDiary/images/' + imageId))).toBe(
+      image(source)
+    )
   })
 
   it('treats missing and empty archive media fields as equivalent', () => {

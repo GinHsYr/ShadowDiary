@@ -69,7 +69,7 @@ export interface ReconcileResult {
 const ASSET_ID_RE =
   /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?:_thumb\.webp|\.(?:webp|png|jpe?g))$/
 const ASSET_URI_RE =
-  /diary-image:\/\/([a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?:_thumb\.webp|\.(?:webp|png|jpe?g)))/gi
+  /(?:unsafe:)?(?:diary-imag)?diary-image:\/\/([a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?:_thumb\.webp|\.(?:webp|png|jpe?g)))/gi
 const TAG_DELIMITER = '\u001f'
 
 export class DesktopSyncRepository {
@@ -271,6 +271,22 @@ export class DesktopSyncRepository {
     for (const record of records) {
       if (!record.payload) continue
       for (const id of assetIdsFromPayload(record.payload)) ids.add(id)
+    }
+    const conflictRows = getDatabase()
+      .prepare('SELECT local_payload, remote_payload FROM sync_conflicts')
+      .all() as Pick<SyncConflictRow, 'local_payload' | 'remote_payload'>[]
+    for (const row of conflictRows) {
+      for (const value of [row.local_payload, row.remote_payload]) {
+        if (!value) continue
+        try {
+          const parsed: unknown = JSON.parse(value)
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            for (const id of assetIdsFromPayload(parsed as Record<string, unknown>)) ids.add(id)
+          }
+        } catch {
+          // Ignore malformed historical conflict payloads.
+        }
+      }
     }
 
     const assets: SyncAssetManifest[] = []
@@ -656,7 +672,12 @@ function normalizePayloadForSync(
 ): Record<string, unknown> | undefined {
   if (!payload) return undefined
   const normalized = { ...payload }
-  if (entityType !== 'archive') return normalized
+  if (entityType === 'diary') {
+    if (typeof payload.content === 'string') {
+      normalized.content = canonicalizeMediaSources(payload.content)
+    }
+    return normalized
+  }
 
   normalized.mainImage = canonicalizeArchiveMediaSource(payload.mainImage)
   normalized.images = normalizeArchiveImageList(payload.images)
@@ -676,9 +697,13 @@ function sha256(value: Uint8Array): string {
   return createHash('sha256').update(value).digest('hex')
 }
 
-function canonicalizeMediaSources(value: string): string {
-  return value.replace(
-    /(?:file:(?:\/\/)?[^"'<>\s]*|[A-Za-z]:[\\/][^"'<>\s]*)([a-fA-F0-9-]{36}(?:_thumb\.webp|\.(?:webp|png|jpe?g)))/gi,
+export function canonicalizeMediaSources(value: string): string {
+  const normalizedProtocol = value.replace(
+    /(?:unsafe:)?(?:diary-imag)?(diary-image:\/\/)([a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?:_thumb\.webp|\.(?:webp|png|jpe?g)))/gi,
+    (_match, scheme: string, filename: string) => `${scheme}${filename.toLowerCase()}`
+  )
+  return normalizedProtocol.replace(
+    /(?:file:(?:\/\/)?[^"'<>\s]*|(?<![A-Za-z0-9+.-])[A-Za-z]:[\\/][^"'<>\s]*)([a-fA-F0-9-]{36}(?:_thumb\.webp|\.(?:webp|png|jpe?g)))/gi,
     (_match, filename: string) => `diary-image://${filename.toLowerCase()}`
   )
 }
@@ -692,7 +717,7 @@ function syncAssetMimeType(id: string): string {
 
 function canonicalizeArchiveMediaSource(value: unknown): string | null {
   if (typeof value !== 'string') return null
-  const normalized = value.trim()
+  const normalized = value.trim().replace(/^unsafe:(?=diary-image:\/\/)/i, '')
   if (!normalized) return null
 
   const assetScheme = 'diary-image://'

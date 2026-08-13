@@ -1,4 +1,5 @@
 const DIARY_IMAGE_PROTOCOL = 'diary-image://'
+const UNSAFE_DIARY_IMAGE_PREFIX_RE = /^unsafe:(?=diary-image:\/\/)/i
 const UUID_PATTERN = '[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}'
 const DIARY_IMAGE_PATH_RE = new RegExp(
   `${DIARY_IMAGE_PROTOCOL}(${UUID_PATTERN})(?:(_thumb))?\\.([a-z0-9]+)`,
@@ -32,7 +33,7 @@ export function createThumbnailPath(imageId: string): string {
 
 export function parseDiaryImagePath(path: string | null | undefined): ParsedDiaryImagePath | null {
   if (!path) return null
-  const trimmed = path.trim()
+  const trimmed = path.trim().replace(UNSAFE_DIARY_IMAGE_PREFIX_RE, '')
   if (!trimmed) return null
 
   const match = DIARY_IMAGE_PATH_FULL_RE.exec(trimmed)
@@ -60,9 +61,10 @@ export function extractDiaryImageIds(value: string | null | undefined): string[]
   if (!value) return []
 
   const imageIds: string[] = []
+  const normalized = value.replace(/unsafe:(?=diary-image:\/\/)/gi, '')
   DIARY_IMAGE_PATH_RE.lastIndex = 0
   let match: RegExpExecArray | null
-  while ((match = DIARY_IMAGE_PATH_RE.exec(value)) !== null) {
+  while ((match = DIARY_IMAGE_PATH_RE.exec(normalized)) !== null) {
     imageIds.push(match[1].toLowerCase())
   }
   DIARY_IMAGE_PATH_RE.lastIndex = 0
@@ -76,9 +78,10 @@ export function collectDiaryImageCandidatesFromText(
   const candidates = new Map<string, DiaryImagePathCandidate>()
   if (!text) return candidates
 
+  const normalized = text.replace(/unsafe:(?=diary-image:\/\/)/gi, '')
   DIARY_IMAGE_PATH_RE.lastIndex = 0
   let match: RegExpExecArray | null
-  while ((match = DIARY_IMAGE_PATH_RE.exec(text)) !== null) {
+  while ((match = DIARY_IMAGE_PATH_RE.exec(normalized)) !== null) {
     const imageId = match[1].toLowerCase()
     const fullPath = match[0]
     const isThumbnail = Boolean(match[2])

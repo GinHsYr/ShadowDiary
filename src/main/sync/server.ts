@@ -538,9 +538,16 @@ class ShadowDiarySyncServer {
         const value = row as { main_image: string | null; images: string | null }
         return [value.main_image, value.images]
       })
+    const conflictContent = db
+      .prepare('SELECT local_payload, remote_payload FROM sync_conflicts')
+      .all()
+      .flatMap((row) => {
+        const value = row as { local_payload: string | null; remote_payload: string | null }
+        return [value.local_payload, value.remote_payload]
+      })
     syncImageRefs(
       getAllReferencedImageIds(),
-      collectImageIdsFromTexts([...diaryContent, ...archiveContent])
+      collectImageIdsFromTexts([...diaryContent, ...archiveContent, ...conflictContent])
     )
     invalidatePersonMentionCache()
     invalidateMediaLibraryCache()

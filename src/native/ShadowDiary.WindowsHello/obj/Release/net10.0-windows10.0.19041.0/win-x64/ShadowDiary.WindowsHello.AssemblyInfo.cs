@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ShadowDiary.WindowsHello")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b8bb40d01827bcb3a2047c6b44ebec41547a4ece")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f1bf0df55221e54c4de17059ad270d22fbbbd247")]
 [assembly: System.Reflection.AssemblyProductAttribute("ShadowDiary.WindowsHello")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ShadowDiary.WindowsHello")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
